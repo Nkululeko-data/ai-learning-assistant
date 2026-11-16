@@ -1,0 +1,8 @@
+{
+  "environment": "development",
+  "port": 3000,
+  "dataDir": "./data",
+  "logLevel": "info",
+  "corsOrigins": ["http://localhost:5173"],
+  "passwordMinLength": 12
+}

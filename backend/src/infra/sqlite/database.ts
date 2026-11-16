@@ -1,0 +1,70 @@
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+const schema = `
+  PRAGMA foreign_keys = ON;
+  PRAGMA journal_mode = WAL;
+  PRAGMA busy_timeout = 5000;
+
+  CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    title TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    execution_id TEXT,
+    intent TEXT,
+    grounding_status TEXT CHECK(grounding_status IN ('grounded', 'insufficient', 'unverified')),
+    cited_chunk_ids TEXT,
+    cited_document_ids TEXT,
+    retrieval_score_top REAL,
+    question_embedding_ref TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conv_user_course_updated
+    ON conversations(user_id, course_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_msg_conv_created
+    ON messages(conversation_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_msg_grounding
+    ON messages(grounding_status) WHERE grounding_status IS NOT NULL;
+`;
+
+/**
+ * Opens and initializes the SQLite conversation database.
+ */
+export function openConversationDatabase(dataDirectory: string): Database.Database {
+  const databaseDirectory = join(dataDirectory, "sqlite");
+  mkdirSync(databaseDirectory, { recursive: true });
+
+  const database = new Database(join(databaseDirectory, "conversations.db"));
+  database.pragma("foreign_keys = ON");
+  database.pragma("journal_mode = WAL");
+  database.pragma("busy_timeout = 5000");
+  database.exec(schema);
+  return database;
+}
+
+/**
+ * Confirms that the database connection can execute a lightweight query.
+ */
+export function isConversationDatabaseReady(
+  database: Database.Database,
+): boolean {
+  const result: unknown = database.prepare("SELECT 1 AS ready").get();
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "ready" in result &&
+    result.ready === 1
+  );
+}

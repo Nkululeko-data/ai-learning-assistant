@@ -1,0 +1,589 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI Learning Assistant API",
+    "version": "1.0.0-draft",
+    "description": "Approved draft baseline. Final request and response schemas are generated from Zod as endpoints are implemented."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    { "name": "Auth" },
+    { "name": "Courses" },
+    { "name": "Enrolments" },
+    { "name": "Documents" },
+    { "name": "Chat" },
+    { "name": "Conversations" },
+    { "name": "Learning" },
+    { "name": "Quizzes" },
+    { "name": "Feedback" },
+    { "name": "Insights" },
+    { "name": "Admin" },
+    { "name": "Jobs" },
+    { "name": "System" }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "register",
+        "summary": "Register a learner and optionally request coach approval",
+        "security": [],
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "login",
+        "summary": "Authenticate and issue tokens",
+        "security": [],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "429": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "refreshToken",
+        "summary": "Rotate the refresh token",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "logout",
+        "summary": "Revoke the refresh-token family",
+        "responses": { "204": { "description": "Logged out" } }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "changePassword",
+        "summary": "Change the current user's password",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": ["Auth"],
+        "operationId": "getMe",
+        "summary": "Get the current user's safe profile",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses": {
+      "get": {
+        "tags": ["Courses"],
+        "operationId": "listCourses",
+        "summary": "List active course cards and accessible courses",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Courses"],
+        "operationId": "createCourse",
+        "summary": "Create a course",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Courses"],
+        "operationId": "getCourse",
+        "summary": "Get a course visible to the caller",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      },
+      "patch": {
+        "tags": ["Courses"],
+        "operationId": "updateCourse",
+        "summary": "Update or archive an owned course",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/join": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "post": {
+        "tags": ["Enrolments"],
+        "operationId": "requestCourseJoin",
+        "summary": "Request to join a course",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/me/enrolments": {
+      "get": {
+        "tags": ["Enrolments"],
+        "operationId": "listMyEnrolments",
+        "summary": "List the current user's enrolments",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/courses/{courseId}/join-requests": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Enrolments"],
+        "operationId": "listJoinRequests",
+        "summary": "List join requests for an owned course",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/enrolments/{enrolmentId}": {
+      "parameters": [{ "$ref": "#/components/parameters/enrolmentId" }],
+      "patch": {
+        "tags": ["Enrolments"],
+        "operationId": "decideEnrolment",
+        "summary": "Approve or reject a join request",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/enrolment": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "delete": {
+        "tags": ["Enrolments"],
+        "operationId": "removeEnrolment",
+        "summary": "Remove a learner enrolment",
+        "responses": { "204": { "description": "Enrolment removed" } }
+      }
+    },
+    "/documents/upload": {
+      "post": {
+        "tags": ["Documents"],
+        "operationId": "uploadDocument",
+        "summary": "Upload a document and enqueue ingestion",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "413": { "$ref": "#/components/responses/ApiError" }, "415": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/documents/{documentId}/status": {
+      "parameters": [{ "$ref": "#/components/parameters/documentId" }],
+      "get": {
+        "tags": ["Documents"],
+        "operationId": "getDocumentStatus",
+        "summary": "Get ingestion status and safe diagnostics",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/documents/{documentId}/retry": {
+      "parameters": [{ "$ref": "#/components/parameters/documentId" }],
+      "post": {
+        "tags": ["Documents"],
+        "operationId": "retryIngestion",
+        "summary": "Retry failed ingestion",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/documents": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Documents"],
+        "operationId": "listCourseDocuments",
+        "summary": "List document metadata visible to the caller",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/documents/{documentId}": {
+      "parameters": [{ "$ref": "#/components/parameters/documentId" }],
+      "delete": {
+        "tags": ["Documents"],
+        "operationId": "deleteDocument",
+        "summary": "Enqueue hard deletion of a document",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/chat/ask": {
+      "post": {
+        "tags": ["Chat"],
+        "operationId": "askChat",
+        "summary": "Ask a grounded question",
+        "description": "Returns JSON by default or a post-validation SSE replay when requested. No answer is streamed before citation validation.",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "503": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "tags": ["Conversations"],
+        "operationId": "listConversations",
+        "summary": "List the caller's conversations",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/conversations/{conversationId}": {
+      "parameters": [{ "$ref": "#/components/parameters/conversationId" }],
+      "get": {
+        "tags": ["Conversations"],
+        "operationId": "getConversation",
+        "summary": "Get an owned conversation and messages",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      },
+      "patch": {
+        "tags": ["Conversations"],
+        "operationId": "renameConversation",
+        "summary": "Rename an owned conversation",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "delete": {
+        "tags": ["Conversations"],
+        "operationId": "deleteConversation",
+        "summary": "Hard-delete an owned conversation and its messages",
+        "responses": { "204": { "description": "Conversation deleted" } }
+      }
+    },
+    "/summaries/generate": {
+      "post": {
+        "tags": ["Learning"],
+        "operationId": "generateSummary",
+        "summary": "Generate a summary from selected sources",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/flashcards/generate": {
+      "post": {
+        "tags": ["Learning"],
+        "operationId": "generateFlashcards",
+        "summary": "Generate flashcards from selected sources",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/quizzes/generate": {
+      "post": {
+        "tags": ["Quizzes"],
+        "operationId": "generateQuiz",
+        "summary": "Generate a private quiz or coach draft from selected sources",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/quizzes": {
+      "post": {
+        "tags": ["Quizzes"],
+        "operationId": "createQuiz",
+        "summary": "Create a coach quiz draft",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/quizzes/{quizId}": {
+      "parameters": [{ "$ref": "#/components/parameters/quizId" }],
+      "get": {
+        "tags": ["Quizzes"],
+        "operationId": "getQuiz",
+        "summary": "Get caller-specific quiz view",
+        "description": "Learner view never includes correctOptionId or explanation before submission.",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      },
+      "patch": {
+        "tags": ["Quizzes"],
+        "operationId": "updateQuiz",
+        "summary": "Edit draft or create a new quiz version",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/quizzes/{quizId}/publish": {
+      "parameters": [{ "$ref": "#/components/parameters/quizId" }],
+      "post": {
+        "tags": ["Quizzes"],
+        "operationId": "publishQuiz",
+        "summary": "Publish a coach quiz",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/quizzes": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Quizzes"],
+        "operationId": "listCourseQuizzes",
+        "summary": "List quizzes visible to the caller",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/quizzes/{quizId}/attempts": {
+      "parameters": [{ "$ref": "#/components/parameters/quizId" }],
+      "post": {
+        "tags": ["Quizzes"],
+        "operationId": "submitQuizAttempt",
+        "summary": "Submit answers and receive server-scored results",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/me/quiz-attempts": {
+      "get": {
+        "tags": ["Quizzes"],
+        "operationId": "listMyQuizAttempts",
+        "summary": "List the current user's quiz attempts",
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "tags": ["Feedback"],
+        "operationId": "submitFeedback",
+        "summary": "Submit or update feedback for an answer",
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/courses/{courseId}/insights": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Insights"],
+        "operationId": "getCourseInsights",
+        "summary": "Get owner-only cohort aggregates",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/gap-report": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Insights"],
+        "operationId": "getGapReport",
+        "summary": "Get latest theme-only gap report",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/gap-report/refresh": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "post": {
+        "tags": ["Insights"],
+        "operationId": "refreshGapReport",
+        "summary": "Enqueue a gap-report job",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/coach-requests": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listCoachRequests",
+        "summary": "List coach requests",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      },
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "decideCoachRequest",
+        "summary": "Approve or reject a coach request",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listUsers",
+        "summary": "List user metadata without content",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users/{userId}/role": {
+      "parameters": [{ "$ref": "#/components/parameters/userId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "changeUserRole",
+        "summary": "Change a user's role; self-role changes are forbidden",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users/{userId}/permissions": {
+      "parameters": [{ "$ref": "#/components/parameters/userId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "changeUserPermissions",
+        "summary": "Grant or revoke fine-grained permissions",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users/{userId}/status": {
+      "parameters": [{ "$ref": "#/components/parameters/userId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "changeUserStatus",
+        "summary": "Suspend, stash or restore a user",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users/{userId}/reset-password": {
+      "parameters": [{ "$ref": "#/components/parameters/userId" }],
+      "post": {
+        "tags": ["Admin"],
+        "operationId": "resetUserPassword",
+        "summary": "Issue a one-time password reset token",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/users/{userId}/erase": {
+      "parameters": [{ "$ref": "#/components/parameters/userId" }],
+      "post": {
+        "tags": ["Admin"],
+        "operationId": "eraseUser",
+        "summary": "Enqueue privacy erasure",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/audit-logs": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listAuditLogs",
+        "summary": "List redacted audit metadata",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/executions": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listExecutions",
+        "summary": "List AI execution metadata only",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/config": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "getConfig",
+        "summary": "Get effective non-secret configuration",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      },
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "updateConfig",
+        "summary": "Update a validated non-secret configuration subset",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/admin/jobs": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listJobs",
+        "summary": "List job metadata",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/admin/jobs/{jobId}/retry": {
+      "parameters": [{ "$ref": "#/components/parameters/jobId" }],
+      "post": {
+        "tags": ["Admin"],
+        "operationId": "retryJob",
+        "summary": "Retry a dead-letter job",
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/jobs/{jobId}": {
+      "parameters": [{ "$ref": "#/components/parameters/jobId" }],
+      "get": {
+        "tags": ["Jobs"],
+        "operationId": "getJob",
+        "summary": "Get caller-authorized job status",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "operationId": "health",
+        "summary": "Liveness check",
+        "security": [],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": ["System"],
+        "operationId": "readiness",
+        "summary": "Readiness check",
+        "security": [],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "503": { "$ref": "#/components/responses/ApiError" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "courseId": { "name": "courseId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "documentId": { "name": "documentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "enrolmentId": { "name": "enrolmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "conversationId": { "name": "conversationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "quizId": { "name": "quizId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "userId": { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "jobId": { "name": "jobId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {},
+          "meta": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message", "requestId"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": {},
+              "requestId": { "type": "string" }
+            }
+          }
+        }
+      },
+      "GroundingStatus": {
+        "type": "string",
+        "enum": ["grounded", "insufficient", "unverified"]
+      },
+      "QuizLearnerQuestion": {
+        "type": "object",
+        "required": ["id", "type", "prompt", "options"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "enum": ["mcq", "true_false"] },
+          "prompt": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "object" } }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["correctOptionId"] },
+            { "required": ["explanation"] }
+          ]
+        }
+      }
+    },
+    "responses": {
+      "Success": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SuccessEnvelope" }
+          }
+        }
+      },
+      "ApiError": {
+        "description": "API error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      }
+    }
+  }
+}
