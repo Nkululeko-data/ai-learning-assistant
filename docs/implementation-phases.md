@@ -90,11 +90,11 @@ bootstrap command for initial roles, permissions, and an administrator.
 and schema, reports health/readiness correctly, and the foundation and
 bootstrap behavior have automated tests.
 
-**Current repository position:** This is the latest implementation phase
-represented by the inspected backend. Its foundation includes configuration,
-logging, middleware, JSON storage, SQLite setup, health/readiness, and
-bootstrap. Check the code and tests before treating every B2 requirement as
-complete.
+**Current repository position:** The backend includes the B2 foundation and
+has progressed into B3. See [`current-project-status.md`](current-project-status.md)
+for the implemented B3 authentication and authorization features and
+validation status. Check the code and tests before treating every B2
+requirement as complete.
 
 ### B3 — Add accounts and access control
 

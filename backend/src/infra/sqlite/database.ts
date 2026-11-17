@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const schema = `
   PRAGMA foreign_keys = ON;
@@ -42,14 +42,11 @@ const schema = `
 /**
  * Opens and initializes the SQLite conversation database.
  */
-export function openConversationDatabase(dataDirectory: string): Database.Database {
+export function openConversationDatabase(dataDirectory: string): DatabaseSync {
   const databaseDirectory = join(dataDirectory, "sqlite");
   mkdirSync(databaseDirectory, { recursive: true });
 
-  const database = new Database(join(databaseDirectory, "conversations.db"));
-  database.pragma("foreign_keys = ON");
-  database.pragma("journal_mode = WAL");
-  database.pragma("busy_timeout = 5000");
+  const database = new DatabaseSync(join(databaseDirectory, "conversations.db"));
   database.exec(schema);
   return database;
 }
@@ -58,7 +55,7 @@ export function openConversationDatabase(dataDirectory: string): Database.Databa
  * Confirms that the database connection can execute a lightweight query.
  */
 export function isConversationDatabaseReady(
-  database: Database.Database,
+  database: DatabaseSync,
 ): boolean {
   const result: unknown = database.prepare("SELECT 1 AS ready").get();
   return (

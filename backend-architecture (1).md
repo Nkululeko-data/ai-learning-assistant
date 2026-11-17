@@ -36,7 +36,7 @@
 | HTTP framework | Express.js, REST under `/api/v1` |
 | Validation | Zod (requests, responses, config, agent I/O) |
 | Primary persistence | **JSON file stores** (custom, section 5.2) behind repository interfaces |
-| Conversation history | **SQLite** via `better-sqlite3` (provisional; OPEN-1 confirms "basic SQL" means SQLite) |
+| Conversation history | **SQLite** via Node's built-in `node:sqlite` (`DatabaseSync`, Node 22.5+; experimental) |
 | Vector search | In-process cosine similarity over stored embeddings (section 10) |
 | AI orchestration | **LangGraph.js** (`@langchain/langgraph`) |
 | LLM providers | **Inception Labs** (primary; model `mercury-3`, official `inceptionai` SDK, structured output via `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }`), **Groq** (fallback), behind an adapter |

@@ -1,5 +1,9 @@
 # Initial Repository Assessment
 
+> Historical baseline: this assessment describes the repository before
+> implementation began. For the current implementation state, see
+> [current-project-status.md](./current-project-status.md).
+
 ## Assessment scope
 
 This assessment covers the repository state and supplied project documents before implementation. No application code or dependencies were changed.

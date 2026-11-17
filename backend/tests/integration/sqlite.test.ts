@@ -21,6 +21,15 @@ async function verifiesConversationSchemaAndCascade(): Promise<void> {
   const database = openConversationDatabase(temporaryDirectory);
   try {
     expect(isConversationDatabaseReady(database)).toBe(true);
+    expect(database.prepare("PRAGMA foreign_keys").get()).toMatchObject({
+      foreign_keys: 1,
+    });
+    expect(database.prepare("PRAGMA journal_mode").get()).toMatchObject({
+      journal_mode: "wal",
+    });
+    expect(database.prepare("PRAGMA busy_timeout").get()).toMatchObject({
+      timeout: 5000,
+    });
     database
       .prepare(
         "INSERT INTO conversations (id, user_id, course_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",

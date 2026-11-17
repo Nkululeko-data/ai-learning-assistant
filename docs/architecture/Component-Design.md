@@ -21,7 +21,7 @@
 | `jobs` | Enqueue, claim, retry, dead-letter and report long-running work | Job service and runner | JSON job repository, handlers |
 | `admin` / `audit` | User/config/job administration and append-only audit | Admin service | Domain services, audit repository |
 | `jsonstore` | Atomic single-writer JSON collections, validation, cache and indexes | Store primitives used by repositories | Filesystem |
-| `sqlite` | Conversations/messages schema and repository | Conversation repository | `better-sqlite3` |
+| `sqlite` | Conversations/messages schema and repository | Conversation repository | Node built-in `node:sqlite` (`DatabaseSync`, experimental; Node 22.5+) |
 | `storage` | Random-key private file storage and deletion | File storage adapter | Local filesystem |
 | `ai/graphs` and `ai/nodes` | Explicit typed AI workflows | GraphRunner implementations | Injected services and provider ports |
 | `ai/providers` | Inception, Groq, Mistral and deterministic test fakes | `LlmProvider`, `EmbeddingProvider` | Provider SDKs/config |
