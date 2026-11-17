@@ -61,9 +61,9 @@ for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 
-The backend implementation is complete through phases B0-B6. B0-B1 cover
+The backend implementation is complete through phases B0-B7. B0-B1 cover
 repository assessment and design/contracts; B2-B6 provide the current runnable
-features:
+features, and B7 adds internal access-filtered retrieval:
 
 - **B2 — Backend foundation:** configuration, logging and shared error
   handling, storage initialization, health/readiness checks, and administrator
@@ -82,6 +82,14 @@ features:
   status, retry, listing, deduplication, and deletion. Focus on upload limits
   and invalid files, course-owner versus personal-note access, ingestion
   success/failure, and retry/delete behavior.
+- **B7 — Access-filtered retrieval:** cosine-ranked search over ready chunks
+  for active courses, restricted to course documents and the requesting
+  learner's own notes, with source metadata. Focus on approved enrolment and
+  course ownership checks, personal-note isolation, archived-course exclusion,
+  stale embedding models, and ranking. This is an internal service, not a
+  standalone HTTP endpoint; B8 will connect it to question answering. Run its
+  focused tests from `backend` with
+  `npm test -- --runTestsByPath tests/unit/retrieval.service.test.ts tests/unit/private-file-storage.test.ts`.
 
 For B6, the upload endpoint is `POST /api/v1/documents/upload`; requests use
 multipart fields `courseId`, `scope` (`course` or `personal`), and `file`.
@@ -89,9 +97,9 @@ Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
 50 MB. See the [API specification](docs/api/API-Specification.md) for all
 request formats and related endpoints.
 
-**Not implemented yet:** B7 retrieval and later AI learning features (including
-grounded question answering, summaries, flashcards, and quizzes) are not
-available to test yet. They will be implemented in later phases.
+**Not implemented yet:** B8 and later AI learning features (including grounded
+question answering, summaries, flashcards, and quizzes) are not available to
+test yet. They will be implemented in later phases.
 
 ## Production build
 

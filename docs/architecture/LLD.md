@@ -73,7 +73,9 @@ The generic repository shape is illustrative; domain repositories should expose 
 4. Write the new serialized state to a temporary file, flush it, and atomically rename it over the collection file.
 5. Update in-memory records and indexes before releasing the queue.
 
-Document chunks use one file per document and are loaded lazily under an LRU limit. Only the retrieval service can query them. Stashed records are excluded by a shared helper.
+Document chunks use one file per document and are loaded lazily under the
+`CHUNK_CACHE_MAX_DOCUMENTS` LRU limit (default 100). Only the retrieval service
+can query them. Stashed records are excluded by a shared helper.
 
 ## API request lifecycle
 

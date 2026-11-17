@@ -17,6 +17,7 @@
   "maxDocxExpandedSizeMb": 50,
   "chunkSizeTokens": 512,
   "chunkOverlapTokens": 100,
+  "chunkCacheMaxDocuments": 100,
   "mistralEmbeddingModel": "mistral-embed",
   "mistralEmbeddingDimension": 1024
 }

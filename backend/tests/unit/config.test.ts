@@ -18,6 +18,7 @@ const configEnvironmentKeys = [
   "MAX_DOCX_EXPANDED_SIZE_MB",
   "CHUNK_SIZE_TOKENS",
   "CHUNK_OVERLAP_TOKENS",
+  "CHUNK_CACHE_MAX_DOCUMENTS",
   "ALLOW_REFRESH_TOKEN_IN_BODY",
   "JWT_ACCESS_SECRET",
   "JWT_REFRESH_SECRET",
@@ -65,6 +66,7 @@ function verifiesDefaultConfiguration(): void {
   expect(config.maxDocxExpandedSizeBytes).toBe(50 * 1024 * 1024);
   expect(config.chunkSizeTokens).toBe(512);
   expect(config.chunkOverlapTokens).toBe(100);
+  expect(config.chunkCacheMaxDocuments).toBe(100);
   expect(config.corsOrigins).toEqual(["http://localhost:5173"]);
 }
 

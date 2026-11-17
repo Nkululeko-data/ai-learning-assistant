@@ -101,6 +101,7 @@ async function createContext(): Promise<DocumentTestContext> {
     maxDocxExpandedSizeBytes: 50 * 1024 * 1024,
     chunkSizeTokens: 512,
     chunkOverlapTokens: 100,
+    chunkCacheMaxDocuments: 100,
     mistralEmbeddingModel: "mistral-embed",
     mistralEmbeddingDimension: 1024,
     allowRefreshTokenInBody: true,
