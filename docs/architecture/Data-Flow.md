@@ -12,15 +12,20 @@ flowchart LR
   HASH --> FILE[Store under random key outside web root]
   FILE --> META[Create uploaded document record]
   META --> JOB[Enqueue ingest job; return 202]
-  JOB --> EXT[Extract PDF pages / DOCX sections / TXT]
-  EXT --> CHK[Chunk with overlap and source metadata]
+  JOB --> EXT[Extract PDF pages / DOCX text / UTF-8 TXT]
+  EXT --> CHK[Chunk at configured size with overlap and page metadata]
   CHK --> EMB[Mistral embedding adapter]
   EMB --> WRITE[Atomically write per-document chunk file]
   WRITE --> READY[Set document ready]
   EXT -->|low text or parse error| FAILED[Set actionable failure diagnostics]
 ```
 
-Invalid uploads are rejected before enqueueing. Ingestion jobs are idempotent and report status through the document status endpoint.
+Invalid uploads are rejected before enqueueing. The default compressed upload
+limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB. Ingestion
+jobs are idempotent and report status through the document status endpoint.
+Chunks are approximately 512 tokens with 100-token overlap by default and do
+not cross PDF page boundaries. OCR is out of scope. Document text is sent to
+Mistral for embeddings and must be disclosed to users before upload.
 
 ## 2. Grounded chat
 

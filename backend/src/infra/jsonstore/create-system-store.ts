@@ -2,7 +2,7 @@ import { JsonStore } from "./json-store";
 import { registerSystemCollections } from "./system-collections";
 
 /**
- * Registers all phase-B2 system collections on a JSON store.
+ * Registers all system collections on a JSON store.
  */
 export function createSystemStore(dataDirectory: string): {
   store: JsonStore;

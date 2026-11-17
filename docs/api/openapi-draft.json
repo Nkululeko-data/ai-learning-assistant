@@ -93,13 +93,18 @@
         "tags": ["Courses"],
         "operationId": "listCourses",
         "summary": "List active course cards and accessible courses",
-        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       },
       "post": {
         "tags": ["Courses"],
         "operationId": "createCourse",
         "summary": "Create a course",
-        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+        "requestBody": { "$ref": "#/components/requestBodies/CreateCourseRequest" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/courses/{courseId}": {
@@ -108,13 +113,14 @@
         "tags": ["Courses"],
         "operationId": "getCourse",
         "summary": "Get a course visible to the caller",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       },
       "patch": {
         "tags": ["Courses"],
         "operationId": "updateCourse",
         "summary": "Update or archive an owned course",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+        "requestBody": { "$ref": "#/components/requestBodies/UpdateCourseRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/courses/{courseId}/join": {
@@ -123,7 +129,7 @@
         "tags": ["Enrolments"],
         "operationId": "requestCourseJoin",
         "summary": "Request to join a course",
-        "responses": { "201": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/me/enrolments": {
@@ -131,7 +137,11 @@
         "tags": ["Enrolments"],
         "operationId": "listMyEnrolments",
         "summary": "List the current user's enrolments",
-        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/courses/{courseId}/join-requests": {
@@ -140,7 +150,27 @@
         "tags": ["Enrolments"],
         "operationId": "listJoinRequests",
         "summary": "List join requests for an owned course",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "removed"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 }
+          }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/enrolments/{enrolmentId}": {
@@ -149,7 +179,8 @@
         "tags": ["Enrolments"],
         "operationId": "decideEnrolment",
         "summary": "Approve or reject a join request",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+        "requestBody": { "$ref": "#/components/requestBodies/EnrolmentDecisionRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/courses/{courseId}/enrolment": {
@@ -158,7 +189,27 @@
         "tags": ["Enrolments"],
         "operationId": "removeEnrolment",
         "summary": "Remove a learner enrolment",
-        "responses": { "204": { "description": "Enrolment removed" } }
+        "responses": { "204": { "description": "Enrolment removed" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/admin/courses/{courseId}/owner": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "reassignCourseOwner",
+        "summary": "Reassign a course to an active coach",
+        "requestBody": { "$ref": "#/components/requestBodies/ReassignCourseOwnerRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/admin/courses/{courseId}": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "setCourseStatusAsAdmin",
+        "summary": "Archive or reactivate a course",
+        "requestBody": { "$ref": "#/components/requestBodies/AdminCourseStatusRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/documents/upload": {
@@ -166,7 +217,8 @@
         "tags": ["Documents"],
         "operationId": "uploadDocument",
         "summary": "Upload a document and enqueue ingestion",
-        "responses": { "202": { "$ref": "#/components/responses/Success" }, "413": { "$ref": "#/components/responses/ApiError" }, "415": { "$ref": "#/components/responses/ApiError" } }
+        "requestBody": { "$ref": "#/components/requestBodies/DocumentUploadRequest" },
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "413": { "$ref": "#/components/responses/ApiError" }, "415": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/documents/{documentId}/status": {
@@ -175,7 +227,7 @@
         "tags": ["Documents"],
         "operationId": "getDocumentStatus",
         "summary": "Get ingestion status and safe diagnostics",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/documents/{documentId}/retry": {
@@ -184,7 +236,7 @@
         "tags": ["Documents"],
         "operationId": "retryIngestion",
         "summary": "Retry failed ingestion",
-        "responses": { "202": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
     "/courses/{courseId}/documents": {
@@ -193,7 +245,11 @@
         "tags": ["Documents"],
         "operationId": "listCourseDocuments",
         "summary": "List document metadata visible to the caller",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/documents/{documentId}": {
@@ -202,7 +258,7 @@
         "tags": ["Documents"],
         "operationId": "deleteDocument",
         "summary": "Enqueue hard deletion of a document",
-        "responses": { "202": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "202": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" } }
       }
     },
     "/chat/ask": {
@@ -466,8 +522,13 @@
       "get": {
         "tags": ["Admin"],
         "operationId": "listJobs",
-        "summary": "List job metadata",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
+        "summary": "List safe job metadata",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["queued", "running", "done", "failed", "dead"] } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/admin/jobs/{jobId}/retry": {
@@ -475,8 +536,8 @@
       "post": {
         "tags": ["Admin"],
         "operationId": "retryJob",
-        "summary": "Retry a dead-letter job",
-        "responses": { "202": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
+        "summary": "Retry a failed or dead-letter job",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
     "/jobs/{jobId}": {
@@ -485,7 +546,7 @@
         "tags": ["Jobs"],
         "operationId": "getJob",
         "summary": "Get caller-authorized job status",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/health": {
@@ -556,6 +617,55 @@
             "schema": { "$ref": "#/components/schemas/CoachRequestDecision" }
           }
         }
+      },
+      "CreateCourseRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CreateCourseRequest" }
+          }
+        }
+      },
+      "UpdateCourseRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UpdateCourseRequest" }
+          }
+        }
+      },
+      "EnrolmentDecisionRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/EnrolmentDecisionRequest" }
+          }
+        }
+      },
+      "ReassignCourseOwnerRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ReassignCourseOwnerRequest" }
+          }
+        }
+      },
+      "AdminCourseStatusRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AdminCourseStatusRequest" }
+          }
+        }
+      },
+      "DocumentUploadRequest": {
+        "required": true,
+        "description": "Multipart upload. Course-scope files require the owning coach; personal files require an approved learner. Content is sent to Mistral for embeddings.",
+        "content": {
+          "multipart/form-data": {
+            "schema": { "$ref": "#/components/schemas/DocumentUploadRequest" }
+          }
+        }
       }
     },
     "parameters": {
@@ -613,6 +723,68 @@
         "properties": {
           "status": { "type": "string", "enum": ["approved", "rejected"] },
           "decisionNote": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      },
+      "CreateCourseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": "string", "maxLength": 2000 }
+        }
+      },
+      "UpdateCourseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "anyOf": [
+          { "required": ["name"] },
+          { "required": ["description"] },
+          { "required": ["status"] }
+        ],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "status": { "type": "string", "enum": ["active", "archived"] },
+          "version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "EnrolmentDecisionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["approved", "rejected"] },
+          "decisionNote": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      },
+      "ReassignCourseOwnerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ownerId", "version"],
+        "properties": {
+          "ownerId": { "type": "string", "format": "uuid" },
+          "version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "AdminCourseStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "version"],
+        "properties": {
+          "status": { "type": "string", "enum": ["active", "archived"] },
+          "version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "DocumentUploadRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "scope", "file"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "scope": { "type": "string", "enum": ["course", "personal"] },
+          "file": { "type": "string", "format": "binary", "description": "PDF, DOCX or UTF-8 TXT; maximum compressed size 10 MB" }
         }
       },
       "SuccessEnvelope": {

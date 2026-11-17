@@ -166,7 +166,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | version | integer | R | Optimistic concurrency |
 | createdAt, updatedAt | iso8601 | R | |
 
-**Indexes:** `id` U; (`ownerId`,`status`) N; `status` N. **Scope:** name/description of active courses visible to any authenticated user (discovery, OPEN-7); everything else to owner and approved members. **Retention:** stash only.
+**Indexes:** `id` U; (`ownerId`,`status`) N; `status` N. **Scope:** active course cards expose only name/description to authenticated users; everything else is visible to the owner and approved members. If a coach is deactivated, an admin may reassign courses to an active coach or archive them. **Retention:** stash only.
 
 ### 4.2 `enrolments`
 | Field | Type | Req | Notes |
@@ -182,7 +182,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | createdAt, updatedAt | iso8601 | R | |
 
 **Indexes:** (`courseId`,`userId`) U; (`courseId`,`status`) N; (`userId`,`status`) N.
-**Transitions:** `pending -> approved | rejected`; `approved -> removed`; `rejected -> pending` and `removed -> pending` (re-request, reusing the same record, with a configurable cool-down). Re-applying the same decision is a no-op.
+**Transitions:** `pending -> approved | rejected`; `approved -> removed`; `rejected -> pending` and `removed -> pending` (re-request, reusing the same record, after a configurable cool-down; default 24 hours, zero disables it). Re-applying the same decision is a no-op.
 **Scope:** the learner sees their own; the course owner sees their course's; admin sees none of the content but may list enrolment metadata.
 
 ```json
@@ -218,7 +218,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | readyAt | iso8601 \| null | O | |
 
 **State machine:** `uploaded -> processing -> ready | failed`; `failed -> processing` (retry); `ready | failed -> deleting -> (removed)`; `ready -> processing` (re-embed).
-**Indexes:** `id` U; (`courseId`,`scope`,`ownerId`) N; (`courseId`,`scope`,`ownerId`,`contentHash`) U (excluding `deleting`); `status` N.
+**Indexes:** `id` U; `courseId` N; (`courseId`,`scope`,`ownerId`) N; (`courseId`,`scope`,`ownerId`,`contentHash`) U (excluding `deleting`); `status` N.
 **Scope:** `course` documents: course owner and approved members (metadata and citations only; learners see the library). `personal` documents: **owner only**; never coach, never admin. **Retention:** hard delete (architecture 14).
 
 ```json
@@ -241,7 +241,7 @@ Header:
 | ownerId | uuid | R | Copied; immutable |
 | scope | enum(`course`,`personal`) | R | Copied; immutable |
 | embeddingModel | string | R | e.g. `mistral-embed` |
-| dimension | integer | R | e.g. 1024 (read from the first embedding response) |
+| dimension | integer | R | e.g. 1024 (configured dimension; every vector is validated against it) |
 | chunkCount | integer | R | |
 | createdAt | iso8601 | R | |
 
@@ -460,19 +460,21 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | maxAttempts | integer | R | |
 | runAfter | iso8601 | R | Backoff / scheduling |
 | lockedUntil | iso8601 \| null | O | Lease for the running job |
+| leaseToken | uuid \| null | R | Identifies the current lease; stale workers cannot complete a reclaimed job |
 | payload | object | R | **IDs and parameters only; never document or question text** |
 | result | object \| null | O | Small summary / resource ids |
 | error | `{code, message}` \| null | O | |
 | createdBy | string | R | userId or `system` |
 | requestId | string \| null | O | |
+| scheduleKey | string | O | Unique task/occurrence key for idempotent scheduler dispatch |
 | createdAt, updatedAt | iso8601 | R | |
 | finishedAt | iso8601 \| null | O | |
 
-**Indexes:** `id` U; (`status`,`runAfter`) N; (`type`,`status`) N. **Scope:** the resource owner sees status through the resource endpoint; admin sees all job metadata. **Retention:** `done` jobs pruned after N days; `dead` jobs kept until acted on.
+**Indexes:** `id` U; (`status`,`runAfter`) N; (`type`,`status`) N; `scheduleKey` U when present. New jobs default to three attempts (maximum ten), with exponential retry backoff. An expired running lease is reclaimed as another attempt. Retryable failures become `dead` at the attempt limit; non-retryable failures become `failed`. Admin retry resets either terminal state to `queued`. **Scope:** the creator sees safe status metadata; admins with `executions:view` see all job metadata. Payload and result are never included in status APIs. **Retention:** `done` jobs pruned after N days; `dead` jobs kept until acted on.
 
 ```json
 { "id": "j-3", "type": "ingest", "status": "done", "attempts": 1, "maxAttempts": 3, "runAfter": "2026-11-16T09:00:01.000Z",
-  "lockedUntil": null, "payload": { "documentId": "d-7" }, "result": { "chunkCount": 118 }, "error": null,
+  "lockedUntil": null, "leaseToken": null, "payload": { "documentId": "d-7" }, "result": { "chunkCount": 118 }, "error": null,
   "createdBy": "u-coach1", "requestId": "r-55", "createdAt": "2026-11-16T09:00:00.000Z",
   "updatedAt": "2026-11-16T09:01:10.000Z", "finishedAt": "2026-11-16T09:01:10.000Z" }
 ```
@@ -517,7 +519,7 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 `id`, `version` (integer, **U**), `changedBy`, `before` (object), `after` (object), `reason` (O), `createdAt`. Config values only; **never secrets**. Scope: admin. Retention: kept.
 
 ### 8.5 `scheduler_state`
-`taskName` (string, **U**), `lastRunAt` (iso8601 | null), `nextRunAt` (iso8601), `lastStatus` (enum `ok`,`error`,`skipped`). Prevents duplicate runs after restart.
+`id` (uuid), `taskName` (string, **U**), `lastRunAt` (iso8601 | null), `nextRunAt` (iso8601), `lastStatus` (enum `ok`,`error`,`skipped`). Scheduler occurrences are enqueued with a unique `scheduleKey` before advancing `nextRunAt`; a restart between those writes reuses the same job rather than dispatching a duplicate.
 
 ### 8.6 `idempotency_keys`
 `keyHash` (sha256 of userId + route + client key, **U**), `requestHash` (sha256 of the body), `status` (integer), `resourceRef` (object | null, e.g. `{type, id}`), `createdAt`, `expiresAt`. **Stores no response body** (it could contain course content). A repeated key with the same `requestHash` returns the same resource reference; a different body returns `CONFLICT`. Pruned after `expiresAt`.
@@ -613,6 +615,5 @@ The reconciliation job also reports: chunk files without a document, documents w
 | ID | Question | Recommendation |
 |---|---|---|
 | OPEN-19 | May coaches see feedback comment text? (conflicts with "themes only") | No. Use comments as signals in the insights job only |
-| OPEN-20 | Re-request cool-down after a rejected or removed enrolment | 24 hours, configurable |
 | OPEN-21 | Store the question embedding in `messages` or recompute at clustering time | Recompute |
 | OPEN-22 | Hard delete vs stash for conversations | Hard delete (assumed above) |

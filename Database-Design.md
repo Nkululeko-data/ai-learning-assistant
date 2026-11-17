@@ -164,7 +164,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | version | integer | R | Optimistic concurrency |
 | createdAt, updatedAt | iso8601 | R | |
 
-**Indexes:** `id` U; (`ownerId`,`status`) N; `status` N. **Scope:** name/description of active courses visible to any authenticated user (discovery, OPEN-7); everything else to owner and approved members. **Retention:** stash only.
+**Indexes:** `id` U; (`ownerId`,`status`) N; `status` N. **Scope:** active course cards expose only name/description to authenticated users; everything else is visible to the owner and approved members. If a coach is deactivated, an admin may reassign courses to an active coach or archive them. **Retention:** stash only.
 
 ### 4.2 `enrolments`
 | Field | Type | Req | Notes |
@@ -180,7 +180,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | createdAt, updatedAt | iso8601 | R | |
 
 **Indexes:** (`courseId`,`userId`) U; (`courseId`,`status`) N; (`userId`,`status`) N.
-**Transitions:** `pending -> approved | rejected`; `approved -> removed`; `rejected -> pending` and `removed -> pending` (re-request, reusing the same record, with a configurable cool-down). Re-applying the same decision is a no-op.
+**Transitions:** `pending -> approved | rejected`; `approved -> removed`; `rejected -> pending` and `removed -> pending` (re-request, reusing the same record, after a configurable cool-down; default 24 hours, zero disables it). Re-applying the same decision is a no-op.
 **Scope:** the learner sees their own; the course owner sees their course's; admin sees none of the content but may list enrolment metadata.
 
 ```json
@@ -611,6 +611,5 @@ The reconciliation job also reports: chunk files without a document, documents w
 | ID | Question | Recommendation |
 |---|---|---|
 | OPEN-19 | May coaches see feedback comment text? (conflicts with "themes only") | No. Use comments as signals in the insights job only |
-| OPEN-20 | Re-request cool-down after a rejected or removed enrolment | 24 hours, configurable |
 | OPEN-21 | Store the question embedding in `messages` or recompute at clustering time | Recompute |
 | OPEN-22 | Hard delete vs stash for conversations | Hard delete (assumed above) |

@@ -22,6 +22,7 @@ Companion to the Capstone 01 brief and to `backend-architecture.md`. This file r
 | R-6 | DECIDED | **Admin sees interaction with the system only**: users, roles, config, audit logs, execution metadata. Admin has **no access to course content, documents, chunks or message text.** |
 | R-7 | DECIDED | **Coach sees engagement with their course, not individual conversations** (section 5). |
 | R-8 | DERIVED | **Privacy erasure** (POPIA): an admin-initiated job hard-deletes the user's personal notes and conversations, tombstones identity fields, revokes tokens, and pseudonymises the user in analytics so aggregates survive. |
+| R-9 | DECIDED | If a coach is deactivated, an admin may reassign owned courses to an active coach; courses not reassigned are archived. |
 
 **Permissions (DERIVED):** effective permissions = role baseline + user grants - user revokes. Keys: `course:create`, `course:edit`, `course:archive`, `document:upload`, `document:delete`, `enrolment:approve`, `insights:view`, `feedback:review`, `content:generate`, `quiz:create`, `user:manage`, `role:manage`, `config:manage`, `audit:view`, `executions:view`. A permission never replaces an ownership check; both run on every request. Learner permissions are fixed. Role and permission changes are audited (actor, target, before/after, no content).
 
@@ -32,8 +33,10 @@ Companion to the Capstone 01 brief and to `backend-architecture.md`. This file r
 | ID | Status | Decision |
 |---|---|---|
 | E-1 | DECIDED | Learners **self-join** a course, **with approval from the course owner** (the coach). |
+| E-2 | DECIDED | Any authenticated user can discover active courses; discovery exposes only the course name and description. |
+| E-3 | DECIDED | Learners may re-request enrolment after rejection or removal following a configurable 24-hour default cool-down. |
 
-Derived: `enrolments` has status `pending` / `approved` / `rejected` / `removed`, unique per (course, user). Only `approved` grants access to course documents, retrieval and coach quizzes; `pending` sees only the course card. OPEN-7: course discovery (recommended: list active courses showing name and description only).
+Derived: `enrolments` has status `pending` / `approved` / `rejected` / `removed`, unique per (course, user). Only `approved` grants access to course documents, retrieval and coach quizzes; `pending` sees only the course card. The configurable cool-down can be set to zero to disable the wait.
 
 ---
 
@@ -160,15 +163,13 @@ All provider access goes through adapters; fallback uses bounded retries then sw
 | # | Question | Recommendation |
 |---|---|---|
 | 1 | Does "basic SQL" mean SQLite? | Yes (assumed) |
-| 7 | Course discovery for self-join | List active courses (name and description only) |
 | 8 | Topic grouping method | Hybrid: embed, cluster, LLM label |
 | 9 | "Summary of the questions" reading | Theme-level summary for the coach |
 | 11 | `minCohortSize` | 3, configurable |
 | 13 | Existing repository for the assessment phase | Confirm |
-| 14 | Owner of a deactivated coach's courses | Admin reassigns, or archive |
 | 15 | Pending-coach access level | Learner access only |
 | 16 | Does the Groq fallback support JSON-schema structured output? (Inception confirmed: `mercury-3`, `response_format` json_schema, strict) | Verify before the chat graph is built; otherwise JSON mode + Zod repair on the fallback |
-| 19-22 | Data-design points (feedback comment visibility for coaches, enrolment re-request cool-down, question embedding storage, conversation hard delete) | See `Database-Design.md` section 12 |
+| 19, 21-22 | Data-design points (feedback comment visibility for coaches, question embedding storage, conversation hard delete) | See `Database-Design.md` section 12. OPEN-20 was resolved by E-3. |
 | 17 | AWS vs Azure target | Decide before deployment |
 | 18 | When to move to real databases | After coach approval; interfaces make it a swap |
 

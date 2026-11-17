@@ -73,6 +73,7 @@ The following decisions are incorporated from the supplied design decisions and 
 - `minCohortSize` defaults to 3 and is configurable.
 - Pending coach applicants retain learner access.
 - Feedback comment text remains hidden from coaches; re-request cool-down is configurable (24 hours); question embeddings are recomputed for clustering; conversation deletion is a hard delete.
+- Active course discovery exposes only name and description; a deactivated coach's courses may be reassigned to an active coach or archived.
 - The architecture/provider deviations below remain subject to the coach approval explicitly required by the design decisions.
 
 | Item | Status before implementation |
@@ -81,7 +82,7 @@ The following decisions are incorporated from the supplied design decisions and 
 | Single instance and in-process jobs | Proposed consequence of JSON storage; approve with the storage choice |
 | Inception/Groq and Mistral instead of the brief's provider choices | Proposed; coach approval and privacy notice required |
 | LangGraph.js | Proposed; coach approval and written rationale required |
-| Admin handling of a deactivated coach's courses | Open: reassign or archive |
+| Admin handling of a deactivated coach's courses | Resolved for B4: reassign to an active coach or archive |
 | Groq structured-output support | Must be verified before the chat graph; use the documented JSON-mode fallback if unsupported |
 | AWS or Azure | Open; decide before deployment |
 | Real database migration timing | Tabled until separately approved |

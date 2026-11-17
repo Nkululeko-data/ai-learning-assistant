@@ -26,6 +26,7 @@
 - Every protected operation performs both an action permission check and a resource ownership/membership check. Permissions do not imply ownership.
 - Users cannot change their own roles. Coach approval, role changes and permission overrides are admin-controlled and audited.
 - Course access requires an active course and either course ownership or approved enrolment. Pending, rejected and removed enrolments do not authorize content access.
+- Active course discovery exposes only the name and description to authenticated users. Full course details require ownership or approved enrolment; archived courses are read-only and hidden from non-members.
 
 ## Content isolation
 
@@ -38,14 +39,14 @@
 ## File and input handling
 
 - Permit PDF, DOCX and TXT only after extension allowlist, MIME validation and file-content sniffing.
-- Enforce upload and decompressed DOCX limits. Store files under random keys outside any web root; never derive paths from user filenames.
+- Enforce the 10 MB upload limit and 50 MB expanded DOCX/extracted-text limit. Store upload and chunk files under random UUID paths outside any web root with private file permissions; never derive paths from user filenames.
 - Treat uploaded text, retrieved chunks, conversation history and external content as untrusted data. Delimit evidence and never promote it to system instructions.
 - Never execute uploaded files or render uploaded content as HTML.
 - Use parameterised SQL only. Apply request body limits, security headers, CORS allowlists and validation to every endpoint.
 
 ## AI provider privacy and safety
 
-Document and personal-note text is sent to Mistral for embeddings. Questions and context may be sent to the configured LLM provider for generation. This data flow must be disclosed in the user-facing upload/privacy notices and in deployment documentation.
+Document and personal-note text is sent to Mistral for embeddings. Questions and context may be sent to the configured LLM provider for generation. This data flow must be disclosed in the user-facing upload/privacy notices and in deployment documentation before a user uploads a document or personal note. OCR is not performed; low-text PDFs fail with a safe diagnostic.
 
 Provider SDKs are isolated behind adapters; secrets are environment/secret-manager values. Logs and `agent_executions` contain metadata only: no prompts, outputs, document text or question text. Production tracing to external services is disabled and startup fails if prohibited tracing variables are set.
 

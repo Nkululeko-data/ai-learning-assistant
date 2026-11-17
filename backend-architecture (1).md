@@ -536,7 +536,7 @@ Coach quiz analytics are aggregate only (average score, hardest questions, compl
 | Quizzes | `POST /quizzes/generate`, `POST /quizzes`, `PATCH /quizzes/:id`, `POST /quizzes/:id/publish`, `GET /courses/:id/quizzes`, `GET /quizzes/:id`, `POST /quizzes/:id/attempts`, `GET /me/quiz-attempts` |
 | Feedback | `POST /feedback` |
 | Insights | `GET /courses/:id/insights`, `GET /courses/:id/gap-report`, `POST /courses/:id/gap-report/refresh` |
-| Admin | `GET/PATCH /admin/coach-requests`, `GET /admin/users`, `PATCH /admin/users/:id/role`, `/permissions`, `/status`, `POST /admin/users/:id/reset-password`, `POST /admin/users/:id/erase`, `GET /admin/audit-logs`, `GET /admin/executions`, `GET/PATCH /admin/config`, `GET /admin/jobs`, `POST /admin/jobs/:id/retry` |
+| Admin | `GET/PATCH /admin/coach-requests`, `GET /admin/users`, `PATCH /admin/users/:id/role`, `/permissions`, `/status`, `PATCH /admin/courses/:id/owner`, `/admin/courses/:id` (archive), `POST /admin/users/:id/reset-password`, `POST /admin/users/:id/erase`, `GET /admin/audit-logs`, `GET /admin/executions`, `GET/PATCH /admin/config`, `GET /admin/jobs`, `POST /admin/jobs/:id/retry` |
 | Jobs | `GET /jobs/:id` |
 
 ### 16.3 Examples
@@ -688,15 +688,13 @@ Build one step at a time, one piece at a time within a step, per section 1.
 |---|---|---|
 | OPEN-1 | Does "basic SQL" for conversation history mean SQLite? | Yes (assumed) |
 | OPEN-6 | Show answers after attempt | Yes (assumed in 11.1) |
-| OPEN-7 | Course discovery for self-join | List active courses (name/description only) |
 | OPEN-8 | Topic grouping method | Hybrid: embed, cluster, LLM label |
 | OPEN-9 | "Summary of the questions" | Theme-level summary for the coach |
 | OPEN-11 | `minCohortSize` value | 3, configurable |
 | OPEN-13 | Existing repository for B0 | Confirm |
-| OPEN-14 | Owner of a deactivated coach's courses | Admin reassigns, or archive |
 | OPEN-15 | Pending-coach access | Learner access only |
 | OPEN-16 | Does the Groq fallback support JSON-schema structured output? (Inception confirmed) | Verify before B8; if not, use JSON mode + Zod repair retry on the fallback path |
-| OPEN-19 to 22 | Data-design points: coach access to feedback comments, re-request cool-down, question embedding storage, conversation hard delete | See `Database-Design.md` section 12 |
+| OPEN-19, 21-22 | Data-design points: coach access to feedback comments, question embedding storage, conversation hard delete | See `Database-Design.md` section 12; OPEN-20 is resolved with a configurable 24-hour default |
 | OPEN-17 | AWS vs Azure target | Decide before B12 |
 | OPEN-18 | Real-database migration timing (MongoDB/PostgreSQL) | After the coach approves; repository interfaces make this a swap |
 
