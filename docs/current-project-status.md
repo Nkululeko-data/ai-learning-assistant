@@ -8,12 +8,11 @@ or tested.
 
 ## Summary
 
-The project has a working backend foundation and a substantial first
-authentication/authorization module. The latest implemented feature area is
-**B3: Auth and users**. The project is **not yet the complete learning
-assistant** described by the design: course management, document ingestion,
-retrieval, AI chat, learning content, insights, and most administrative
-features are still planned.
+The project has a working backend foundation and implemented course,
+background-job, and document-ingestion features. The latest implemented phase
+is **B6: Documents and ingestion**. The project is **not yet the complete
+learning assistant** described by the design: retrieval, AI chat, learning
+content, insights, and most administrative features are still planned.
 
 The current state is broadly:
 
@@ -24,7 +23,10 @@ The current state is broadly:
   foundation are implemented.
 - **B3:** Registration, login, tokens, permissions, password changes, and
   coach-request review are implemented.
-- **B4-B12:** Not implemented yet, except for a few admin-related operations
+- **B4:** Courses and enrolments are implemented.
+- **B5:** Background jobs and scheduling are implemented.
+- **B6:** Document upload, ingestion, chunking, and embedding are implemented.
+- **B7-B12:** Not implemented yet, except for a few admin-related operations
   already included in B3.
 
 The phase descriptions are in [`implementation-phases.md`](implementation-phases.md).
@@ -138,6 +140,19 @@ repository before implementation and should be treated as historical.
   - `createRateLimiter()` provides an in-memory fixed-window limiter;
     `emailRateLimitKey()` hashes normalized email values for limiter keys.
 
+### Courses, jobs, and document ingestion
+
+- [`backend/src/modules/courses/`](../backend/src/modules/courses/) contains
+  course and enrolment schemas, services, and routes, including course access
+  and ownership rules.
+- [`backend/src/modules/jobs/`](../backend/src/modules/jobs/) contains the
+  persistent job service, runner, scheduler, schemas, and job status routes.
+- [`backend/src/modules/documents/`](../backend/src/modules/documents/)
+  contains upload validation, text extraction, chunking, ingestion and document
+  services/routes, and the Mistral embedding adapter.
+- [`backend/src/infra/storage/private-file-storage.ts`](../backend/src/infra/storage/private-file-storage.ts)
+  provides private local file storage.
+
 ### Documentation and automated tests
 
 Architecture and API documentation currently exists under [`architecture/`](architecture/)
@@ -145,8 +160,8 @@ and [`api/`](api/), including the API specification and OpenAPI draft.
 [`implementation-phases.md`](implementation-phases.md) describes the intended
 B0-B12 build sequence.
 
-Automated tests are present for configuration, JSON storage, SQLite,
-bootstrap, HTTP foundation, and B3 authentication:
+Automated tests cover configuration, JSON storage, SQLite, bootstrap, HTTP,
+authentication, courses, jobs, and document processing:
 
 - [`backend/tests/unit/config.test.ts`](../backend/tests/unit/config.test.ts)
 - [`backend/tests/unit/json-store.test.ts`](../backend/tests/unit/json-store.test.ts)
@@ -154,18 +169,19 @@ bootstrap, HTTP foundation, and B3 authentication:
 - [`backend/tests/integration/bootstrap.test.ts`](../backend/tests/integration/bootstrap.test.ts)
 - [`backend/tests/integration/app.test.ts`](../backend/tests/integration/app.test.ts)
 - [`backend/tests/integration/auth.test.ts`](../backend/tests/integration/auth.test.ts)
+- [`backend/tests/integration/courses.test.ts`](../backend/tests/integration/courses.test.ts)
+- [`backend/tests/integration/jobs.test.ts`](../backend/tests/integration/jobs.test.ts)
+- [`backend/tests/integration/documents.test.ts`](../backend/tests/integration/documents.test.ts)
+- [`backend/tests/unit/document.chunker.test.ts`](../backend/tests/unit/document.chunker.test.ts)
+- [`backend/tests/unit/document.validation.test.ts`](../backend/tests/unit/document.validation.test.ts)
+- [`backend/tests/unit/mistral-embedding.provider.test.ts`](../backend/tests/unit/mistral-embedding.provider.test.ts)
 
-These files show intended test coverage; they do not prove the tests currently
-pass.
+The latest validation results are recorded below.
 
 ## What is not implemented yet
 
 No corresponding application modules or routes were found for:
 
-- **B4:** Courses and enrolments.
-- **B5:** Persistent job runner and scheduler.
-- **B6:** Upload endpoints, extraction, chunking, embedding, document status,
-  or deletion workflows.
 - **B7:** Access-filtered retrieval and its isolation tests.
 - **B8:** AI provider adapters, LangGraph workflows, grounded chat, citation
   validation, or chat endpoints. SQLite has tables ready for conversations and
@@ -178,30 +194,29 @@ No corresponding application modules or routes were found for:
 - **B12:** Integrated AI evaluation, generated/final Swagger output, deployment
   packaging, Docker, backup/restore, and handover materials.
 
-The root [`readme`](../readme) file is empty. No frontend source files were
-found in the repository scan, consistent with the plan to build the backend
-first.
+The root [`README.md`](../README.md) now documents the backend setup. No
+frontend source files were found in the repository scan, consistent with the
+plan to build the backend first.
 
 ## Validation
 
-After switching the conversation adapter to Node's built-in `node:sqlite`:
+After merging the B4-B6 implementation and using Node's built-in `node:sqlite`:
 
-- `npm ci` completed from `backend/` without requiring Visual Studio C++ Build
-  Tools.
-- `npm test` passed: 6 suites and 14 tests.
+- `npm install` completed from `backend/` without requiring Visual Studio C++
+  Build Tools.
+- `npm test` passed: 12 suites and 34 tests.
 - `npm run typecheck` passed.
-- `npm run build` passed, and a startup smoke test confirmed `/health` and
-  `/ready` return successfully with isolated temporary data.
+- `npm run build` passed.
 - Node 22.19 emits an `ExperimentalWarning` for `node:sqlite`; the package now
-  declares Node `>=22.5.0`, where this API is available.
-- `npm ci` reported 18 moderate audit advisories. They were not investigated or
-  changed as part of this dependency switch.
+  declares Node `>=22.13.0`, which satisfies the SQLite API and PDF.js runtime
+  requirements.
+- `npm install` reported 18 moderate audit advisories. They were not
+  investigated or changed as part of this review.
 
 ## Bottom line
 
-The project has progressed beyond the foundation: **B2 and the main B3
-authentication/authorization workflows are in the codebase**, with matching
-tests written. The next planned feature phase is **B4: courses and
-enrolments**. Before treating B2/B3 as release-ready, restore dependencies in
-an environment with the required native build tools and run the test suite and
-type-check.
+The project has progressed through **B6**, with tests for its foundation,
+authentication, courses, jobs, and document ingestion. The next planned
+feature phase is **B7: access-filtered retrieval**. The backend uses built-in
+Node SQLite and does not require the Visual Studio C++ Build Tools for its
+conversation database.

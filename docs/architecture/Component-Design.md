@@ -47,6 +47,13 @@
 - The refresh cookie is `HttpOnly`, `Secure`, `SameSite=Strict`, scoped to `/api/v1/auth`; body-based refresh is disabled by default and is an explicit config option.
 - Login/register throttling is in-memory by IP and hashed normalized email. This is appropriate only for the documented single-instance deployment.
 
+## B4 course and enrolment boundaries
+
+- `CourseService` and its repository own course visibility, versioned updates, archive state, enrolment transitions and the configurable re-request cool-down.
+- Active course discovery exposes only the course ID, name and description; full details require course ownership or an approved enrolment.
+- Course mutations enforce the coach permission and ownership together. Join approval is performed only by the owning coach; pending enrolments do not grant course access.
+- Admin course reassignment accepts only an active coach. If an owner is deactivated and a course is not reassigned, the admin may archive it.
+
 ## Primary workflows
 
 - **Authentication:** route -> auth service -> user/token repositories -> password/JWT adapters -> audit.

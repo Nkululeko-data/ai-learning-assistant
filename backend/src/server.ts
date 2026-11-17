@@ -10,6 +10,17 @@ import { JsonStore } from "./infra/jsonstore/json-store";
 import { registerSystemCollections } from "./infra/jsonstore/system-collections";
 import { JsonAuthRepository } from "./modules/auth/auth.types";
 import { AuthService } from "./modules/auth/auth.service";
+import { JsonCourseRepository } from "./modules/courses/course.types";
+import { CourseService } from "./modules/courses/course.service";
+import { JobRunner } from "./modules/jobs/job.runner";
+import { JobScheduler } from "./modules/jobs/job.scheduler";
+import { JobService } from "./modules/jobs/job.service";
+import { JsonJobRepository } from "./modules/jobs/job.types";
+import { JsonDocumentRepository } from "./modules/documents/document.types";
+import { DocumentService } from "./modules/documents/document.service";
+import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
+import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
+import { PrivateFileStorage } from "./infra/storage/private-file-storage";
 import {
   CURRENT_SCHEMA_VERSION,
   initializeSchemaMetadata,
@@ -30,11 +41,64 @@ export async function startServer(): Promise<Server> {
   const authService = new AuthService(authRepository, config, {
     allowRefreshTokenInBody: config.allowRefreshTokenInBody,
   });
+  const courseRepository = new JsonCourseRepository(collections);
+  const courseService = new CourseService(
+    courseRepository,
+    config.enrolmentReRequestCooldownHours,
+  );
+  const jobRepository = new JsonJobRepository(
+    collections.jobs,
+    collections.schedulerState,
+  );
+  const jobService = new JobService(jobRepository);
+  const documentRepository = new JsonDocumentRepository(collections);
+  const privateFileStorage = new PrivateFileStorage(config.dataDir);
+  await privateFileStorage.initialize();
+  const embeddingProvider = new MistralEmbeddingProvider(
+    config.mistralApiKey,
+    config.mistralEmbeddingModel,
+    config.mistralEmbeddingDimension,
+  );
+  const documentService = new DocumentService(
+    documentRepository,
+    privateFileStorage,
+    jobService,
+    config,
+  );
+  const documentIngestionService = new DocumentIngestionService(
+    documentRepository,
+    privateFileStorage,
+    embeddingProvider,
+    config.chunkSizeTokens,
+    config.chunkOverlapTokens,
+    config.maxDocxExpandedSizeBytes,
+  );
+  const jobRunner = new JobRunner(
+    jobService,
+    {
+      ingest: (job, signal) => documentIngestionService.ingest(job, signal),
+      cleanup: (job, signal) => documentIngestionService.cleanup(job, signal),
+    },
+    logger,
+  );
+  const jobScheduler = new JobScheduler(
+    jobRepository,
+    jobService,
+    logger,
+    [],
+  );
 
   const app = createApp({
     logger,
     corsOrigins: config.corsOrigins,
     auth: { authService, config },
+    courses: { authService, courseService },
+    jobs: { authService, jobService },
+    documents: {
+      authService,
+      documentService,
+      maxUploadSizeBytes: config.maxUploadSizeBytes,
+    },
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: isConversationDatabaseReady(database),
@@ -53,7 +117,9 @@ export async function startServer(): Promise<Server> {
     { port: config.port, dataDirectory: config.dataDir },
     "AI Learning Assistant backend started",
   );
-  registerShutdownHandlers(server, database, logger);
+  jobRunner.start();
+  jobScheduler.start();
+  registerShutdownHandlers(server, database, jobRunner, jobScheduler, logger);
   return server;
 }
 
@@ -63,23 +129,42 @@ export async function startServer(): Promise<Server> {
 function registerShutdownHandlers(
   server: Server,
   database: ReturnType<typeof openConversationDatabase>,
+  jobRunner: JobRunner,
+  jobScheduler: JobScheduler,
   logger: ReturnType<typeof createLogger>,
 ): void {
+  let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info({ signal }, "Backend shutdown requested");
-    server.close((serverError) => {
-      if (serverError) {
-        logger.error({ signal }, "HTTP server shutdown failed");
-        process.exitCode = 1;
-      }
+
+    void (async () => {
+      await jobScheduler.stop();
+      await jobRunner.stop();
+      await new Promise<void>((resolve) => {
+        server.close((serverError) => {
+          if (serverError) {
+            logger.error({ signal }, "HTTP server shutdown failed");
+            process.exitCode = 1;
+          }
+          resolve();
+        });
+      });
       try {
         database.close();
       } catch (error) {
-        const errorName =
-          error instanceof Error ? error.name : "UnknownError";
+        const errorName = error instanceof Error ? error.name : "UnknownError";
         logger.error({ signal, errorName }, "SQLite shutdown failed");
         process.exitCode = 1;
       }
+    })().catch((error: unknown) => {
+      const errorName = error instanceof Error ? error.name : "UnknownError";
+      logger.error(
+        { signal, errorName },
+        "Backend shutdown encountered an unexpected failure",
+      );
+      process.exitCode = 1;
     });
   };
 

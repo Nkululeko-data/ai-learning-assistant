@@ -40,6 +40,11 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
+**Current repository position:** B0-B6 are complete; B7 is next. B7-B12
+remain to be implemented, with approval required at each phase gate. See
+[`current-project-status.md`](current-project-status.md) for a file-level
+summary and the latest validation status.
+
 ## Phase details
 
 ### B0 — Understand the repository
@@ -90,11 +95,9 @@ bootstrap command for initial roles, permissions, and an administrator.
 and schema, reports health/readiness correctly, and the foundation and
 bootstrap behavior have automated tests.
 
-**Current repository position:** The backend includes the B2 foundation and
-has progressed into B3. See [`current-project-status.md`](current-project-status.md)
-for the implemented B3 authentication and authorization features and
-validation status. Check the code and tests before treating every B2
-requirement as complete.
+**Implementation note:** The B2 foundation includes configuration, logging,
+middleware, JSON storage, SQLite setup, health/readiness, and bootstrap. Check
+the code and tests before treating every B2 requirement as complete.
 
 ### B3 — Add accounts and access control
 
@@ -120,6 +123,10 @@ the project's archive/stash rules.
 **Done when:** Only authorized coaches can manage their courses, and only
 approved enrolments grant access to course materials and activities.
 
+**Current status:** Complete in the current workspace. Course ownership,
+discovery, archive rules, learner join requests, coach decisions, pagination,
+and admin reassignment/archive behavior are implemented and tested.
+
 ### B5 — Add background jobs and scheduling
 
 **Purpose:** Run long tasks without making API requests wait for all the work.
@@ -130,6 +137,11 @@ Handlers must be idempotent so retries do not duplicate effects.
 
 **Done when:** Jobs can be queued, completed, retried, recovered after restart,
 and inspected safely. Do this before document ingestion, which depends on it.
+
+**Current status:** Complete. Persistent job records, lease-based claiming and
+recovery, bounded retries/dead-lettering, scheduler state, safe job-status
+routes, and graceful shutdown are implemented and tested. No document-ingestion
+handlers or scheduled domain tasks are registered before B6.
 
 ### B6 — Add document upload and ingestion
 
@@ -143,6 +155,14 @@ adapter, and track status, failures, retries, and deletion through jobs.
 **Done when:** Supported files can be processed end to end; invalid or
 unreadable files fail safely with useful diagnostics; and document access and
 deletion rules are enforced.
+
+**Current status:** Complete. Authenticated PDF, DOCX and UTF-8 TXT uploads are
+validated and stored under private random keys. Persistent jobs extract text,
+create approximately 512-token chunks with 100-token overlap, embed through
+Mistral, and atomically write private chunk files. Status, retry, listing,
+deduplication and deletion endpoints enforce course and personal-note access
+rules. Focused integration and unit tests cover processing, validation,
+visibility, provider retries and deletion.
 
 ### B7 — Add access-filtered retrieval
 

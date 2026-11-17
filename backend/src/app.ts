@@ -10,6 +10,18 @@ import {
   createAuthRouter,
   type AuthRouteDependencies,
 } from "./modules/auth/auth.routes";
+import {
+  createCourseRouter,
+  type CourseRouteDependencies,
+} from "./modules/courses/course.routes";
+import {
+  createJobRouter,
+  type JobRouteDependencies,
+} from "./modules/jobs/job.routes";
+import {
+  createDocumentRouter,
+  type DocumentRouteDependencies,
+} from "./modules/documents/document.routes";
 
 export interface ReadinessStatus {
   jsonStoreOpen: boolean;
@@ -24,6 +36,9 @@ export interface AppDependencies {
   corsOrigins: string[];
   getReadiness: () => ReadinessStatus;
   auth?: AuthRouteDependencies;
+  courses?: CourseRouteDependencies;
+  jobs?: JobRouteDependencies;
+  documents?: DocumentRouteDependencies;
 }
 
 /**
@@ -59,6 +74,15 @@ export function createApp(dependencies: AppDependencies): express.Express {
   app.get("/ready", createReadinessHandler(dependencies.getReadiness));
   if (dependencies.auth) {
     app.use("/api/v1", createAuthRouter(dependencies.auth));
+  }
+  if (dependencies.courses) {
+    app.use("/api/v1", createCourseRouter(dependencies.courses));
+  }
+  if (dependencies.jobs) {
+    app.use("/api/v1", createJobRouter(dependencies.jobs));
+  }
+  if (dependencies.documents) {
+    app.use("/api/v1", createDocumentRouter(dependencies.documents));
   }
   app.use(notFoundHandler);
   app.use(createErrorHandler(dependencies.logger));

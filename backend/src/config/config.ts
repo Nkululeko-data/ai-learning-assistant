@@ -11,7 +11,8 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
-const defaultConfigSchema = z.object({
+const defaultConfigSchema = z
+  .object({
   environment: z.enum(["development", "test", "production"]),
   port: z.number().int().min(1).max(65535),
   dataDir: z.string().trim().min(1),
@@ -33,7 +34,30 @@ const defaultConfigSchema = z.object({
   authRateLimitWindowMs: z.number().int().min(1000).max(86400000),
   authRateLimitMax: z.number().int().min(1).max(1000),
   allowRefreshTokenInBody: z.boolean(),
-});
+  enrolmentReRequestCooldownHours: z.number().int().min(0).max(8760),
+  maxUploadSizeMb: z.number().int().min(1).max(100),
+  maxDocxExpandedSizeMb: z.number().int().min(1).max(512),
+  chunkSizeTokens: z.number().int().min(64).max(4096),
+  chunkOverlapTokens: z.number().int().min(0).max(4095),
+  mistralEmbeddingModel: z.string().trim().min(1).max(100),
+  mistralEmbeddingDimension: z.number().int().min(1).max(4096),
+})
+  .superRefine((config, context) => {
+    if (config.maxDocxExpandedSizeMb < config.maxUploadSizeMb) {
+      context.addIssue({
+        code: "custom",
+        path: ["maxDocxExpandedSizeMb"],
+        message: "Must be at least MAX_UPLOAD_SIZE_MB",
+      });
+    }
+    if (config.chunkOverlapTokens >= config.chunkSizeTokens) {
+      context.addIssue({
+        code: "custom",
+        path: ["chunkOverlapTokens"],
+        message: "Must be smaller than chunkSizeTokens",
+      });
+    }
+  });
 
 const optionalEmail = z.preprocess(
   (value: unknown) =>
@@ -68,6 +92,11 @@ const environmentSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(86400000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000),
+  ENROLMENT_RE_REQUEST_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(8760),
+  MAX_UPLOAD_SIZE_MB: z.coerce.number().int().min(1).max(100),
+  MAX_DOCX_EXPANDED_SIZE_MB: z.coerce.number().int().min(1).max(512),
+  CHUNK_SIZE_TOKENS: z.coerce.number().int().min(64).max(4096),
+  CHUNK_OVERLAP_TOKENS: z.coerce.number().int().min(0).max(4095),
   ALLOW_REFRESH_TOKEN_IN_BODY: z
     .enum(["true", "false"])
     .transform((value) => value === "true"),
@@ -93,6 +122,13 @@ export interface AppConfig {
   refreshTokenTtlDays: number;
   authRateLimitWindowMs: number;
   authRateLimitMax: number;
+  enrolmentReRequestCooldownHours: number;
+  maxUploadSizeBytes: number;
+  maxDocxExpandedSizeBytes: number;
+  chunkSizeTokens: number;
+  chunkOverlapTokens: number;
+  mistralEmbeddingModel: string;
+  mistralEmbeddingDimension: number;
   allowRefreshTokenInBody: boolean;
   jwtAccessSecret: string | undefined;
   jwtRefreshSecret: string | undefined;
@@ -138,6 +174,18 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       String(defaults.authRateLimitWindowMs),
     AUTH_RATE_LIMIT_MAX:
       process.env.AUTH_RATE_LIMIT_MAX ?? String(defaults.authRateLimitMax),
+    ENROLMENT_RE_REQUEST_COOLDOWN_HOURS:
+      process.env.ENROLMENT_RE_REQUEST_COOLDOWN_HOURS ??
+      String(defaults.enrolmentReRequestCooldownHours),
+    MAX_UPLOAD_SIZE_MB:
+      process.env.MAX_UPLOAD_SIZE_MB ?? String(defaults.maxUploadSizeMb),
+    MAX_DOCX_EXPANDED_SIZE_MB:
+      process.env.MAX_DOCX_EXPANDED_SIZE_MB ??
+      String(defaults.maxDocxExpandedSizeMb),
+    CHUNK_SIZE_TOKENS:
+      process.env.CHUNK_SIZE_TOKENS ?? String(defaults.chunkSizeTokens),
+    CHUNK_OVERLAP_TOKENS:
+      process.env.CHUNK_OVERLAP_TOKENS ?? String(defaults.chunkOverlapTokens),
     ALLOW_REFRESH_TOKEN_IN_BODY:
       process.env.ALLOW_REFRESH_TOKEN_IN_BODY ??
       String(defaults.allowRefreshTokenInBody),
@@ -158,6 +206,14 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   }
 
   const values = parsed.data;
+  if (values.MAX_DOCX_EXPANDED_SIZE_MB < values.MAX_UPLOAD_SIZE_MB) {
+    throw new Error(
+      "MAX_DOCX_EXPANDED_SIZE_MB must be at least MAX_UPLOAD_SIZE_MB",
+    );
+  }
+  if (values.CHUNK_OVERLAP_TOKENS >= values.CHUNK_SIZE_TOKENS) {
+    throw new Error("CHUNK_OVERLAP_TOKENS must be smaller than CHUNK_SIZE_TOKENS");
+  }
   const corsOrigins = values.CORS_ORIGINS.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -188,6 +244,15 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     refreshTokenTtlDays: values.REFRESH_TOKEN_TTL_DAYS,
     authRateLimitWindowMs: values.AUTH_RATE_LIMIT_WINDOW_MS,
     authRateLimitMax: values.AUTH_RATE_LIMIT_MAX,
+    enrolmentReRequestCooldownHours:
+      values.ENROLMENT_RE_REQUEST_COOLDOWN_HOURS,
+    maxUploadSizeBytes: values.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+    maxDocxExpandedSizeBytes:
+      values.MAX_DOCX_EXPANDED_SIZE_MB * 1024 * 1024,
+    chunkSizeTokens: values.CHUNK_SIZE_TOKENS,
+    chunkOverlapTokens: values.CHUNK_OVERLAP_TOKENS,
+    mistralEmbeddingModel: defaults.mistralEmbeddingModel,
+    mistralEmbeddingDimension: defaults.mistralEmbeddingDimension,
     allowRefreshTokenInBody: values.ALLOW_REFRESH_TOKEN_IN_BODY,
     jwtAccessSecret: values.JWT_ACCESS_SECRET,
     jwtRefreshSecret: values.JWT_REFRESH_SECRET,

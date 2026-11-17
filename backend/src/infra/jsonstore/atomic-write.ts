@@ -8,10 +8,11 @@ import { dirname } from "node:path";
 export async function writeJsonAtomically(
   filePath: string,
   value: unknown,
+  mode?: number,
 ): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
-  const handle = await open(temporaryPath, "wx");
+  const handle = await open(temporaryPath, "wx", mode);
   let writeError: unknown;
   let closeError: unknown;
   try {

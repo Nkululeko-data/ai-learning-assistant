@@ -91,6 +91,80 @@ export const coachRequestSchema = z
   })
   .strict();
 
+export const courseSchema = z
+  .object({
+    id: idSchema,
+    ownerId: idSchema,
+    name: z.string().min(1).max(120),
+    description: z.string().max(2000).optional(),
+    status: z.enum(["active", "archived"]),
+    archivedAt: timestampSchema.nullable().optional(),
+    archivedBy: idSchema.nullable().optional(),
+    version: z.number().int().positive(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const enrolmentSchema = z
+  .object({
+    id: idSchema,
+    courseId: idSchema,
+    userId: idSchema,
+    status: z.enum(["pending", "approved", "rejected", "removed"]),
+    requestedAt: timestampSchema,
+    decidedBy: idSchema.nullable().optional(),
+    decidedAt: timestampSchema.nullable().optional(),
+    decisionNote: z.string().max(1000).nullable().optional(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const documentSchema = z
+  .object({
+    id: idSchema,
+    courseId: idSchema,
+    ownerId: idSchema,
+    scope: z.enum(["course", "personal"]),
+    filename: z.string().min(1).max(255),
+    storageKey: idSchema,
+    mimeType: z.enum([
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ]),
+    sizeBytes: z.number().int().positive(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    status: z.enum([
+      "uploaded",
+      "processing",
+      "ready",
+      "failed",
+      "deleting",
+    ]),
+    errorCode: z.string().regex(/^[A-Z0-9_]{1,80}$/).nullable().optional(),
+    errorDetail: z.string().max(500).nullable().optional(),
+    extractionDiagnostics: z
+      .object({
+        parser: z.enum(["pdfjs-dist", "mammoth", "utf8"]),
+        pageCount: z.number().int().nonnegative(),
+        charCount: z.number().int().nonnegative(),
+        lowTextPages: z.array(z.number().int().positive()).max(1000),
+        warnings: z.array(z.string().max(200)).max(100),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    chunkCount: z.number().int().nonnegative().nullable().optional(),
+    embeddingModel: z.string().min(1).max(100).nullable().optional(),
+    ingestJobId: idSchema.nullable().optional(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+    readyAt: timestampSchema.nullable().optional(),
+  })
+  .strict();
+
 export const auditLogSchema = z
   .object({
     id: idSchema,
@@ -106,6 +180,59 @@ export const auditLogSchema = z
   })
   .strict();
 
+const jobDataSchema = z.record(
+  z.string().min(1).max(100),
+  z.union([z.string().max(500), z.number().finite(), z.boolean(), z.null()]),
+);
+
+export const jobSchema = z
+  .object({
+    id: idSchema,
+    type: z.enum([
+      "ingest",
+      "reembed",
+      "generate",
+      "cluster",
+      "cleanup",
+      "reconcile",
+      "backup",
+      "prune",
+    ]),
+    status: z.enum(["queued", "running", "done", "failed", "dead"]),
+    attempts: z.number().int().nonnegative(),
+    maxAttempts: z.number().int().min(1).max(10),
+    runAfter: timestampSchema,
+    lockedUntil: timestampSchema.nullable(),
+    leaseToken: idSchema.nullable(),
+    payload: jobDataSchema,
+    result: jobDataSchema.nullable().optional(),
+    error: z
+      .object({
+        code: z.string().regex(/^[A-Z0-9_]{1,80}$/),
+        message: z.string().max(200),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    createdBy: z.string().min(1).max(100),
+    requestId: z.string().max(128).nullable().optional(),
+    scheduleKey: z.string().min(1).max(256).optional(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+    finishedAt: timestampSchema.nullable(),
+  })
+  .strict();
+
+export const schedulerStateSchema = z
+  .object({
+    id: idSchema,
+    taskName: z.string().min(1).max(100),
+    lastRunAt: timestampSchema.nullable(),
+    nextRunAt: timestampSchema,
+    lastStatus: z.enum(["ok", "error", "skipped"]),
+  })
+  .strict();
+
 export type UserRecord = z.infer<typeof userSchema>;
 export type RoleRecord = z.infer<typeof roleSchema>;
 export type PermissionRecord = z.infer<typeof permissionSchema>;
@@ -115,7 +242,12 @@ export type UserPermissionOverrideRecord = z.infer<
 >;
 export type RefreshTokenRecord = z.infer<typeof refreshTokenSchema>;
 export type CoachRequestRecord = z.infer<typeof coachRequestSchema>;
+export type CourseRecord = z.infer<typeof courseSchema>;
+export type EnrolmentRecord = z.infer<typeof enrolmentSchema>;
+export type DocumentRecord = z.infer<typeof documentSchema>;
 export type AuditLogRecord = z.infer<typeof auditLogSchema>;
+export type JobRecord = z.infer<typeof jobSchema>;
+export type SchedulerStateRecord = z.infer<typeof schedulerStateSchema>;
 
 export interface SystemCollections {
   users: JsonCollection<UserRecord>;
@@ -125,11 +257,16 @@ export interface SystemCollections {
   userPermissionOverrides: JsonCollection<UserPermissionOverrideRecord>;
   refreshTokens: JsonCollection<RefreshTokenRecord>;
   coachRequests: JsonCollection<CoachRequestRecord>;
+  courses: JsonCollection<CourseRecord>;
+  enrolments: JsonCollection<EnrolmentRecord>;
+  documents: JsonCollection<DocumentRecord>;
   auditLogs: JsonCollection<AuditLogRecord>;
+  jobs: JsonCollection<JobRecord>;
+  schedulerState: JsonCollection<SchedulerStateRecord>;
 }
 
 /**
- * Registers the identity and audit collections required by bootstrap and auth.
+ * Registers the identity, course, document, audit, and background-job collections.
  */
 export function registerSystemCollections(store: JsonStore): SystemCollections {
   return {
@@ -209,6 +346,63 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         },
       ],
     }),
+    courses: store.register({
+      name: "courses",
+      schema: courseSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "ownerId", key: (record) => record.ownerId },
+        {
+          name: "ownerStatus",
+          key: (record) => `${record.ownerId}:${record.status}`,
+        },
+        { name: "status", key: (record) => record.status },
+      ],
+    }),
+    enrolments: store.register({
+      name: "enrolments",
+      schema: enrolmentSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        {
+          name: "courseUser",
+          key: (record) => `${record.courseId}:${record.userId}`,
+          unique: true,
+        },
+        {
+          name: "courseStatus",
+          key: (record) => `${record.courseId}:${record.status}`,
+        },
+        {
+          name: "userStatus",
+          key: (record) => `${record.userId}:${record.status}`,
+        },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "userId", key: (record) => record.userId },
+      ],
+    }),
+    documents: store.register({
+      name: "documents",
+      schema: documentSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "courseId", key: (record) => record.courseId },
+        {
+          name: "courseScopeOwner",
+          key: (record) =>
+            `${record.courseId}:${record.scope}:${record.ownerId}`,
+        },
+        {
+          name: "courseScopeOwnerHash",
+          key: (record) =>
+            record.status === "deleting"
+              ? undefined
+              : `${record.courseId}:${record.scope}:${record.ownerId}:${record.contentHash}`,
+          unique: true,
+        },
+        { name: "status", key: (record) => record.status },
+      ],
+    }),
     auditLogs: store.register({
       name: "audit_logs",
       schema: auditLogSchema,
@@ -216,6 +410,34 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "id", key: (record) => record.id, unique: true },
         { name: "actorId", key: (record) => record.actorId },
         { name: "createdAt", key: (record) => record.createdAt },
+      ],
+    }),
+    jobs: store.register({
+      name: "jobs",
+      schema: jobSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        {
+          name: "statusRunAfter",
+          key: (record) => `${record.status}:${record.runAfter}`,
+        },
+        {
+          name: "typeStatus",
+          key: (record) => `${record.type}:${record.status}`,
+        },
+        {
+          name: "scheduleKey",
+          key: (record) => record.scheduleKey,
+          unique: true,
+        },
+      ],
+    }),
+    schedulerState: store.register({
+      name: "scheduler_state",
+      schema: schedulerStateSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "taskName", key: (record) => record.taskName, unique: true },
       ],
     }),
   };
