@@ -29,12 +29,14 @@ minimum length (12 characters by default). Then seed the initial roles,
 permissions, and administrator:
 
 ```powershell
+Set-Location .\backend
 npm run bootstrap
 ```
 
 Start the development server:
 
 ```powershell
+Set-Location .\backend
 npm run dev
 ```
 
@@ -83,6 +85,18 @@ features:
   and invalid files, course-owner versus personal-note access, ingestion
   success/failure, and retry/delete behavior.
 
+Run the focused B6 tests from the `backend` directory:
+
+```powershell
+npm test -- --runTestsByPath tests/integration/documents.test.ts tests/unit/document.chunker.test.ts tests/unit/document.validation.test.ts tests/unit/mistral-embedding.provider.test.ts
+```
+
+Run the focused B5 integration tests from the `backend` directory:
+
+```powershell
+npm test -- --runTestsByPath tests/integration/jobs.test.ts
+```
+
 For B6, the upload endpoint is `POST /api/v1/documents/upload`; requests use
 multipart fields `courseId`, `scope` (`course` or `personal`), and `file`.
 Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
@@ -99,6 +113,7 @@ From the `backend` directory, configure the production environment and secrets,
 then build and start the compiled server:
 
 ```powershell
+Set-Location .\backend
 npm run build
 npm start
 ```
