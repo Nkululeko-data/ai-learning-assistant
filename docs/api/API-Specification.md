@@ -32,6 +32,7 @@
 | `RATE_LIMITED`, `QUOTA_EXCEEDED` | 429 | Rate or usage limit reached |
 | `GENERATION_FAILED` | 502 | Structured output invalid after repair/fallback |
 | `PROVIDER_UNAVAILABLE` | 503 | Required provider unavailable |
+| `NODE_TIMEOUT` | 504 | A bounded AI workflow node exceeded its configured timeout |
 | `SERVICE_NOT_READY` | 503 | One or more readiness checks failed |
 | `INTERNAL_ERROR` | 500 | Unexpected failure; internals are not exposed |
 
@@ -69,7 +70,11 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Conversations | `PATCH /conversations/{id}` | Rename owned conversation |
 | Conversations | `DELETE /conversations/{id}` | Hard-delete owned conversation and messages |
 | Learning | `POST /summaries/generate` | Generate/store selected-source summary |
+| Learning | `GET /courses/{id}/summaries`, `GET /summaries/{id}` | List or read caller-visible summaries |
+| Learning | `POST /summaries/{id}/publish` | Publish an owned coach summary draft |
 | Learning | `POST /flashcards/generate` | Generate/store selected-source flashcards |
+| Learning | `GET /courses/{id}/flashcards`, `GET /flashcards/{id}` | List or read caller-visible flashcard sets |
+| Learning | `POST /flashcards/{id}/publish` | Publish an owned coach flashcard draft |
 | Quizzes | `POST /quizzes/generate` | Generate private learner quiz or coach draft |
 | Quizzes | `POST /quizzes` | Create coach quiz draft |
 | Quizzes | `PATCH /quizzes/{id}` | Edit draft or create new version when required |
@@ -207,6 +212,100 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   must disclose this before upload. `MISTRAL_API_KEY` is optional at startup
   but required to complete ingestion; provider failures are exposed only as
   safe status diagnostics.
+
+## Chat and conversation contracts (B8)
+
+- `POST /chat/ask` requires `courseId` (UUID) and `question` (1-4000
+  characters); `conversationId` is optional for follow-up turns. The caller
+  must own the course or have an approved enrolment. Administrators do not
+  receive course-content access. Example:
+
+  ```json
+  {
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "question": "What is a database?"
+  }
+  ```
+
+- A grounded response includes `conversationId`, `messageId`,
+  `executionId`, `groundingStatus`, `answer`, `message`, `citations`, and
+  `retrievalScoreTop`. `grounded` returns an answer and citations resolved
+  from the numbered chunks actually sent to the model. `insufficient` and
+  `unverified` suppress the draft and return `answer: null`; only explicit
+  learning-content intents return a `suggestedAction`.
+- `Accept: text/event-stream` replays the already validated response in a
+  `response` event followed by `done`. It does not expose provider tokens
+  before evidence and citations have been checked.
+- Conversation list accepts optional `courseId`, `limit` (default 20,
+  maximum 50), and an opaque base64url `cursor`; paginated responses include
+  `meta.nextCursor`. Read, rename, and delete operations are restricted to the
+  owning user. Deletion hard-deletes the conversation and its messages.
+- Chat requests are limited to 10 per minute, 100 requests per UTC day, and
+  100,000 recorded provider tokens per UTC day by default. These limits are
+  configurable. `429 QUOTA_EXCEEDED` indicates a daily limit; `429
+  RATE_LIMITED` indicates the short-window limit.
+- Each graph node has a configurable timeout (`CHAT_NODE_TIMEOUT_MS`, 60
+  seconds by default); an expired node returns `504 NODE_TIMEOUT` and records
+  only safe execution metadata.
+- The question, bounded conversation history, and retrieved context are sent
+  to the configured LLM provider. The question is sent to Mistral for query
+  embedding. This data flow must be disclosed to users. Execution records
+  store only request/resource identifiers, node/status/timing, token counts,
+  provider/model, prompt version, and safe error codes—not prompts, answers,
+  questions, or document text.
+
+## Learning content and quiz contracts (B9)
+
+- All generation calls require `courseId` and a `selection` containing 1-10
+  unique `documentIds`; optional `sections` and `topic` further constrain the
+  selected material. A document the caller cannot access is rejected rather
+  than silently skipped. Documents must be ready and use the active embedding
+  model. Every returned summary block, flashcard, and quiz question must cite
+  chunk IDs from the bounded context sent to the model.
+- Summary request:
+
+  ```json
+  {
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "selection": {
+      "documentIds": ["00000000-0000-4000-8000-000000000002"],
+      "sections": ["Transactions"],
+      "topic": "atomicity"
+    },
+    "scope": "section",
+    "regenerate": false
+  }
+  ```
+
+  Section scope requires at least one selected section. An identical request
+  reuses its stored result unless `regenerate` is true; regeneration stores a
+  new version.
+- Flashcard generation accepts `count` from 1-50 (default 10) and the same
+  selection shape. Quiz generation accepts `count` from 1-50 (default 10),
+  `types` (`mcq` and/or `true_false`, default `mcq`), and `difficulty`
+  (`easy`, `medium`, or `hard`, default `medium`).
+- Learner-generated summaries, flashcards, and quizzes are private to the
+  learner; generated learner quizzes are immediately available for attempts.
+  Coach-generated summaries and flashcards are course-wide drafts; only the
+  course owner can read them before publication. Coaches publish with
+  `POST /summaries/{id}/publish` or `POST /flashcards/{id}/publish`, sending
+  `{ "version": 1 }`. Read/list routes expose published course content to
+  approved learners and drafts to the owning coach.
+- `POST /quizzes` creates a coach draft. Questions require source chunk IDs
+  from the supplied accessible `sourceDocumentIds`. `PATCH /quizzes/{id}`
+  requires the current `version`; editing a published quiz with attempts
+  creates a new draft version and supersedes the old one.
+- Quiz reads and course lists always use a caller-specific view. Before an
+  attempt, learner views omit `correctOptionId` and `explanation`, including
+  for the learner's own generated quizzes. `POST /quizzes/{id}/attempts`
+  requires one selected option for every question; the server scores and
+  stores the attempt, then returns correct answers and explanations. The
+  attempt records the exact quiz version. Learners can list only their own
+  attempts with `GET /me/quiz-attempts`.
+- Content-generation requests are subject to the configured per-user
+  short-window and shared daily AI request/token quotas. `INSUFFICIENT_MATERIAL`
+  means the selected source set could not support generation;
+  `GENERATION_FAILED` means output or source references failed validation.
 
 ## Critical response contracts
 

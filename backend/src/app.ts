@@ -22,6 +22,14 @@ import {
   createDocumentRouter,
   type DocumentRouteDependencies,
 } from "./modules/documents/document.routes";
+import {
+  createChatRouter,
+  type ChatRouteDependencies,
+} from "./modules/chat/chat.routes";
+import {
+  createLearningRouter,
+  type LearningRouteDependencies,
+} from "./modules/learning/learning.routes";
 
 export interface ReadinessStatus {
   jsonStoreOpen: boolean;
@@ -39,6 +47,8 @@ export interface AppDependencies {
   courses?: CourseRouteDependencies;
   jobs?: JobRouteDependencies;
   documents?: DocumentRouteDependencies;
+  chat?: ChatRouteDependencies;
+  learning?: LearningRouteDependencies;
 }
 
 /**
@@ -83,6 +93,12 @@ export function createApp(dependencies: AppDependencies): express.Express {
   }
   if (dependencies.documents) {
     app.use("/api/v1", createDocumentRouter(dependencies.documents));
+  }
+  if (dependencies.chat) {
+    app.use("/api/v1", createChatRouter(dependencies.chat));
+  }
+  if (dependencies.learning) {
+    app.use("/api/v1", createLearningRouter(dependencies.learning));
   }
   app.use(notFoundHandler);
   app.use(createErrorHandler(dependencies.logger));

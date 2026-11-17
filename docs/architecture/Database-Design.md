@@ -496,6 +496,8 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | retryCount | integer | R | |
 | promptVersion | string \| null | O | |
 | errorCode | string \| null | O | |
+| userId, courseId, conversationId | uuid | R | Resource identifiers only |
+| usageDate | `YYYY-MM-DD` | R | UTC day used for quota accounting |
 | createdAt | iso8601 | R | |
 
 **Never stored:** prompts, model outputs, retrieved text, question text. **Indexes:** `executionId` N; `createdAt` N; (`graph`,`node`,`createdAt`) N. **Scope:** admin (`executions:view`). **Retention:** 30 days by default.
@@ -555,6 +557,7 @@ File `data/sqlite/conversations.db`, WAL mode, foreign keys on, parameterised qu
 | grounding_status | TEXT | yes | CHECK in (`grounded`,`insufficient`,`unverified`) |
 | cited_chunk_ids | TEXT | yes | JSON array of chunk ids |
 | cited_document_ids | TEXT | yes | JSON array |
+| citations | TEXT | yes | JSON array of system-resolved citation display metadata |
 | retrieval_score_top | REAL | yes | |
 | question_embedding_ref | TEXT | yes | Reference to the question vector for clustering. **Open detail:** store inline as base64 in this column, or recompute on demand at clustering time (recommended: recompute, to avoid storing a second copy of learner text-derived data) |
 
@@ -565,6 +568,16 @@ CREATE INDEX idx_msg_conv_created ON messages(conversation_id, created_at);
 CREATE INDEX idx_msg_grounding ON messages(grounding_status) WHERE grounding_status IS NOT NULL;
 ```
 **Scope:** owner only. Coach and admin code paths must not open this database for content (they use `activity_events`, `gap_reports`, `feedback`). The insights job reads question text here **inside the job only** and persists themes only. **Retention:** until the user deletes the conversation or is erased.
+
+### 9.3 `chat_daily_usage`
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| user_id | TEXT | no | |
+| usage_date | TEXT | no | UTC `YYYY-MM-DD` |
+| request_count | INTEGER | no | Daily request quota |
+| token_count | INTEGER | no | Recorded provider token usage |
+
+Primary key: (`user_id`, `usage_date`). This table contains quota counts only; node execution metadata is stored in the JSON `agent_executions` collection.
 
 ```json
 { "id": "m-81", "conversation_id": "cv-4", "role": "assistant", "content": "The course material doesn't cover this question.",

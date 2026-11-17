@@ -1,6 +1,10 @@
 import type { Server } from "node:http";
 import { createApp } from "./app";
-import { loadConfig, hasProviderConfiguration } from "./config/config";
+import {
+  loadConfig,
+  hasProviderConfiguration,
+  type AppConfig,
+} from "./config/config";
 import { createLogger } from "./common/logging/logger";
 import {
   isConversationDatabaseReady,
@@ -21,6 +25,19 @@ import { DocumentService } from "./modules/documents/document.service";
 import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
 import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
 import { PrivateFileStorage } from "./infra/storage/private-file-storage";
+import { ConversationRepository } from "./infra/sqlite/conversation.repository";
+import { ChatService } from "./modules/chat/chat.service";
+import { RetrievalService } from "./modules/retrieval/retrieval.service";
+import { InceptionProvider } from "./ai/providers/inception.provider";
+import { GroqProvider } from "./ai/providers/groq.provider";
+import { StructuredOutputService } from "./ai/providers/structured-output.service";
+import { loadChatPrompts } from "./ai/prompts/load-chat-prompts";
+import { LangGraphChatRunner } from "./ai/graphs/chat.graph";
+import { JsonAgentExecutionRepository } from "./modules/chat/chat-execution.repository";
+import { LearningRepository } from "./modules/learning/learning.repository";
+import { LearningService } from "./modules/learning/learning.service";
+import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
+import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
 import {
   CURRENT_SCHEMA_VERSION,
   initializeSchemaMetadata,
@@ -31,6 +48,7 @@ import {
  */
 export async function startServer(): Promise<Server> {
   const config = loadConfig();
+  configureTracing(config.environment);
   const logger = createLogger(config.logLevel);
   const store = new JsonStore(config.dataDir);
   const collections = registerSystemCollections(store);
@@ -57,6 +75,12 @@ export async function startServer(): Promise<Server> {
     config.chunkCacheMaxDocuments,
   );
   await privateFileStorage.initialize();
+  const retrievalService = new RetrievalService(
+    documentRepository,
+    privateFileStorage,
+    config.mistralEmbeddingModel,
+    config.mistralEmbeddingDimension,
+  );
   const embeddingProvider = new MistralEmbeddingProvider(
     config.mistralApiKey,
     config.mistralEmbeddingModel,
@@ -75,6 +99,40 @@ export async function startServer(): Promise<Server> {
     config.chunkSizeTokens,
     config.chunkOverlapTokens,
     config.maxDocxExpandedSizeBytes,
+  );
+  const structuredOutput = new StructuredOutputService(
+    new InceptionProvider(config.inceptionApiKey, config.inceptionModel),
+    new GroqProvider(config.groqApiKey, config.groqModel),
+    config.chatMaxCompletionTokens,
+  );
+  const conversationRepository = new ConversationRepository(database);
+  const executionRepository = new JsonAgentExecutionRepository(
+    collections.agentExecutions,
+    conversationRepository,
+  );
+  const chatService = new ChatService(
+    conversationRepository,
+    executionRepository,
+    retrievalService,
+    embeddingProvider,
+    new LangGraphChatRunner(),
+    structuredOutput,
+    await loadChatPrompts(config.chatPromptVersion),
+    config,
+  );
+  const learningRepository = new LearningRepository(collections);
+  const learningService = new LearningService(
+    learningRepository,
+    retrievalService,
+    embeddingProvider,
+    structuredOutput,
+    new JsonLearningExecutionRepository(
+      collections.agentExecutions,
+      conversationRepository,
+    ),
+    conversationRepository,
+    config,
+    await loadLearningPrompt(config.learningPromptVersion),
   );
   const jobRunner = new JobRunner(
     jobService,
@@ -102,6 +160,18 @@ export async function startServer(): Promise<Server> {
       documentService,
       maxUploadSizeBytes: config.maxUploadSizeBytes,
     },
+    chat: {
+      authService,
+      chatService,
+      rateLimitWindowMs: config.chatRateLimitWindowMs,
+      rateLimitMax: config.chatRateLimitMax,
+    },
+    learning: {
+      authService,
+      learningService,
+      rateLimitWindowMs: config.chatRateLimitWindowMs,
+      rateLimitMax: config.chatRateLimitMax,
+    },
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: isConversationDatabaseReady(database),
@@ -124,6 +194,25 @@ export async function startServer(): Promise<Server> {
   jobScheduler.start();
   registerShutdownHandlers(server, database, jobRunner, jobScheduler, logger);
   return server;
+}
+
+function configureTracing(environment: AppConfig["environment"]): void {
+  const tracingKeys = [
+    "LANGCHAIN_TRACING",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_TRACING",
+  ];
+  const enabledKeys = tracingKeys.filter(
+    (key) => process.env[key]?.trim().toLowerCase() === "true",
+  );
+  if (environment === "production" && enabledKeys.length > 0) {
+    throw new Error(
+      `Tracing must be disabled in production: ${enabledKeys.join(", ")}`,
+    );
+  }
+  process.env.LANGCHAIN_TRACING = "false";
+  process.env.LANGCHAIN_TRACING_V2 = "false";
+  process.env.LANGSMITH_TRACING = "false";
 }
 
 /**

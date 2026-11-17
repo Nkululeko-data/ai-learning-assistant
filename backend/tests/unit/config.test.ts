@@ -19,6 +19,23 @@ const configEnvironmentKeys = [
   "CHUNK_SIZE_TOKENS",
   "CHUNK_OVERLAP_TOKENS",
   "CHUNK_CACHE_MAX_DOCUMENTS",
+  "INCEPTION_MODEL",
+  "GROQ_MODEL",
+  "CHAT_MIN_SIMILARITY",
+  "CHAT_MIN_CHUNKS",
+  "CHAT_MIN_CITATIONS",
+  "CHAT_TOP_K",
+  "CHAT_MAX_CONTEXT_TOKENS",
+  "CHAT_HISTORY_WINDOW",
+  "CHAT_HISTORY_TOKEN_BUDGET",
+  "CHAT_NODE_TIMEOUT_MS",
+  "CHAT_MAX_COMPLETION_TOKENS",
+  "CHAT_PROMPT_VERSION",
+  "LEARNING_PROMPT_VERSION",
+  "CHAT_RATE_LIMIT_WINDOW_MS",
+  "CHAT_RATE_LIMIT_MAX",
+  "CHAT_DAILY_REQUEST_LIMIT",
+  "CHAT_DAILY_TOKEN_LIMIT",
   "ALLOW_REFRESH_TOKEN_IN_BODY",
   "JWT_ACCESS_SECRET",
   "JWT_REFRESH_SECRET",
@@ -67,6 +84,12 @@ function verifiesDefaultConfiguration(): void {
   expect(config.chunkSizeTokens).toBe(512);
   expect(config.chunkOverlapTokens).toBe(100);
   expect(config.chunkCacheMaxDocuments).toBe(100);
+  expect(config.groqModel).toBe("openai/gpt-oss-20b");
+  expect(config.chatMinSimilarity).toBe(0.3);
+  expect(config.chatTopK).toBe(8);
+  expect(config.chatDailyRequestLimit).toBe(100);
+  expect(config.chatDailyTokenLimit).toBe(100_000);
+  expect(config.learningPromptVersion).toBe("v1");
   expect(config.corsOrigins).toEqual(["http://localhost:5173"]);
 }
 
@@ -114,9 +137,23 @@ function verifiesDocumentConfiguration(): void {
   );
 }
 
+function verifiesChatDailyQuotaConfiguration(): void {
+  process.env.CHAT_DAILY_REQUEST_LIMIT = "0";
+  expect(() => loadConfig({ requireJwtSecrets: false })).toThrow(
+    "CHAT_DAILY_REQUEST_LIMIT",
+  );
+  delete process.env.CHAT_DAILY_REQUEST_LIMIT;
+
+  process.env.CHAT_DAILY_TOKEN_LIMIT = "100000001";
+  expect(() => loadConfig({ requireJwtSecrets: false })).toThrow(
+    "CHAT_DAILY_TOKEN_LIMIT",
+  );
+}
+
 describe("configuration", () => {
   test("loads validated default values", verifiesDefaultConfiguration);
   test("requires auth secrets and rejects wildcard credentialed CORS", verifiesRequiredSecretsAndCorsValidation);
   test("validates the enrolment re-request cooldown", verifiesEnrolmentCooldownConfiguration);
   test("validates document upload and chunk limits", verifiesDocumentConfiguration);
+  test("validates chat daily quota limits", verifiesChatDailyQuotaConfiguration);
 });

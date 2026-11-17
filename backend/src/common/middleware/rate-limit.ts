@@ -14,6 +14,7 @@ export function createRateLimiter(options: {
   windowMs: number;
   max: number;
   key: (request: Parameters<RequestHandler>[0]) => string;
+  message?: string;
 }): RequestHandler {
   const entries = new Map<string, RateLimitEntry>();
   const maximumEntries = 10_000;
@@ -39,7 +40,7 @@ export function createRateLimiter(options: {
           new AppError(
             "RATE_LIMITED",
             429,
-            "Too many authentication attempts; try again later",
+            options.message ?? "Too many authentication attempts; try again later",
           ),
         );
         return;

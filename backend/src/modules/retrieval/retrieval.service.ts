@@ -48,6 +48,7 @@ export interface RetrievedChunk {
   filename: string;
   scope: DocumentRecord["scope"];
   text: string;
+  tokenEstimate: number;
   pageStart: number;
   pageEnd: number;
   section: string | null;
@@ -56,6 +57,8 @@ export interface RetrievedChunk {
 
 export interface RetrievalOptions {
   limit?: number;
+  documentIds?: string[];
+  sections?: string[];
 }
 
 export interface RetrievalRepository {
@@ -117,22 +120,69 @@ export class RetrievalService {
       );
     }
 
-    const candidates = this.repository
-      .listDocumentsByCourse(courseId)
+    const courseDocuments = this.repository.listDocumentsByCourse(courseId);
+    const accessibleDocuments = courseDocuments.filter(
+      (document) =>
+        document.courseId === courseId &&
+        (document.scope === "course" ||
+          (document.scope === "personal" && document.ownerId === actor.id)),
+    );
+    if (options.documentIds) {
+      const selectedIds = new Set(options.documentIds);
+      if (selectedIds.size !== options.documentIds.length) {
+        throw new AppError(
+          "VALIDATION_FAILED",
+          422,
+          "Selected document IDs must be unique",
+        );
+      }
+      if (
+        options.documentIds.some(
+          (documentId) =>
+            !accessibleDocuments.some((document) => document.id === documentId),
+        )
+      ) {
+        throw new NotFoundError("Selected source document not found");
+      }
+    }
+
+    const candidates = accessibleDocuments
       .filter(
         (document) =>
-          document.courseId === courseId &&
           document.status === "ready" &&
           document.embeddingModel === this.embeddingModel &&
-          (document.scope === "course" ||
-            (document.scope === "personal" &&
-              document.ownerId === actor.id)),
+          (!options.documentIds ||
+            options.documentIds.includes(document.id)),
       );
+    if (
+      options.documentIds &&
+      candidates.length !== options.documentIds.length
+    ) {
+      throw insufficientMaterialError(
+        "All selected documents must be ready for learning-content generation",
+      );
+    }
     const scored: RetrievedChunk[] = [];
+    const matchedSections = new Set<string>();
+    const requestedSections = new Set(
+      (options.sections ?? []).map(normalizeSection),
+    );
 
     for (const document of candidates) {
       const chunkFile = await this.readValidatedChunkFile(document);
       for (const chunk of chunkFile.chunks) {
+        const normalizedSection = chunk.section
+          ? normalizeSection(chunk.section)
+          : null;
+        if (normalizedSection && requestedSections.has(normalizedSection)) {
+          matchedSections.add(normalizedSection);
+        }
+        if (
+          requestedSections.size > 0 &&
+          (!normalizedSection || !requestedSections.has(normalizedSection))
+        ) {
+          continue;
+        }
         const vector = decodeEmbedding(
           chunk.embedding,
           this.embeddingDimension,
@@ -149,6 +199,7 @@ export class RetrievalService {
           filename: document.filename,
           scope: document.scope,
           text: chunk.text,
+          tokenEstimate: chunk.tokenEstimate,
           pageStart: chunk.pageStart,
           pageEnd: chunk.pageEnd,
           section: chunk.section,
@@ -158,12 +209,98 @@ export class RetrievalService {
       }
     }
 
+    if (
+      [...requestedSections].some((section) => !matchedSections.has(section))
+    ) {
+      throw insufficientMaterialError(
+        "One or more selected sections are not available in the selected documents",
+      );
+    }
+    if (requestedSections.size > 0 && scored.length === 0) {
+      throw insufficientMaterialError(
+        "The selected sections do not contain searchable material",
+      );
+    }
+
     return scored
       .sort(
         (left, right) =>
           right.score - left.score || left.id.localeCompare(right.id),
       )
       .slice(0, limit);
+  }
+
+  public assertCourseAccess(actor: AuthenticatedUser, courseId: string): void {
+    const course = this.requireCourseAccess(actor, courseId);
+    if (course.status !== "active") {
+      throw new NotFoundError("Course not found");
+    }
+  }
+
+  public async getSelectedChunks(
+    actor: AuthenticatedUser,
+    courseId: string,
+    documentIds: string[],
+  ): Promise<RetrievedChunk[]> {
+    const course = this.requireCourseAccess(actor, courseId);
+    if (course.status !== "active") throw new NotFoundError("Course not found");
+    if (new Set(documentIds).size !== documentIds.length) {
+      throw new AppError(
+        "VALIDATION_FAILED",
+        422,
+        "Selected document IDs must be unique",
+      );
+    }
+
+    const visibleDocuments = this.repository
+      .listDocumentsByCourse(courseId)
+      .filter(
+        (document) =>
+          document.courseId === courseId &&
+          (document.scope === "course" ||
+            (document.scope === "personal" && document.ownerId === actor.id)),
+      );
+    const selectedDocuments = documentIds.map((documentId) => {
+      const document = visibleDocuments.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document) throw new NotFoundError("Selected source document not found");
+      if (
+        document.status !== "ready" ||
+        document.embeddingModel !== this.embeddingModel
+      ) {
+        throw insufficientMaterialError(
+          "All selected documents must be ready for learning-content generation",
+        );
+      }
+      return document;
+    });
+
+    const selectedChunks: RetrievedChunk[] = [];
+    for (const document of selectedDocuments) {
+      const chunkFile = await this.readValidatedChunkFile(document);
+      for (const chunk of chunkFile.chunks) {
+        selectedChunks.push({
+          id: chunk.id,
+          documentId: document.id,
+          courseId: document.courseId,
+          filename: document.filename,
+          scope: document.scope,
+          text: chunk.text,
+          tokenEstimate: chunk.tokenEstimate,
+          pageStart: chunk.pageStart,
+          pageEnd: chunk.pageEnd,
+          section: chunk.section,
+          score: 0,
+        });
+      }
+    }
+    if (selectedChunks.length === 0) {
+      throw insufficientMaterialError(
+        "The selected documents do not contain searchable material",
+      );
+    }
+    return selectedChunks;
   }
 
   private requireCourseAccess(
@@ -225,6 +362,14 @@ export class RetrievalService {
     });
     return parsed.data;
   }
+}
+
+function normalizeSection(section: string): string {
+  return section.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function insufficientMaterialError(message: string): AppError {
+  return new AppError("INSUFFICIENT_MATERIAL", 422, message);
 }
 
 function validateQueryEmbedding(

@@ -40,7 +40,7 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B7 are complete; B8 is next. B8-B12
+**Current repository position:** B0-B9 are complete; B10 is next. B10-B12
 remain to be implemented, with approval required at each phase gate.
 
 ## Phase details
@@ -199,8 +199,23 @@ after validation is complete.
 **Done when:** Supported questions produce answers with verified citations;
 insufficient evidence does not produce an invented answer; and tests cover
 grounding states, access boundaries, provider failures, and citation checks.
-Resolve the Groq structured-output question before implementing its fallback
-path.
+Verify Groq structured-output support and record the selected model and
+validation policy before relying on its fallback path.
+
+**Current status:** Complete. The LangGraph workflow classifies intents,
+rewrites follow-ups, embeds queries with Mistral, invokes the access-filtered
+B7 retrieval service, builds a token-bounded context, gates weak evidence, and
+validates citations deterministically. Inception is primary and Groq is the
+fallback; provider calls use documented REST APIs behind adapters, and fakes
+are used in tests. Each graph node has a configured timeout. The API supports
+JSON and post-validation SSE; owned
+conversations, messages, citations, daily quotas, and metadata-only node
+execution records use SQLite. Prompt-injection defenses, user/course
+authorization, request limits, daily request/token quotas, and disabled
+tracing are covered by implementation and tests. OPEN-16 is resolved using
+Groq's strict-JSON-schema support with `openai/gpt-oss-20b`. **Deployment
+warning:** the Inception API is scheduled to wind down on December 28, 2026;
+select a replacement before that date.
 
 ### B9 — Add learning content and quizzes
 
@@ -213,6 +228,16 @@ the requesting user may access.
 **Done when:** Generated content has valid source references, quiz attempts are
 scored by the server, and learner responses never expose answer keys before
 submission.
+
+**Current status:** Complete. Selected-source summary, flashcard, and quiz
+generation uses access-filtered ready chunks, bounded context, structured
+output validation, and deterministic source-reference checks. Learner content
+is private; coach-generated content is a draft until the course owner
+publishes it. Added owner-scoped read/list routes, coach quiz creation/editing
+and publishing, learner-safe quiz views, server-side attempt scoring, and
+versioning when a published quiz with attempts is edited. AI execution records
+contain metadata only. Tests use fake providers and cover source validation,
+visibility, answer-key suppression, scoring, and version transitions.
 
 ### B10 — Add feedback and course insights
 

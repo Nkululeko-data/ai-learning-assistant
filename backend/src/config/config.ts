@@ -40,8 +40,25 @@ const defaultConfigSchema = z
   chunkSizeTokens: z.number().int().min(64).max(4096),
   chunkOverlapTokens: z.number().int().min(0).max(4095),
   chunkCacheMaxDocuments: z.number().int().min(1).max(10000),
+  inceptionModel: z.string().trim().min(1).max(100),
+  groqModel: z.string().trim().min(1).max(100),
   mistralEmbeddingModel: z.string().trim().min(1).max(100),
   mistralEmbeddingDimension: z.number().int().min(1).max(4096),
+  chatMinSimilarity: z.number().min(0).max(1),
+  chatMinChunks: z.number().int().min(1).max(50),
+  chatMinCitations: z.number().int().min(1).max(20),
+  chatTopK: z.number().int().min(1).max(50),
+  chatMaxContextTokens: z.number().int().min(100).max(20000),
+  chatHistoryWindow: z.number().int().min(0).max(50),
+  chatHistoryTokenBudget: z.number().int().min(0).max(20000),
+  chatNodeTimeoutMs: z.number().int().min(1000).max(300000),
+  chatMaxCompletionTokens: z.number().int().min(64).max(8192),
+  chatPromptVersion: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  learningPromptVersion: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  chatRateLimitWindowMs: z.number().int().min(1000).max(86400000),
+  chatRateLimitMax: z.number().int().min(1).max(1000),
+  chatDailyRequestLimit: z.number().int().min(1).max(100000),
+  chatDailyTokenLimit: z.number().int().min(1).max(100000000),
 })
   .superRefine((config, context) => {
     if (config.maxDocxExpandedSizeMb < config.maxUploadSizeMb) {
@@ -56,6 +73,20 @@ const defaultConfigSchema = z
         code: "custom",
         path: ["chunkOverlapTokens"],
         message: "Must be smaller than chunkSizeTokens",
+      });
+    }
+    if (config.chatMinChunks > config.chatTopK) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatMinChunks"],
+        message: "Must not exceed chatTopK",
+      });
+    }
+    if (config.chatMinCitations > config.chatTopK) {
+      context.addIssue({
+        code: "custom",
+        path: ["chatMinCitations"],
+        message: "Must not exceed chatTopK",
       });
     }
   });
@@ -99,6 +130,23 @@ const environmentSchema = z.object({
   CHUNK_SIZE_TOKENS: z.coerce.number().int().min(64).max(4096),
   CHUNK_OVERLAP_TOKENS: z.coerce.number().int().min(0).max(4095),
   CHUNK_CACHE_MAX_DOCUMENTS: z.coerce.number().int().min(1).max(10000),
+  INCEPTION_MODEL: z.string().trim().min(1).max(100),
+  GROQ_MODEL: z.string().trim().min(1).max(100),
+  CHAT_MIN_SIMILARITY: z.coerce.number().min(0).max(1),
+  CHAT_MIN_CHUNKS: z.coerce.number().int().min(1).max(50),
+  CHAT_MIN_CITATIONS: z.coerce.number().int().min(1).max(20),
+  CHAT_TOP_K: z.coerce.number().int().min(1).max(50),
+  CHAT_MAX_CONTEXT_TOKENS: z.coerce.number().int().min(100).max(20000),
+  CHAT_HISTORY_WINDOW: z.coerce.number().int().min(0).max(50),
+  CHAT_HISTORY_TOKEN_BUDGET: z.coerce.number().int().min(0).max(20000),
+  CHAT_NODE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000),
+  CHAT_MAX_COMPLETION_TOKENS: z.coerce.number().int().min(64).max(8192),
+  CHAT_PROMPT_VERSION: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  LEARNING_PROMPT_VERSION: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(86400000),
+  CHAT_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000),
+  CHAT_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(1).max(100000),
+  CHAT_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(1).max(100000000),
   ALLOW_REFRESH_TOKEN_IN_BODY: z
     .enum(["true", "false"])
     .transform((value) => value === "true"),
@@ -130,8 +178,25 @@ export interface AppConfig {
   chunkSizeTokens: number;
   chunkOverlapTokens: number;
   chunkCacheMaxDocuments: number;
+  inceptionModel: string;
+  groqModel: string;
   mistralEmbeddingModel: string;
   mistralEmbeddingDimension: number;
+  chatMinSimilarity: number;
+  chatMinChunks: number;
+  chatMinCitations: number;
+  chatTopK: number;
+  chatMaxContextTokens: number;
+  chatHistoryWindow: number;
+  chatHistoryTokenBudget: number;
+  chatNodeTimeoutMs: number;
+  chatMaxCompletionTokens: number;
+  chatPromptVersion: string;
+  learningPromptVersion: string;
+  chatRateLimitWindowMs: number;
+  chatRateLimitMax: number;
+  chatDailyRequestLimit: number;
+  chatDailyTokenLimit: number;
   allowRefreshTokenInBody: boolean;
   jwtAccessSecret: string | undefined;
   jwtRefreshSecret: string | undefined;
@@ -192,6 +257,42 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     CHUNK_CACHE_MAX_DOCUMENTS:
       process.env.CHUNK_CACHE_MAX_DOCUMENTS ??
       String(defaults.chunkCacheMaxDocuments),
+    INCEPTION_MODEL: process.env.INCEPTION_MODEL ?? defaults.inceptionModel,
+    GROQ_MODEL: process.env.GROQ_MODEL ?? defaults.groqModel,
+    CHAT_MIN_SIMILARITY:
+      process.env.CHAT_MIN_SIMILARITY ?? String(defaults.chatMinSimilarity),
+    CHAT_MIN_CHUNKS:
+      process.env.CHAT_MIN_CHUNKS ?? String(defaults.chatMinChunks),
+    CHAT_MIN_CITATIONS:
+      process.env.CHAT_MIN_CITATIONS ?? String(defaults.chatMinCitations),
+    CHAT_TOP_K: process.env.CHAT_TOP_K ?? String(defaults.chatTopK),
+    CHAT_MAX_CONTEXT_TOKENS:
+      process.env.CHAT_MAX_CONTEXT_TOKENS ??
+      String(defaults.chatMaxContextTokens),
+    CHAT_HISTORY_WINDOW:
+      process.env.CHAT_HISTORY_WINDOW ?? String(defaults.chatHistoryWindow),
+    CHAT_HISTORY_TOKEN_BUDGET:
+      process.env.CHAT_HISTORY_TOKEN_BUDGET ??
+      String(defaults.chatHistoryTokenBudget),
+    CHAT_NODE_TIMEOUT_MS:
+      process.env.CHAT_NODE_TIMEOUT_MS ?? String(defaults.chatNodeTimeoutMs),
+    CHAT_MAX_COMPLETION_TOKENS:
+      process.env.CHAT_MAX_COMPLETION_TOKENS ??
+      String(defaults.chatMaxCompletionTokens),
+    CHAT_PROMPT_VERSION:
+      process.env.CHAT_PROMPT_VERSION ?? defaults.chatPromptVersion,
+    LEARNING_PROMPT_VERSION:
+      process.env.LEARNING_PROMPT_VERSION ?? defaults.learningPromptVersion,
+    CHAT_RATE_LIMIT_WINDOW_MS:
+      process.env.CHAT_RATE_LIMIT_WINDOW_MS ??
+      String(defaults.chatRateLimitWindowMs),
+    CHAT_RATE_LIMIT_MAX:
+      process.env.CHAT_RATE_LIMIT_MAX ?? String(defaults.chatRateLimitMax),
+    CHAT_DAILY_REQUEST_LIMIT:
+      process.env.CHAT_DAILY_REQUEST_LIMIT ??
+      String(defaults.chatDailyRequestLimit),
+    CHAT_DAILY_TOKEN_LIMIT:
+      process.env.CHAT_DAILY_TOKEN_LIMIT ?? String(defaults.chatDailyTokenLimit),
     ALLOW_REFRESH_TOKEN_IN_BODY:
       process.env.ALLOW_REFRESH_TOKEN_IN_BODY ??
       String(defaults.allowRefreshTokenInBody),
@@ -258,8 +359,25 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     chunkSizeTokens: values.CHUNK_SIZE_TOKENS,
     chunkOverlapTokens: values.CHUNK_OVERLAP_TOKENS,
     chunkCacheMaxDocuments: values.CHUNK_CACHE_MAX_DOCUMENTS,
+    inceptionModel: values.INCEPTION_MODEL,
+    groqModel: values.GROQ_MODEL,
     mistralEmbeddingModel: defaults.mistralEmbeddingModel,
     mistralEmbeddingDimension: defaults.mistralEmbeddingDimension,
+    chatMinSimilarity: values.CHAT_MIN_SIMILARITY,
+    chatMinChunks: values.CHAT_MIN_CHUNKS,
+    chatMinCitations: values.CHAT_MIN_CITATIONS,
+    chatTopK: values.CHAT_TOP_K,
+    chatMaxContextTokens: values.CHAT_MAX_CONTEXT_TOKENS,
+    chatHistoryWindow: values.CHAT_HISTORY_WINDOW,
+    chatHistoryTokenBudget: values.CHAT_HISTORY_TOKEN_BUDGET,
+    chatNodeTimeoutMs: values.CHAT_NODE_TIMEOUT_MS,
+    chatMaxCompletionTokens: values.CHAT_MAX_COMPLETION_TOKENS,
+    chatPromptVersion: values.CHAT_PROMPT_VERSION,
+    learningPromptVersion: values.LEARNING_PROMPT_VERSION,
+    chatRateLimitWindowMs: values.CHAT_RATE_LIMIT_WINDOW_MS,
+    chatRateLimitMax: values.CHAT_RATE_LIMIT_MAX,
+    chatDailyRequestLimit: values.CHAT_DAILY_REQUEST_LIMIT,
+    chatDailyTokenLimit: values.CHAT_DAILY_TOKEN_LIMIT,
     allowRefreshTokenInBody: values.ALLOW_REFRESH_TOKEN_IN_BODY,
     jwtAccessSecret: values.JWT_ACCESS_SECRET,
     jwtRefreshSecret: values.JWT_REFRESH_SECRET,
