@@ -37,6 +37,7 @@
         "operationId": "register",
         "summary": "Register a learner and optionally request coach approval",
         "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/RegisterRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -46,6 +47,7 @@
         "operationId": "login",
         "summary": "Authenticate and issue tokens",
         "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "429": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -54,6 +56,8 @@
         "tags": ["Auth"],
         "operationId": "refreshToken",
         "summary": "Rotate the refresh token",
+        "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/RefreshRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -62,6 +66,8 @@
         "tags": ["Auth"],
         "operationId": "logout",
         "summary": "Revoke the refresh-token family",
+        "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/RefreshRequest" },
         "responses": { "204": { "description": "Logged out" } }
       }
     },
@@ -70,6 +76,7 @@
         "tags": ["Auth"],
         "operationId": "changePassword",
         "summary": "Change the current user's password",
+        "requestBody": { "$ref": "#/components/requestBodies/ChangePasswordRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -360,11 +367,15 @@
         "operationId": "listCoachRequests",
         "summary": "List coach requests",
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
-      },
+      }
+    },
+    "/admin/coach-requests/{requestId}": {
+      "parameters": [{ "$ref": "#/components/parameters/requestId" }],
       "patch": {
         "tags": ["Admin"],
         "operationId": "decideCoachRequest",
         "summary": "Approve or reject a coach request",
+        "requestBody": { "$ref": "#/components/requestBodies/CoachRequestDecision" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -504,8 +515,52 @@
         "bearerFormat": "JWT"
       }
     },
+    "requestBodies": {
+      "RegisterRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/LoginRequest" }
+          }
+        }
+      },
+      "RefreshRequest": {
+        "required": false,
+        "description": "Body token is accepted only when ALLOW_REFRESH_TOKEN_IN_BODY is enabled; browser clients use the Secure refresh cookie.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/RefreshRequest" }
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" }
+          }
+        }
+      },
+      "CoachRequestDecision": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CoachRequestDecision" }
+          }
+        }
+      }
+    },
     "parameters": {
       "courseId": { "name": "courseId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "requestId": { "name": "requestId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "documentId": { "name": "documentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "enrolmentId": { "name": "enrolmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "conversationId": { "name": "conversationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
@@ -514,6 +569,52 @@
       "jobId": { "name": "jobId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
     },
     "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password", "displayName"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 254 },
+          "password": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "requestCoach": { "type": "boolean", "default": false },
+          "coachMessage": { "type": "string", "maxLength": 500 }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 254 },
+          "password": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "refreshToken": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["currentPassword", "newPassword"],
+        "properties": {
+          "currentPassword": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "newPassword": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "CoachRequestDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["approved", "rejected"] },
+          "decisionNote": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      },
       "SuccessEnvelope": {
         "type": "object",
         "required": ["data"],

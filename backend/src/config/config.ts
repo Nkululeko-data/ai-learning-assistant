@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const optionalSecret = z.preprocess(
   (value: unknown) =>
@@ -26,6 +26,13 @@ const defaultConfigSchema = z.object({
   ]),
   corsOrigins: z.array(z.string().url()),
   passwordMinLength: z.number().int().min(8).max(128),
+  maxFailedLoginAttempts: z.number().int().min(1).max(20),
+  lockoutDurationMinutes: z.number().int().min(1).max(1440),
+  accessTokenTtlMinutes: z.number().int().min(1).max(60),
+  refreshTokenTtlDays: z.number().int().min(1).max(90),
+  authRateLimitWindowMs: z.number().int().min(1000).max(86400000),
+  authRateLimitMax: z.number().int().min(1).max(1000),
+  allowRefreshTokenInBody: z.boolean(),
 });
 
 const optionalEmail = z.preprocess(
@@ -55,6 +62,15 @@ const environmentSchema = z.object({
   ]),
   CORS_ORIGINS: z.string(),
   PASSWORD_MIN_LENGTH: z.coerce.number().int().min(8).max(128),
+  MAX_FAILED_LOGIN_ATTEMPTS: z.coerce.number().int().min(1).max(20),
+  LOCKOUT_DURATION_MINUTES: z.coerce.number().int().min(1).max(1440),
+  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90),
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(86400000),
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000),
+  ALLOW_REFRESH_TOKEN_IN_BODY: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true"),
   JWT_ACCESS_SECRET: optionalSecret.pipe(z.string().min(32).optional()),
   JWT_REFRESH_SECRET: optionalSecret.pipe(z.string().min(32).optional()),
   INCEPTION_API_KEY: optionalSecret,
@@ -71,6 +87,13 @@ export interface AppConfig {
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   corsOrigins: string[];
   passwordMinLength: number;
+  maxFailedLoginAttempts: number;
+  lockoutDurationMinutes: number;
+  accessTokenTtlMinutes: number;
+  refreshTokenTtlDays: number;
+  authRateLimitWindowMs: number;
+  authRateLimitMax: number;
+  allowRefreshTokenInBody: boolean;
   jwtAccessSecret: string | undefined;
   jwtRefreshSecret: string | undefined;
   inceptionApiKey: string | undefined;
@@ -98,6 +121,26 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       process.env.CORS_ORIGINS ?? defaults.corsOrigins.join(","),
     PASSWORD_MIN_LENGTH:
       process.env.PASSWORD_MIN_LENGTH ?? String(defaults.passwordMinLength),
+    MAX_FAILED_LOGIN_ATTEMPTS:
+      process.env.MAX_FAILED_LOGIN_ATTEMPTS ??
+      String(defaults.maxFailedLoginAttempts),
+    LOCKOUT_DURATION_MINUTES:
+      process.env.LOCKOUT_DURATION_MINUTES ??
+      String(defaults.lockoutDurationMinutes),
+    ACCESS_TOKEN_TTL_MINUTES:
+      process.env.ACCESS_TOKEN_TTL_MINUTES ??
+      String(defaults.accessTokenTtlMinutes),
+    REFRESH_TOKEN_TTL_DAYS:
+      process.env.REFRESH_TOKEN_TTL_DAYS ??
+      String(defaults.refreshTokenTtlDays),
+    AUTH_RATE_LIMIT_WINDOW_MS:
+      process.env.AUTH_RATE_LIMIT_WINDOW_MS ??
+      String(defaults.authRateLimitWindowMs),
+    AUTH_RATE_LIMIT_MAX:
+      process.env.AUTH_RATE_LIMIT_MAX ?? String(defaults.authRateLimitMax),
+    ALLOW_REFRESH_TOKEN_IN_BODY:
+      process.env.ALLOW_REFRESH_TOKEN_IN_BODY ??
+      String(defaults.allowRefreshTokenInBody),
     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
     INCEPTION_API_KEY: process.env.INCEPTION_API_KEY,
@@ -139,6 +182,13 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     logLevel: values.LOG_LEVEL,
     corsOrigins,
     passwordMinLength: values.PASSWORD_MIN_LENGTH,
+    maxFailedLoginAttempts: values.MAX_FAILED_LOGIN_ATTEMPTS,
+    lockoutDurationMinutes: values.LOCKOUT_DURATION_MINUTES,
+    accessTokenTtlMinutes: values.ACCESS_TOKEN_TTL_MINUTES,
+    refreshTokenTtlDays: values.REFRESH_TOKEN_TTL_DAYS,
+    authRateLimitWindowMs: values.AUTH_RATE_LIMIT_WINDOW_MS,
+    authRateLimitMax: values.AUTH_RATE_LIMIT_MAX,
+    allowRefreshTokenInBody: values.ALLOW_REFRESH_TOKEN_IN_BODY,
     jwtAccessSecret: values.JWT_ACCESS_SECRET,
     jwtRefreshSecret: values.JWT_REFRESH_SECRET,
     inceptionApiKey: values.INCEPTION_API_KEY,

@@ -11,6 +11,7 @@ export const userSchema = z
     passwordHash: z.string().min(1),
     displayName: z.string().min(1).max(80),
     roleId: idSchema,
+    permsVersion: z.number().int().positive().optional(),
     status: z.enum(["active", "suspended", "archived"]),
     mustChangePassword: z.boolean(),
     failedLoginCount: z.number().int().nonnegative(),

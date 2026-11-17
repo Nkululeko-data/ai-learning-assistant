@@ -6,8 +6,23 @@
 
 - Passwords use argon2; credentials and tokens are never logged or returned.
 - Access JWTs are short-lived. Refresh tokens are opaque, stored hashed, rotated on every use, and grouped into families. Reuse of a revoked token revokes its family.
+- Access tokens carry a permission version. Role and coach permission changes increment that version, so stale access tokens are rejected on the next request.
+- Refresh cookies are `HttpOnly`, `Secure`, `SameSite=Strict` and narrowly scoped. Optional body-based refresh is disabled unless explicitly configured.
 - Suspended and archived users cannot authenticate or refresh.
-- Rate-limit login and registration by IP and email. Apply configured account lockout after repeated failures.
+- Registration and login are throttled by IP and a hashed normalized email key; failed passwords trigger configured account lockout.
+- `POST /api/v1/auth/register` accepts a validated JSON body with `email`, `password` and `displayName`. `requestCoach` and `coachMessage` are optional; unknown fields are rejected. For example:
+
+  ```json
+  {
+    "email": "learner@example.com",
+    "password": "A-strong-password-123!",
+    "displayName": "Test Learner",
+    "requestCoach": true,
+    "coachMessage": "I teach a class."
+  }
+  ```
+
+- Registration responses must never include password hashes or credentials. Coach requests remain pending until an administrator reviews them.
 - Every protected operation performs both an action permission check and a resource ownership/membership check. Permissions do not imply ownership.
 - Users cannot change their own roles. Coach approval, role changes and permission overrides are admin-controlled and audited.
 - Course access requires an active course and either course ownership or approved enrolment. Pending, rejected and removed enrolments do not authorize content access.

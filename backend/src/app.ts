@@ -6,6 +6,10 @@ import type { Logger } from "pino";
 import { AppError } from "./common/errors/app-error";
 import { createErrorHandler } from "./common/middleware/error-handler";
 import { requestIdMiddleware } from "./common/middleware/request-id";
+import {
+  createAuthRouter,
+  type AuthRouteDependencies,
+} from "./modules/auth/auth.routes";
 
 export interface ReadinessStatus {
   jsonStoreOpen: boolean;
@@ -19,6 +23,7 @@ export interface AppDependencies {
   logger: Logger;
   corsOrigins: string[];
   getReadiness: () => ReadinessStatus;
+  auth?: AuthRouteDependencies;
 }
 
 /**
@@ -52,6 +57,9 @@ export function createApp(dependencies: AppDependencies): express.Express {
 
   app.get("/health", healthHandler);
   app.get("/ready", createReadinessHandler(dependencies.getReadiness));
+  if (dependencies.auth) {
+    app.use("/api/v1", createAuthRouter(dependencies.auth));
+  }
   app.use(notFoundHandler);
   app.use(createErrorHandler(dependencies.logger));
   return app;

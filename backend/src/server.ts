@@ -8,6 +8,8 @@ import {
 } from "./infra/sqlite/database";
 import { JsonStore } from "./infra/jsonstore/json-store";
 import { registerSystemCollections } from "./infra/jsonstore/system-collections";
+import { JsonAuthRepository } from "./modules/auth/auth.types";
+import { AuthService } from "./modules/auth/auth.service";
 import {
   CURRENT_SCHEMA_VERSION,
   initializeSchemaMetadata,
@@ -20,14 +22,19 @@ export async function startServer(): Promise<Server> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
   const store = new JsonStore(config.dataDir);
-  registerSystemCollections(store);
+  const collections = registerSystemCollections(store);
   await store.initialize();
   const metadata = await initializeSchemaMetadata(store.jsonDirectory);
   const database = openConversationDatabase(config.dataDir);
+  const authRepository = new JsonAuthRepository(collections);
+  const authService = new AuthService(authRepository, config, {
+    allowRefreshTokenInBody: config.allowRefreshTokenInBody,
+  });
 
   const app = createApp({
     logger,
     corsOrigins: config.corsOrigins,
+    auth: { authService, config },
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: isConversationDatabaseReady(database),

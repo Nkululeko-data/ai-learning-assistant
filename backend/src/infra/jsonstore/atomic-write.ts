@@ -38,10 +38,33 @@ export async function writeJsonAtomically(
   }
 
   try {
-    await rename(temporaryPath, filePath);
+    await replaceFileWithRetry(temporaryPath, filePath);
   } catch (error) {
     await removeTemporaryFile(temporaryPath, error);
     throw error;
+  }
+}
+
+/**
+ * Retries transient Windows file-sharing failures without weakening atomic replacement.
+ */
+async function replaceFileWithRetry(
+  temporaryPath: string,
+  filePath: string,
+): Promise<void> {
+  const maximumAttempts = 5;
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    try {
+      await rename(temporaryPath, filePath);
+      return;
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt === maximumAttempts) {
+        throw error;
+      }
+      await new Promise<void>((resolveDelay) =>
+        setTimeout(resolveDelay, attempt * 20),
+      );
+    }
   }
 }
 
@@ -72,5 +95,17 @@ function isMissingFileError(error: unknown): boolean {
     error !== null &&
     "code" in error &&
     error.code === "ENOENT"
+  );
+}
+
+/**
+ * Identifies filesystem sharing errors that may clear after a short delay on Windows.
+ */
+function isTransientRenameError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ["EPERM", "EACCES", "EBUSY"].includes(String(error.code))
   );
 }

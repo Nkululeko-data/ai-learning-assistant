@@ -77,6 +77,7 @@ Cross-store references (SQLite `messages` <-> JSON `feedback`, `activity_events`
 | passwordHash | string | R | argon2 hash. Never returned by any API |
 | displayName | string | R | 1-80 chars |
 | roleId | uuid | R | -> `roles.id` |
+| permsVersion | integer | O | Access-token invalidation version; absent legacy values are treated as 1. Increment on role or permission changes |
 | status | enum(`active`,`suspended`,`archived`) | R | Stash states. Only `active` can authenticate |
 | mustChangePassword | boolean | R | `true` after bootstrap/admin reset |
 | failedLoginCount | integer | R | Resets on success |

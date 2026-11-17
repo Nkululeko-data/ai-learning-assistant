@@ -20,6 +20,7 @@
 | `AUTH_INVALID_CREDENTIALS` | 401 | Invalid login credentials |
 | `AUTH_TOKEN_EXPIRED`, `AUTH_TOKEN_INVALID` | 401 | Access/refresh token invalid or expired |
 | `AUTH_ACCOUNT_LOCKED` | 429 | Account is locked after failed logins |
+| `AUTH_PASSWORD_CHANGE_REQUIRED` | 403 | Bootstrap/reset password must be changed before privileged actions |
 | `FORBIDDEN` | 403 | Permission or ownership check failed |
 | `ENROLMENT_REQUIRED` | 403 | Approved course membership required |
 | `NOT_FOUND` | 404 | Resource absent or intentionally hidden |
@@ -80,7 +81,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Insights | `GET /courses/{id}/insights` | Get owner-only cohort aggregates |
 | Insights | `GET /courses/{id}/gap-report` | Get latest theme-only gap report |
 | Insights | `POST /courses/{id}/gap-report/refresh` | Enqueue gap-report job |
-| Admin | `GET/PATCH /admin/coach-requests` | List and decide coach requests |
+| Admin | `GET /admin/coach-requests`, `PATCH /admin/coach-requests/:id` | List and decide coach requests |
 | Admin | `GET /admin/users` | List user metadata |
 | Admin | `PATCH /admin/users/{id}/role` | Change role (not own role) |
 | Admin | `PATCH /admin/users/{id}/permissions` | Grant/revoke fine-grained permissions |
