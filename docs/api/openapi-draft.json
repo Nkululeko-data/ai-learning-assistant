@@ -498,6 +498,7 @@
         "tags": ["Feedback"],
         "operationId": "submitFeedback",
         "summary": "Submit or update feedback for an answer",
+        "requestBody": { "$ref": "#/components/requestBodies/SubmitFeedbackRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -794,6 +795,14 @@
           }
         }
       },
+      "SubmitFeedbackRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SubmitFeedbackRequest" }
+          }
+        }
+      },
       "GenerateSummaryRequest": {
         "required": true,
         "content": {
@@ -927,6 +936,18 @@
         "required": ["title"],
         "properties": {
           "title": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      },
+      "SubmitFeedbackRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId", "conversationId", "courseId", "rating"],
+        "properties": {
+          "messageId": { "type": "string", "format": "uuid" },
+          "conversationId": { "type": "string", "format": "uuid" },
+          "courseId": { "type": "string", "format": "uuid" },
+          "rating": { "type": "string", "enum": ["helpful", "not_helpful"] },
+          "comment": { "type": ["string", "null"], "minLength": 1, "maxLength": 1000 }
         }
       },
       "LearningSelection": {

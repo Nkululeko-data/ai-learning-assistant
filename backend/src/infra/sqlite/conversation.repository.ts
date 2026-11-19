@@ -136,6 +136,13 @@ export class ConversationRepository {
     return row ? mapConversation(row) : null;
   }
 
+  public findMessage(id: string): ConversationMessageRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM messages WHERE id = ?")
+      .get(id) as MessageRow | undefined;
+    return row ? mapMessage(row) : null;
+  }
+
   public listConversations(
     userId: string,
     courseId: string | undefined,

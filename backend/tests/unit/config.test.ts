@@ -32,6 +32,9 @@ const configEnvironmentKeys = [
   "CHAT_MAX_COMPLETION_TOKENS",
   "CHAT_PROMPT_VERSION",
   "LEARNING_PROMPT_VERSION",
+  "INSIGHT_MIN_COHORT_SIZE",
+  "INSIGHT_PERIOD_DAYS",
+  "GAP_REPORTS_MAX_PER_COURSE",
   "CHAT_RATE_LIMIT_WINDOW_MS",
   "CHAT_RATE_LIMIT_MAX",
   "CHAT_DAILY_REQUEST_LIMIT",
@@ -90,6 +93,9 @@ function verifiesDefaultConfiguration(): void {
   expect(config.chatDailyRequestLimit).toBe(100);
   expect(config.chatDailyTokenLimit).toBe(100_000);
   expect(config.learningPromptVersion).toBe("v1");
+  expect(config.insightMinCohortSize).toBe(3);
+  expect(config.insightPeriodDays).toBe(7);
+  expect(config.gapReportsMaxPerCourse).toBe(10);
   expect(config.corsOrigins).toEqual(["http://localhost:5173"]);
 }
 

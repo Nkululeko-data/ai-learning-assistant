@@ -40,7 +40,7 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B9 are complete; B10 is next. B10-B12
+**Current repository position:** B0-B10 are complete; B11 is next. B11-B12
 remain to be implemented, with approval required at each phase gate.
 
 ## Phase details
@@ -251,6 +251,14 @@ clustering only after the underlying signals and privacy rules are working.
 **Done when:** Insights are limited to the authorized course owner and
 cohort-qualified themes and aggregates. They must not disclose question text,
 individual conversations, or personal notes.
+
+**Current status:** Complete. Feedback can be submitted or updated only for
+an assistant answer owned by the caller. Activity events store no learner text
+and chat responses record deduplicated question events with grounding and
+course-document metadata. Coach insight and gap-report routes require course
+ownership and `insights:view`; aggregates are withheld below the configured
+minimum cohort size. Gap-report refresh is persistent and privacy-safe, and
+generated reports contain themes and counts only.
 
 ### B11 — Add administrative operations
 

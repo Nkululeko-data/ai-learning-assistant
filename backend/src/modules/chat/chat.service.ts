@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
+import type { InsightsService } from "../insights/insights.service";
 import type {
   ChatGraphRunner,
   ChatNodeExecutionRecord,
@@ -54,6 +55,7 @@ export class ChatService {
     private readonly structuredOutput: StructuredOutputService,
     private readonly prompts: ChatPrompts,
     private readonly config: AppConfig,
+    private readonly insightsService?: InsightsService,
   ) {}
 
   public async ask(
@@ -156,6 +158,25 @@ export class ChatService {
       citations: result.citations,
       retrievalScoreTop: result.retrievalScoreTop,
     });
+    if (this.insightsService) {
+      await this.insightsService.recordActivity({
+        dedupeKey: savedMessages.userMessageId,
+        courseId: input.courseId,
+        userId: actor.id,
+        type: "question",
+        groundingStatus: result.groundingStatus,
+        usedPersonalScope: result.usedPersonalScope,
+        citedCourseDocumentIds: result.usedPersonalScope
+          ? []
+          : [
+              ...new Set(
+                result.citations
+                  .map((citation) => citation.documentId)
+                  .filter((documentId) => documentId.length > 0),
+              ),
+            ],
+      });
+    }
 
     return {
       conversationId,

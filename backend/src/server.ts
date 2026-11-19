@@ -42,6 +42,10 @@ import {
   CURRENT_SCHEMA_VERSION,
   initializeSchemaMetadata,
 } from "./infra/jsonstore/schema-metadata";
+import { FeedbackRepository } from "./modules/feedback/feedback.repository";
+import { FeedbackService } from "./modules/feedback/feedback.service";
+import { InsightsRepository } from "./modules/insights/insights.repository";
+import { InsightsService } from "./modules/insights/insights.service";
 
 /**
  * Initializes storage, builds the API, and starts listening on the configured port.
@@ -106,6 +110,15 @@ export async function startServer(): Promise<Server> {
     config.chatMaxCompletionTokens,
   );
   const conversationRepository = new ConversationRepository(database);
+  const feedbackService = new FeedbackService(
+    new FeedbackRepository(collections),
+    conversationRepository,
+  );
+  const insightsService = new InsightsService(
+    new InsightsRepository(collections),
+    jobService,
+    config,
+  );
   const executionRepository = new JsonAgentExecutionRepository(
     collections.agentExecutions,
     conversationRepository,
@@ -119,6 +132,7 @@ export async function startServer(): Promise<Server> {
     structuredOutput,
     await loadChatPrompts(config.chatPromptVersion),
     config,
+    insightsService,
   );
   const learningRepository = new LearningRepository(collections);
   const learningService = new LearningService(
@@ -139,6 +153,14 @@ export async function startServer(): Promise<Server> {
     {
       ingest: (job, signal) => documentIngestionService.ingest(job, signal),
       cleanup: (job, signal) => documentIngestionService.cleanup(job, signal),
+      cluster: async (job) => {
+        const courseId = job.payload.courseId;
+        if (typeof courseId !== "string") {
+          throw new Error("Gap-report job payload is missing courseId");
+        }
+        const report = await insightsService.generateGapReport(courseId);
+        return { gapReportId: report.id };
+      },
     },
     logger,
   );
@@ -172,6 +194,8 @@ export async function startServer(): Promise<Server> {
       rateLimitWindowMs: config.chatRateLimitWindowMs,
       rateLimitMax: config.chatRateLimitMax,
     },
+    feedback: { authService, feedbackService },
+    insights: { authService, insightsService },
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: isConversationDatabaseReady(database),

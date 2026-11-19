@@ -55,6 +55,9 @@ const defaultConfigSchema = z
   chatMaxCompletionTokens: z.number().int().min(64).max(8192),
   chatPromptVersion: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
   learningPromptVersion: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  insightMinCohortSize: z.number().int().min(1).max(1000),
+  insightPeriodDays: z.number().int().min(1).max(365),
+  gapReportsMaxPerCourse: z.number().int().min(1).max(100),
   chatRateLimitWindowMs: z.number().int().min(1000).max(86400000),
   chatRateLimitMax: z.number().int().min(1).max(1000),
   chatDailyRequestLimit: z.number().int().min(1).max(100000),
@@ -143,6 +146,9 @@ const environmentSchema = z.object({
   CHAT_MAX_COMPLETION_TOKENS: z.coerce.number().int().min(64).max(8192),
   CHAT_PROMPT_VERSION: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
   LEARNING_PROMPT_VERSION: z.string().trim().regex(/^[a-z0-9._-]{1,80}$/),
+  INSIGHT_MIN_COHORT_SIZE: z.coerce.number().int().min(1).max(1000),
+  INSIGHT_PERIOD_DAYS: z.coerce.number().int().min(1).max(365),
+  GAP_REPORTS_MAX_PER_COURSE: z.coerce.number().int().min(1).max(100),
   CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(86400000),
   CHAT_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000),
   CHAT_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(1).max(100000),
@@ -193,6 +199,9 @@ export interface AppConfig {
   chatMaxCompletionTokens: number;
   chatPromptVersion: string;
   learningPromptVersion: string;
+  insightMinCohortSize: number;
+  insightPeriodDays: number;
+  gapReportsMaxPerCourse: number;
   chatRateLimitWindowMs: number;
   chatRateLimitMax: number;
   chatDailyRequestLimit: number;
@@ -283,6 +292,14 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       process.env.CHAT_PROMPT_VERSION ?? defaults.chatPromptVersion,
     LEARNING_PROMPT_VERSION:
       process.env.LEARNING_PROMPT_VERSION ?? defaults.learningPromptVersion,
+    INSIGHT_MIN_COHORT_SIZE:
+      process.env.INSIGHT_MIN_COHORT_SIZE ??
+      String(defaults.insightMinCohortSize),
+    INSIGHT_PERIOD_DAYS:
+      process.env.INSIGHT_PERIOD_DAYS ?? String(defaults.insightPeriodDays),
+    GAP_REPORTS_MAX_PER_COURSE:
+      process.env.GAP_REPORTS_MAX_PER_COURSE ??
+      String(defaults.gapReportsMaxPerCourse),
     CHAT_RATE_LIMIT_WINDOW_MS:
       process.env.CHAT_RATE_LIMIT_WINDOW_MS ??
       String(defaults.chatRateLimitWindowMs),
@@ -374,6 +391,9 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     chatMaxCompletionTokens: values.CHAT_MAX_COMPLETION_TOKENS,
     chatPromptVersion: values.CHAT_PROMPT_VERSION,
     learningPromptVersion: values.LEARNING_PROMPT_VERSION,
+    insightMinCohortSize: values.INSIGHT_MIN_COHORT_SIZE,
+    insightPeriodDays: values.INSIGHT_PERIOD_DAYS,
+    gapReportsMaxPerCourse: values.GAP_REPORTS_MAX_PER_COURSE,
     chatRateLimitWindowMs: values.CHAT_RATE_LIMIT_WINDOW_MS,
     chatRateLimitMax: values.CHAT_RATE_LIMIT_MAX,
     chatDailyRequestLimit: values.CHAT_DAILY_REQUEST_LIMIT,

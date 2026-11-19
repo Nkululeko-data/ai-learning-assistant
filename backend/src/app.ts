@@ -30,6 +30,14 @@ import {
   createLearningRouter,
   type LearningRouteDependencies,
 } from "./modules/learning/learning.routes";
+import {
+  createFeedbackRouter,
+  type FeedbackRouteDependencies,
+} from "./modules/feedback/feedback.routes";
+import {
+  createInsightsRouter,
+  type InsightsRouteDependencies,
+} from "./modules/insights/insights.routes";
 
 export interface ReadinessStatus {
   jsonStoreOpen: boolean;
@@ -49,6 +57,8 @@ export interface AppDependencies {
   documents?: DocumentRouteDependencies;
   chat?: ChatRouteDependencies;
   learning?: LearningRouteDependencies;
+  feedback?: FeedbackRouteDependencies;
+  insights?: InsightsRouteDependencies;
 }
 
 /**
@@ -99,6 +109,12 @@ export function createApp(dependencies: AppDependencies): express.Express {
   }
   if (dependencies.learning) {
     app.use("/api/v1", createLearningRouter(dependencies.learning));
+  }
+  if (dependencies.feedback) {
+    app.use("/api/v1", createFeedbackRouter(dependencies.feedback));
+  }
+  if (dependencies.insights) {
+    app.use("/api/v1", createInsightsRouter(dependencies.insights));
   }
   app.use(notFoundHandler);
   app.use(createErrorHandler(dependencies.logger));

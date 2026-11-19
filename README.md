@@ -61,9 +61,9 @@ for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 
-The backend implementation is complete through phases B0-B9. B0-B1 cover
-repository assessment and design/contracts; B2-B8 provide the current runnable
-features, and B9 adds study content and quizzes:
+The backend implementation is complete through phases B0-B10. B0-B1 cover
+repository assessment and design/contracts; B2-B9 provide the main runnable
+features, and B10 adds feedback and privacy-safe course insights:
 
 - **B2 — Backend foundation:** configuration, logging and shared error
   handling, storage initialization, health/readiness checks, and administrator
@@ -149,6 +149,24 @@ features, and B9 adds study content and quizzes:
   coaches can read their drafts and publish with `{ "version": 1 }` to the
   corresponding `/summaries/{id}/publish` or `/flashcards/{id}/publish`
   endpoint. See the API specification for flashcard, quiz, and attempt bodies.
+- **B10 — Feedback and course insights:** learners can submit or update feedback
+  for an owned assistant answer with `POST /api/v1/feedback`. Coach insight
+  endpoints are owner-only and use `insights:view`; aggregates are withheld
+  until the configured cohort threshold is reached. Gap-report refresh queues
+  a privacy-safe background job. Feedback comments and conversation text are
+  never exposed by coach insight responses.
+
+  Example feedback body:
+
+  ```json
+  {
+    "messageId": "00000000-0000-4000-8000-000000000010",
+    "conversationId": "00000000-0000-4000-8000-000000000011",
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "rating": "helpful",
+    "comment": "The explanation was clear"
+  }
+  ```
 
 For B6, the upload endpoint is `POST /api/v1/documents/upload`; requests use
 multipart fields `courseId`, `scope` (`course` or `personal`), and `file`.
@@ -156,9 +174,8 @@ Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
 50 MB. See the [API specification](docs/api/API-Specification.md) for all
 request formats and related endpoints.
 
-**Not implemented yet:** B10-B12 (feedback, course insights, administrative
-operations, and release handover) remain for later phases. The learning-content
-endpoints suggested by chat are now available in B9.
+**Not implemented yet:** B11-B12 (administrative operations, privacy erasure,
+and release handover) remain for later phases.
 
 **Provider deployment warning:** the Inception API is scheduled to wind down
 on December 28, 2026. Choose and test a replacement before that date.
