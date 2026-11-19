@@ -1,222 +1,202 @@
 # Current Project Status
 
-**Review date:** 2026-11-17
+**Review date:** 2026-11-19
 
-**Scope:** Repository files present at the time of this review. This is a
-snapshot, not a claim that every documented requirement has been implemented
-or tested.
+## Current position
 
-## Summary
+**Current phase: B10 complete.** The B10 feature work is present and the
+backend tests, typecheck, and build pass.
 
-The project has a working backend foundation and implemented course,
-background-job, and document-ingestion features. The latest implemented phase
-is **B6: Documents and ingestion**. The project is **not yet the complete
-learning assistant** described by the design: retrieval, AI chat, learning
-content, insights, and most administrative features are still planned.
+**Next phase: B11 administrative operations.** B11 has not started.
 
-The current state is broadly:
+The project is a backend REST API. No frontend source is present in the
+repository. Phase descriptions and acceptance criteria are in
+[`implementation-phases.md`](implementation-phases.md).
 
-- **B0:** Repository assessment is documented.
-- **B1:** Architecture, data, API, and security documents are present. They
-  describe an approved baseline, but some decisions remain open.
-- **B2:** Backend infrastructure, persistent stores, bootstrap, and HTTP
-  foundation are implemented.
-- **B3:** Registration, login, tokens, permissions, password changes, and
-  coach-request review are implemented.
-- **B4:** Courses and enrolments are implemented.
-- **B5:** Background jobs and scheduling are implemented.
-- **B6:** Document upload, ingestion, chunking, and embedding are implemented.
-- **B7-B12:** Not implemented yet, except for a few admin-related operations
-  already included in B3.
+## Phase-by-phase status and implementation
 
-The phase descriptions are in [`implementation-phases.md`](implementation-phases.md).
-The older [`initial-assessment.md`](initial-assessment.md) describes the
-repository before implementation and should be treated as historical.
+### B0 — Understand the repository
 
-## What exists today
+**Status:** Assessment documented. This phase is repository inspection and
+planning, so it has no application function.
 
-### Backend startup and HTTP foundation
+**Main file:** [`initial-assessment.md`](initial-assessment.md).
 
-- [`backend/src/server.ts`](../backend/src/server.ts)
-  - `startServer()` loads configuration, initializes JSON and SQLite storage,
-    wires authentication into the app, and starts the HTTP server.
-  - `registerShutdownHandlers()` closes the server and SQLite on shutdown.
-  - `main()` is the process entry point.
-- [`backend/src/app.ts`](../backend/src/app.ts)
-  - `createApp()` installs Helmet, request IDs, Pino HTTP logging, credentialed
-    CORS, JSON parsing, health/readiness endpoints, optional auth routes, and
-    shared error handling.
-  - `createReadinessHandler()` checks storage, schema version, and provider
-    configuration.
-  - `createCorsOriginValidator()` restricts browser origins to configuration.
-- [`backend/src/common/middleware/request-id.ts`](../backend/src/common/middleware/request-id.ts)
-  - `requestIdMiddleware` validates or generates a request ID and returns it
-    in the response header.
-- [`backend/src/common/middleware/error-handler.ts`](../backend/src/common/middleware/error-handler.ts)
-  - `createErrorHandler()` maps Zod and application errors into the common
-    response envelope and logs unexpected failures.
-- [`backend/src/common/logging/logger.ts`](../backend/src/common/logging/logger.ts)
-  - `createLogger()` configures structured logging and redacts common secret
-    and token fields.
-- [`backend/src/common/errors/app-error.ts`](../backend/src/common/errors/app-error.ts)
-  - `AppError`, `ConflictError`, and `NotFoundError` provide typed application
-    errors.
+### B1 — Agree on design and contracts
 
-### Configuration and storage
+**Status:** Design and API documentation is present; these are design
+artifacts, not runtime functions.
 
-- [`backend/src/config/config.ts`](../backend/src/config/config.ts)
-  - `loadConfig()` validates environment variables and defaults.
-  - `hasProviderConfiguration()` checks for the configured Inception, Groq,
-    and Mistral credentials.
-- [`backend/src/infra/jsonstore/json-store.ts`](../backend/src/infra/jsonstore/json-store.ts)
-  - `JsonStore.register()` registers typed collections;
-    `JsonStore.initialize()` initializes storage and collections.
-  - `JsonCollection.initialize()` validates persisted JSON and builds indexes.
-  - `getById()`, `findByIndex()`, `findUnique()`, and `list()` read records.
-  - `insert()`, `update()`, and `remove()` serialize writes, validate records,
-    enforce unique indexes, and persist changes.
-  - `update()` can enforce optimistic record versions when requested.
-- [`backend/src/infra/jsonstore/atomic-write.ts`](../backend/src/infra/jsonstore/atomic-write.ts)
-  - `writeJsonAtomically()` persists JSON using a temporary file and rename.
-- [`backend/src/infra/jsonstore/async-mutex.ts`](../backend/src/infra/jsonstore/async-mutex.ts)
-  - `AsyncMutex.runExclusive()` serializes asynchronous work.
-- [`backend/src/infra/jsonstore/system-collections.ts`](../backend/src/infra/jsonstore/system-collections.ts)
-  - `registerSystemCollections()` defines validated, indexed collections for
-    users, roles, permissions, role grants, user permission overrides, refresh
-    tokens, coach requests, and audit logs.
-- [`backend/src/infra/jsonstore/schema-metadata.ts`](../backend/src/infra/jsonstore/schema-metadata.ts)
-  - `initializeSchemaMetadata()` tracks JSON schema version and applies
-    registered migrations. The current initial migration is a no-op.
-- [`backend/src/infra/sqlite/database.ts`](../backend/src/infra/sqlite/database.ts)
-  - `openConversationDatabase()` creates the SQLite conversation/message
-    schema through Node's built-in `node:sqlite` API, enables WAL and foreign
-    keys, and creates indexes. This avoids compiling `better-sqlite3`.
-  - `isConversationDatabaseReady()` runs a lightweight readiness query.
+**Main files:** [`Architecture.md`](architecture/Architecture.md),
+[`Database-Design.md`](architecture/Database-Design.md),
+[`API-Specification.md`](api/API-Specification.md),
+[`Security-Architecture.md`](architecture/Security-Architecture.md), and
+[`openapi-draft.json`](api/openapi-draft.json).
 
-### Bootstrap and identity/access features
+### B2 — Backend foundation
 
-- [`backend/scripts/bootstrap.ts`](../backend/scripts/bootstrap.ts)
-  - `bootstrapSystem()` initializes data directories and stores, then seeds
-    baseline data.
-  - `seedSystemCollections()` creates the learner, coach, and admin roles,
-    15 permissions, role grants, and the first admin.
-  - `validateAdminCredentials()` enforces required bootstrap credentials.
-  - `assertSafeDataDirectory()` protects destructive reset from unsafe paths.
-  - Bootstrap is idempotent, hashes the administrator password, audits initial
-    admin creation, refuses production reset, and currently refuses demo
-    seeding.
-- [`backend/src/modules/auth/auth.service.ts`](../backend/src/modules/auth/auth.service.ts)
-  - `AuthService.register()` creates learner accounts and optional pending
-    coach requests.
-  - `login()` verifies passwords, tracks failed attempts, applies lockout, and
-    issues tokens.
-  - `refresh()` rotates opaque refresh tokens and revokes a token family on
-    reuse; `logout()` revokes the associated family.
-  - `authenticateAccessToken()` validates the access token and resolves current
-    user permissions.
-  - `changePassword()` updates the password and revokes existing refresh
-    sessions.
-  - `listCoachRequests()` and `decideCoachRequest()` support admin coach
-    application review.
-  - `changeUserRole()` prevents self-role changes and audits role changes.
-  - `setPermissionOverride()` grants or revokes coach permissions and
-    invalidates old access tokens by permission version.
-  - `getCurrentUser()` returns the current safe user/permission view.
-- [`backend/src/modules/auth/auth.routes.ts`](../backend/src/modules/auth/auth.routes.ts)
-  - `createAuthRouter()` exposes:
-    `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`,
-    `/auth/change-password`; `GET /me`; admin coach-request list/decision
-    endpoints; and admin user role/permission updates.
-  - Refresh cookies are configured as `HttpOnly`, `Secure`, and `SameSite=Strict`.
-- [`backend/src/modules/auth/auth.middleware.ts`](../backend/src/modules/auth/auth.middleware.ts)
-  - `requireAuthentication()` validates bearer access tokens.
-  - `requirePermission()` enforces effective permissions.
-  - `requirePasswordChangeComplete` blocks privileged actions until a forced
-    password change is complete.
-- [`backend/src/modules/roles/permission.service.ts`](../backend/src/modules/roles/permission.service.ts)
-  - `PermissionService.resolve()` combines role permissions with user grants
-    and revocations.
-- [`backend/src/common/middleware/rate-limit.ts`](../backend/src/common/middleware/rate-limit.ts)
-  - `createRateLimiter()` provides an in-memory fixed-window limiter;
-    `emailRateLimitKey()` hashes normalized email values for limiter keys.
+**Status:** Implemented.
 
-### Courses, jobs, and document ingestion
+- [`server.ts`](../backend/src/server.ts): `startServer()` starts and wires
+  the backend.
+- [`app.ts`](../backend/src/app.ts): `createApp()` installs middleware and
+  routes; health and readiness endpoints are included.
+- [`config.ts`](../backend/src/config/config.ts): `loadConfig()` loads and
+  validates configuration.
+- [`bootstrap.ts`](../backend/scripts/bootstrap.ts):
+  `bootstrapSystem()` initializes storage and seeds baseline data.
+- [`json-store.ts`](../backend/src/infra/jsonstore/json-store.ts):
+  `JsonStore.initialize()`, collection `initialize()`, and collection
+  `insert()`, `update()`, and `remove()` manage JSON persistence.
+- [`database.ts`](../backend/src/infra/sqlite/database.ts):
+  `openConversationDatabase()` initializes conversation storage.
 
-- [`backend/src/modules/courses/`](../backend/src/modules/courses/) contains
-  course and enrolment schemas, services, and routes, including course access
-  and ownership rules.
-- [`backend/src/modules/jobs/`](../backend/src/modules/jobs/) contains the
-  persistent job service, runner, scheduler, schemas, and job status routes.
-- [`backend/src/modules/documents/`](../backend/src/modules/documents/)
-  contains upload validation, text extraction, chunking, ingestion and document
-  services/routes, and the Mistral embedding adapter.
-- [`backend/src/infra/storage/private-file-storage.ts`](../backend/src/infra/storage/private-file-storage.ts)
-  provides private local file storage.
+### B3 — Accounts and access control
 
-### Documentation and automated tests
+**Status:** Implemented, including some coach/admin operations.
 
-Architecture and API documentation currently exists under [`architecture/`](architecture/)
-and [`api/`](api/), including the API specification and OpenAPI draft.
-[`implementation-phases.md`](implementation-phases.md) describes the intended
-B0-B12 build sequence.
+- [`auth.service.ts`](../backend/src/modules/auth/auth.service.ts):
+  `AuthService.register()`, `login()`, `refresh()`, `logout()`, and
+  `changePassword()` implement account and session operations.
+- The same service implements `decideCoachRequest()`, `changeUserRole()`,
+  and `setPermissionOverride()` for selected admin actions.
+- [`auth.middleware.ts`](../backend/src/modules/auth/auth.middleware.ts):
+  `requireAuthentication()` and `requirePermission()` guard protected routes.
+- [`permission.service.ts`](../backend/src/modules/roles/permission.service.ts):
+  `PermissionService.resolve()` calculates effective permissions.
 
-Automated tests cover configuration, JSON storage, SQLite, bootstrap, HTTP,
-authentication, courses, jobs, and document processing:
+### B4 — Courses and enrolments
 
-- [`backend/tests/unit/config.test.ts`](../backend/tests/unit/config.test.ts)
-- [`backend/tests/unit/json-store.test.ts`](../backend/tests/unit/json-store.test.ts)
-- [`backend/tests/integration/sqlite.test.ts`](../backend/tests/integration/sqlite.test.ts)
-- [`backend/tests/integration/bootstrap.test.ts`](../backend/tests/integration/bootstrap.test.ts)
-- [`backend/tests/integration/app.test.ts`](../backend/tests/integration/app.test.ts)
-- [`backend/tests/integration/auth.test.ts`](../backend/tests/integration/auth.test.ts)
-- [`backend/tests/integration/courses.test.ts`](../backend/tests/integration/courses.test.ts)
-- [`backend/tests/integration/jobs.test.ts`](../backend/tests/integration/jobs.test.ts)
-- [`backend/tests/integration/documents.test.ts`](../backend/tests/integration/documents.test.ts)
-- [`backend/tests/unit/document.chunker.test.ts`](../backend/tests/unit/document.chunker.test.ts)
-- [`backend/tests/unit/document.validation.test.ts`](../backend/tests/unit/document.validation.test.ts)
-- [`backend/tests/unit/mistral-embedding.provider.test.ts`](../backend/tests/unit/mistral-embedding.provider.test.ts)
+**Status:** Implemented.
 
-The latest validation results are recorded below.
+- [`course.service.ts`](../backend/src/modules/courses/course.service.ts):
+  `CourseService.createCourse()`, `listCourses()`, `requestJoin()`, and
+  `decideEnrolment()` handle course and enrolment operations, with ownership
+  and access checks.
+- [`course.routes.ts`](../backend/src/modules/courses/course.routes.ts):
+  `createCourseRouter()` exposes the course API.
 
-## What is not implemented yet
+### B5 — Background jobs and scheduling
 
-No corresponding application modules or routes were found for:
+**Status:** Implemented.
 
-- **B7:** Access-filtered retrieval and its isolation tests.
-- **B8:** AI provider adapters, LangGraph workflows, grounded chat, citation
-  validation, or chat endpoints. SQLite has tables ready for conversations and
-  messages, but no chat service currently uses them.
-- **B9:** Summary, flashcard, quiz, and quiz-attempt features.
-- **B10:** Feedback, activity events, coach insights, and gap reports.
-- **B11:** Most admin features, including user status management, password
-  reset, executions/config/jobs views, and privacy erasure. Some role and coach
-  request operations are already present in B3.
-- **B12:** Integrated AI evaluation, generated/final Swagger output, deployment
-  packaging, Docker, backup/restore, and handover materials.
+- [`job.service.ts`](../backend/src/modules/jobs/job.service.ts):
+  `JobService.enqueue()`, `claimNext()`, `complete()`, and `fail()` manage
+  persistent job execution and failure handling.
+- [`job.runner.ts`](../backend/src/modules/jobs/job.runner.ts):
+  `JobRunner.start()` and `stop()` control the worker.
+- [`job.scheduler.ts`](../backend/src/modules/jobs/job.scheduler.ts):
+  `JobScheduler.runDue()` processes scheduled work.
 
-The root [`README.md`](../README.md) now documents the backend setup. No
-frontend source files were found in the repository scan, consistent with the
-plan to build the backend first.
+### B6 — Document upload and ingestion
 
-## Validation
+**Status:** Implemented.
 
-After merging the B4-B6 implementation and using Node's built-in `node:sqlite`:
+- [`document.service.ts`](../backend/src/modules/documents/document.service.ts):
+  `DocumentService.upload()`, `getStatus()`, `retry()`, and `delete()` handle
+  document operations and access rules.
+- [`document.validation.ts`](../backend/src/modules/documents/document.validation.ts):
+  `validateDocumentUpload()` validates files.
+- [`document.extractors.ts`](../backend/src/modules/documents/document.extractors.ts):
+  `extractDocumentText()` extracts supported file text.
+- [`document.chunker.ts`](../backend/src/modules/documents/document.chunker.ts):
+  `chunkDocumentPages()` splits extracted text into searchable chunks.
+- [`document.ingestion.service.ts`](../backend/src/modules/documents/document.ingestion.service.ts):
+  `DocumentIngestionService.ingest()` runs ingestion.
+- [`mistral-embedding.provider.ts`](../backend/src/modules/documents/mistral-embedding.provider.ts):
+  `MistralEmbeddingProvider.embed()` creates embeddings.
 
-- `npm install` completed from `backend/` without requiring Visual Studio C++
-  Build Tools.
-- `npm test` passed: 12 suites and 34 tests.
-- `npm run typecheck` passed.
-- `npm run build` passed.
-- Node 22.19 emits an `ExperimentalWarning` for `node:sqlite`; the package now
-  declares Node `>=22.13.0`, which satisfies the SQLite API and PDF.js runtime
-  requirements.
-- `npm install` reported 18 moderate audit advisories. They were not
-  investigated or changed as part of this review.
+### B7 — Access-filtered retrieval
 
-## Bottom line
+**Status:** Implemented as an internal service; it is not a standalone API.
 
-The project has progressed through **B6**, with tests for its foundation,
-authentication, courses, jobs, and document ingestion. The next planned
-feature phase is **B7: access-filtered retrieval**. The backend uses built-in
-Node SQLite and does not require the Visual Studio C++ Build Tools for its
-conversation database.
+- [`retrieval.service.ts`](../backend/src/modules/retrieval/retrieval.service.ts):
+  `RetrievalService.search()`, `assertCourseAccess()`, and
+  `getSelectedChunks()` enforce access filtering and return matching chunks.
+
+### B8 — Grounded question answering
+
+**Status:** Implemented.
+
+- [`chat.service.ts`](../backend/src/modules/chat/chat.service.ts):
+  `ChatService.ask()` runs question answering; conversation methods list,
+  retrieve, rename, and delete the caller's conversations.
+- [`chat.graph.ts`](../backend/src/ai/graphs/chat.graph.ts):
+  `runChatGraph()` runs the chat workflow.
+- The workflow uses node functions in [`backend/src/ai/nodes/`](../backend/src/ai/nodes/),
+  including `queryUnderstandingNode()`, `retrievalNode()`,
+  `evidenceGateNode()`, `answerGenerationNode()`, and
+  `citationValidatorNode()`.
+- [`conversation.repository.ts`](../backend/src/infra/sqlite/conversation.repository.ts):
+  `ConversationRepository` persists conversations, messages, and usage data.
+
+### B9 — Learning content and quizzes
+
+**Status:** Implemented.
+
+- [`learning.service.ts`](../backend/src/modules/learning/learning.service.ts):
+  `LearningService.generateSummary()`, `generateFlashcards()`,
+  `generateQuiz()`, `createCoachQuiz()`, `publishQuiz()`, and
+  `submitQuizAttempt()` handle generation, publishing, and scoring.
+- [`learning-content.graph.ts`](../backend/src/ai/graphs/learning-content.graph.ts):
+  `runLearningContentGraph()` runs the content-generation workflow.
+- [`learning.repository.ts`](../backend/src/modules/learning/learning.repository.ts):
+  `LearningRepository` persists learning content and quiz attempts.
+
+### B10 — Feedback and course insights
+
+**Status:** Implemented and validated. The complete backend test suite,
+typecheck, and build pass.
+
+- [`feedback.service.ts`](../backend/src/modules/feedback/feedback.service.ts):
+  `FeedbackService.submit()` records or updates feedback for the caller's own
+  assistant answer.
+- [`insights.service.ts`](../backend/src/modules/insights/insights.service.ts):
+  `InsightsService.recordActivity()` records privacy-safe activity;
+  `getInsights()` returns course aggregates; `refreshGapReport()` queues
+  background work; `generateGapReport()` creates a report.
+- [`app.ts`](../backend/src/app.ts): `createApp()` mounts the feedback and
+  insights routers when their dependencies are provided.
+
+### B11 — Administrative operations
+
+**Status:** Not started. Some related actions already exist in B3, including
+coach-request decisions and role/permission changes. Remaining B11 work
+includes system administration and account erasure.
+
+### B12 — Release verification and handover
+
+**Status:** Not started. Integrated evaluation, final API documentation,
+deployment packaging, backup/restore, and handover remain.
+
+## Validation results
+
+Checks were run from `backend/` after restoring the lockfile dependencies with
+`npm ci`:
+
+- `npm test`: **21 suites passed; 66 tests passed**.
+- `npm run typecheck`: passed.
+- `npm run build`: passed.
+- The runtime prints Node's `node:sqlite` experimental warning.
+
+The SQLite mismatch is resolved:
+
+- [`database.ts`](../backend/src/infra/sqlite/database.ts):
+  `openConversationDatabase()` reads the message schema with a prepared
+  `PRAGMA table_info` query.
+- [`conversation.repository.ts`](../backend/src/infra/sqlite/conversation.repository.ts)
+  now uses Node's `DatabaseSync` API for queries and transactions, validates
+  stored row values, and no longer imports the undeclared `better-sqlite3`
+  package.
+- [`conversation.repository.test.ts`](../backend/tests/unit/conversation.repository.test.ts)
+  verifies that a failed assistant-message insert rolls back the full exchange.
+
+`npm ci` reported 18 moderate audit advisories; they have not been investigated.
+
+## Risks and next steps
+
+The Inception API is scheduled to wind down on **2026-12-28**. Choose and test
+a replacement before then.
+
+1. Begin B11 administrative operations.
+2. Complete B12 release and handover work.
