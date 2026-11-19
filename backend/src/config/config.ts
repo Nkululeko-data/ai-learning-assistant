@@ -39,6 +39,7 @@ const defaultConfigSchema = z
   maxDocxExpandedSizeMb: z.number().int().min(1).max(512),
   chunkSizeTokens: z.number().int().min(64).max(4096),
   chunkOverlapTokens: z.number().int().min(0).max(4095),
+  chunkCacheMaxDocuments: z.number().int().min(1).max(10000),
   mistralEmbeddingModel: z.string().trim().min(1).max(100),
   mistralEmbeddingDimension: z.number().int().min(1).max(4096),
 })
@@ -97,6 +98,7 @@ const environmentSchema = z.object({
   MAX_DOCX_EXPANDED_SIZE_MB: z.coerce.number().int().min(1).max(512),
   CHUNK_SIZE_TOKENS: z.coerce.number().int().min(64).max(4096),
   CHUNK_OVERLAP_TOKENS: z.coerce.number().int().min(0).max(4095),
+  CHUNK_CACHE_MAX_DOCUMENTS: z.coerce.number().int().min(1).max(10000),
   ALLOW_REFRESH_TOKEN_IN_BODY: z
     .enum(["true", "false"])
     .transform((value) => value === "true"),
@@ -127,6 +129,7 @@ export interface AppConfig {
   maxDocxExpandedSizeBytes: number;
   chunkSizeTokens: number;
   chunkOverlapTokens: number;
+  chunkCacheMaxDocuments: number;
   mistralEmbeddingModel: string;
   mistralEmbeddingDimension: number;
   allowRefreshTokenInBody: boolean;
@@ -186,6 +189,9 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       process.env.CHUNK_SIZE_TOKENS ?? String(defaults.chunkSizeTokens),
     CHUNK_OVERLAP_TOKENS:
       process.env.CHUNK_OVERLAP_TOKENS ?? String(defaults.chunkOverlapTokens),
+    CHUNK_CACHE_MAX_DOCUMENTS:
+      process.env.CHUNK_CACHE_MAX_DOCUMENTS ??
+      String(defaults.chunkCacheMaxDocuments),
     ALLOW_REFRESH_TOKEN_IN_BODY:
       process.env.ALLOW_REFRESH_TOKEN_IN_BODY ??
       String(defaults.allowRefreshTokenInBody),
@@ -251,6 +257,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       values.MAX_DOCX_EXPANDED_SIZE_MB * 1024 * 1024,
     chunkSizeTokens: values.CHUNK_SIZE_TOKENS,
     chunkOverlapTokens: values.CHUNK_OVERLAP_TOKENS,
+    chunkCacheMaxDocuments: values.CHUNK_CACHE_MAX_DOCUMENTS,
     mistralEmbeddingModel: defaults.mistralEmbeddingModel,
     mistralEmbeddingDimension: defaults.mistralEmbeddingDimension,
     allowRefreshTokenInBody: values.ALLOW_REFRESH_TOKEN_IN_BODY,

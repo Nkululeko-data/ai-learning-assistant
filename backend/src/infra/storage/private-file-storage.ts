@@ -12,8 +12,18 @@ const storageKeySchema = z.string().uuid();
 export class PrivateFileStorage {
   private readonly uploadDirectory: string;
   private readonly chunkDirectory: string;
+  private readonly chunkCache = new Map<string, unknown>();
 
-  public constructor(dataDirectory: string) {
+  public constructor(
+    dataDirectory: string,
+    private readonly chunkCacheMaxDocuments = 100,
+  ) {
+    if (
+      !Number.isInteger(chunkCacheMaxDocuments) ||
+      chunkCacheMaxDocuments < 1
+    ) {
+      throw new RangeError("Chunk cache size must be a positive integer");
+    }
     this.uploadDirectory = join(dataDirectory, "uploads");
     this.chunkDirectory = join(dataDirectory, "json", "chunks");
   }
@@ -81,7 +91,32 @@ export class PrivateFileStorage {
    * Atomically replaces a document's chunk file.
    */
   public writeChunks(documentId: string, value: unknown): Promise<void> {
-    return writeJsonAtomically(this.chunkPath(documentId), value, 0o600);
+    const id = storageKeySchema.parse(documentId);
+    this.chunkCache.delete(id);
+    return writeJsonAtomically(this.chunkPath(id), value, 0o600);
+  }
+
+  /**
+   * Lazily reads and LRU-caches one private chunk file.
+   */
+  public async readChunks(documentId: string): Promise<unknown> {
+    const id = storageKeySchema.parse(documentId);
+    const cached = this.chunkCache.get(id);
+    if (cached !== undefined) {
+      this.chunkCache.delete(id);
+      this.chunkCache.set(id, cached);
+      return cached;
+    }
+
+    const contents = await readFile(this.chunkPath(id), "utf8");
+    const parsed: unknown = JSON.parse(contents);
+    this.chunkCache.set(id, parsed);
+    while (this.chunkCache.size > this.chunkCacheMaxDocuments) {
+      const leastRecentlyUsed = this.chunkCache.keys().next().value;
+      if (leastRecentlyUsed === undefined) break;
+      this.chunkCache.delete(leastRecentlyUsed);
+    }
+    return parsed;
   }
 
   /**
@@ -96,7 +131,9 @@ export class PrivateFileStorage {
    * Deletes one document's chunk file idempotently.
    */
   public removeChunks(documentId: string): Promise<void> {
-    return removeFileIfPresent(this.chunkPath(documentId));
+    const id = storageKeySchema.parse(documentId);
+    this.chunkCache.delete(id);
+    return removeFileIfPresent(this.chunkPath(id));
   }
 
   /**

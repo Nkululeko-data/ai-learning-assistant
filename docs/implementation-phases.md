@@ -40,10 +40,8 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B6 are complete; B7 is next. B7-B12
-remain to be implemented, with approval required at each phase gate. See
-[`current-project-status.md`](current-project-status.md) for a file-level
-summary and the latest validation status.
+**Current repository position:** B0-B7 are complete; B8 is next. B8-B12
+remain to be implemented, with approval required at each phase gate.
 
 ## Phase details
 
@@ -176,6 +174,16 @@ before scoring, and return source metadata with the selected chunks.
 **Done when:** Retrieval returns relevant authorized chunks, and isolation
 tests prove that unauthorized course content and other learners' personal notes
 never appear in results.
+
+**Current status:** Complete. The internal `RetrievalService` checks active
+course access, coach ownership or approved learner enrolment, and filters to
+ready documents matching the current embedding model before loading chunks.
+Course documents and the requesting learner's own notes are searchable;
+archived courses, other learners' notes, failed documents, and stale-model
+chunks are excluded. Results are cosine-ranked with source metadata. Chunk
+files are validated on read and loaded through a configurable LRU cache
+(`CHUNK_CACHE_MAX_DOCUMENTS`, default 100). Retrieval has no standalone HTTP
+endpoint; B8 will call the service from grounded question answering.
 
 ### B8 — Add grounded question answering
 

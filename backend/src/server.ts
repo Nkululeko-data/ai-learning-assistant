@@ -52,7 +52,10 @@ export async function startServer(): Promise<Server> {
   );
   const jobService = new JobService(jobRepository);
   const documentRepository = new JsonDocumentRepository(collections);
-  const privateFileStorage = new PrivateFileStorage(config.dataDir);
+  const privateFileStorage = new PrivateFileStorage(
+    config.dataDir,
+    config.chunkCacheMaxDocuments,
+  );
   await privateFileStorage.initialize();
   const embeddingProvider = new MistralEmbeddingProvider(
     config.mistralApiKey,
