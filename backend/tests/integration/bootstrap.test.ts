@@ -42,7 +42,7 @@ async function verifiesBootstrapIsIdempotent(): Promise<void> {
   const first = await bootstrapSystem(options);
   expect(first).toMatchObject({
     rolesAdded: 3,
-    permissionsAdded: 15,
+    permissionsAdded: 16,
     adminCreated: true,
     adminAlreadyExists: false,
   });

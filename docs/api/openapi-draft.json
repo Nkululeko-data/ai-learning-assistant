@@ -561,6 +561,7 @@
         "tags": ["Admin"],
         "operationId": "changeUserRole",
         "summary": "Change a user's role; self-role changes are forbidden",
+        "requestBody": { "$ref": "#/components/requestBodies/UserRoleRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -570,6 +571,7 @@
         "tags": ["Admin"],
         "operationId": "changeUserPermissions",
         "summary": "Grant or revoke fine-grained permissions",
+        "requestBody": { "$ref": "#/components/requestBodies/UserPermissionRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -579,6 +581,7 @@
         "tags": ["Admin"],
         "operationId": "changeUserStatus",
         "summary": "Suspend, stash or restore a user",
+        "requestBody": { "$ref": "#/components/requestBodies/UserStatusRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -627,6 +630,7 @@
         "tags": ["Admin"],
         "operationId": "updateConfig",
         "summary": "Update a validated non-secret configuration subset",
+        "requestBody": { "$ref": "#/components/requestBodies/AdminConfigRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -843,6 +847,38 @@
           }
         }
       },
+      "UserRoleRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UserRoleRequest" }
+          }
+        }
+      },
+      "UserPermissionRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UserPermissionRequest" }
+          }
+        }
+      },
+      "UserStatusRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UserStatusRequest" }
+          }
+        }
+      },
+      "AdminConfigRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AdminConfigRequest" }
+          }
+        }
+      },
       "PublishContentRequest": {
         "required": true,
         "content": {
@@ -937,6 +973,45 @@
         "properties": {
           "title": { "type": "string", "minLength": 1, "maxLength": 120 }
         }
+      },
+      "UserRoleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["learner", "coach", "admin"] }
+        }
+      },
+      "UserPermissionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["permission", "effect"],
+        "properties": {
+          "permission": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "effect": { "type": "string", "enum": ["grant", "revoke"] }
+        }
+      },
+      "UserStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["active", "suspended", "archived"] }
+        }
+      },
+      "AdminConfigRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "insightMinCohortSize": { "type": "integer", "minimum": 1, "maximum": 1000 },
+          "insightPeriodDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+          "gapReportsMaxPerCourse": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "anyOf": [
+          { "required": ["insightMinCohortSize"] },
+          { "required": ["insightPeriodDays"] },
+          { "required": ["gapReportsMaxPerCourse"] }
+        ]
       },
       "SubmitFeedbackRequest": {
         "type": "object",

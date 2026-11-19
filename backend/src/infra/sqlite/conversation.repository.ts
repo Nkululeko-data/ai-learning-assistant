@@ -276,6 +276,12 @@ export class ConversationRepository {
     return result.changes === 1;
   }
 
+  public deleteByUser(userId: string): void {
+    this.database
+      .prepare("DELETE FROM conversations WHERE user_id = ?")
+      .run(userId);
+  }
+
 }
 
 function mapConversation(row: Record<string, unknown>): ConversationRecord {

@@ -51,6 +51,7 @@ export interface CoachRequestView {
 export interface AuthRepository {
   findUserByEmail(email: string): UserRecord | null;
   findUserById(id: string): UserRecord | null;
+  listUsers(): UserRecord[];
   createUser(input: Omit<UserRecord, "id">): Promise<UserRecord>;
   removeUser(id: string): Promise<void>;
   updateUser(
@@ -118,6 +119,10 @@ export class JsonAuthRepository implements AuthRepository {
    */
   public findUserById(id: string): UserRecord | null {
     return this.collections.users.getById(id);
+  }
+
+  public listUsers(): UserRecord[] {
+    return this.collections.users.list();
   }
 
   /**

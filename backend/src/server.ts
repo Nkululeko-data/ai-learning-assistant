@@ -46,6 +46,7 @@ import { FeedbackRepository } from "./modules/feedback/feedback.repository";
 import { FeedbackService } from "./modules/feedback/feedback.service";
 import { InsightsRepository } from "./modules/insights/insights.repository";
 import { InsightsService } from "./modules/insights/insights.service";
+import { AdminService } from "./modules/admin/admin.service";
 
 /**
  * Initializes storage, builds the API, and starts listening on the configured port.
@@ -119,6 +120,13 @@ export async function startServer(): Promise<Server> {
     jobService,
     config,
   );
+  const adminService = new AdminService(
+    collections,
+    conversationRepository,
+    privateFileStorage,
+    jobService,
+    config,
+  );
   const executionRepository = new JsonAgentExecutionRepository(
     collections.agentExecutions,
     conversationRepository,
@@ -161,6 +169,13 @@ export async function startServer(): Promise<Server> {
         const report = await insightsService.generateGapReport(courseId);
         return { gapReportId: report.id };
       },
+      erase: async (job) => {
+        const userId = job.payload.userId;
+        if (typeof userId !== "string") {
+          throw new Error("Erasure job payload is missing userId");
+        }
+        return adminService.eraseUser(userId);
+      },
     },
     logger,
   );
@@ -196,6 +211,7 @@ export async function startServer(): Promise<Server> {
     },
     feedback: { authService, feedbackService },
     insights: { authService, insightsService },
+    admin: { authService, adminService },
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: isConversationDatabaseReady(database),

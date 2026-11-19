@@ -433,6 +433,18 @@ export const gapReportSchema = z
   })
   .strict();
 
+export const configVersionSchema = z
+  .object({
+    id: idSchema,
+    version: z.number().int().positive(),
+    changedBy: idSchema,
+    before: z.record(z.string(), z.unknown()),
+    after: z.record(z.string(), z.unknown()),
+    reason: z.string().max(1000).nullable().optional(),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
 export const agentExecutionSchema = z
   .object({
     id: idSchema,
@@ -480,6 +492,7 @@ export const jobSchema = z
       "cleanup",
       "reconcile",
       "backup",
+      "erase",
       "prune",
     ]),
     status: z.enum(["queued", "running", "done", "failed", "dead"]),
@@ -538,6 +551,7 @@ export type FeedbackRecord = z.infer<typeof feedbackSchema>;
 export type ActivityEventRecord = z.infer<typeof activityEventSchema>;
 export type GapTopicRecord = z.infer<typeof gapTopicSchema>;
 export type GapReportRecord = z.infer<typeof gapReportSchema>;
+export type ConfigVersionRecord = z.infer<typeof configVersionSchema>;
 export type AgentExecutionRecord = z.infer<typeof agentExecutionSchema>;
 export type JobRecord = z.infer<typeof jobSchema>;
 export type SchedulerStateRecord = z.infer<typeof schedulerStateSchema>;
@@ -561,6 +575,7 @@ export interface SystemCollections {
   feedback: JsonCollection<FeedbackRecord>;
   activityEvents: JsonCollection<ActivityEventRecord>;
   gapReports: JsonCollection<GapReportRecord>;
+  configVersions: JsonCollection<ConfigVersionRecord>;
   agentExecutions: JsonCollection<AgentExecutionRecord>;
   jobs: JsonCollection<JobRecord>;
   schedulerState: JsonCollection<SchedulerStateRecord>;
@@ -803,6 +818,16 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
       indexes: [
         { name: "id", key: (record) => record.id, unique: true },
         { name: "courseId", key: (record) => record.courseId },
+        { name: "createdAt", key: (record) => record.createdAt },
+      ],
+    }),
+    configVersions: store.register({
+      name: "config_versions",
+      schema: configVersionSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "version", key: (record) => String(record.version), unique: true },
+        { name: "changedBy", key: (record) => record.changedBy },
         { name: "createdAt", key: (record) => record.createdAt },
       ],
     }),

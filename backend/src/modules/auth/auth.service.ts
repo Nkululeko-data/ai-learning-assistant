@@ -509,6 +509,95 @@ export class AuthService {
     return this.toAuthenticatedUser(updated);
   }
 
+  public listUsers(limit: number, cursor?: string): {
+    items: SafeUser[];
+    nextCursor?: string;
+  } {
+    const records = this.repository
+      .listUsers()
+      .filter((record) => record.id >= (cursor ?? ""))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const hasMore = records.length > limit;
+    const items = (hasMore ? records.slice(0, limit) : records).map(toSafeUser);
+    const last = items.at(-1);
+    return {
+      items,
+      ...(hasMore && last
+        ? { nextCursor: Buffer.from(last.id).toString("base64url") }
+        : {}),
+    };
+  }
+
+  public async changeUserStatus(
+    targetUserId: string,
+    status: "active" | "suspended" | "archived",
+    actor: AuthenticatedUser,
+    requestId: string,
+  ): Promise<SafeUser> {
+    requirePermission(actor, "user:manage");
+    if (targetUserId === actor.id) {
+      throw new AppError("FORBIDDEN", 403, "Users cannot change their own status");
+    }
+    const user = this.repository.findUserById(targetUserId);
+    if (!user) throw new NotFoundError();
+    if (user.status === status) return toSafeUser(user);
+    const updated = await this.repository.updateUser(user.id, (record) => ({
+      ...record,
+      status,
+      ...(status === "active"
+        ? { lockedUntil: null }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    }));
+    if (status !== "active") await this.revokeUserTokens(user.id);
+    await this.repository.createAudit({
+      actorId: actor.id,
+      actorRole: actor.role,
+      action: "user.status_changed",
+      targetType: "user",
+      targetId: user.id,
+      before: { status: user.status },
+      after: { status },
+      requestId,
+    });
+    return toSafeUser(updated);
+  }
+
+  public async resetUserPassword(
+    targetUserId: string,
+    actor: AuthenticatedUser,
+    requestId: string,
+  ): Promise<{ resetToken: string; userId: string }> {
+    requirePermission(actor, "user:manage");
+    if (targetUserId === actor.id) {
+      throw new AppError("FORBIDDEN", 403, "Users cannot reset their own password");
+    }
+    const user = this.repository.findUserById(targetUserId);
+    if (!user) throw new NotFoundError();
+    const resetToken = randomBytes(32).toString("hex");
+    const resetTokenHash = createHash("sha256").update(resetToken).digest("hex");
+    const now = new Date();
+    await this.repository.updateUser(user.id, (record) => ({
+      ...record,
+      resetTokenHash,
+      resetTokenExpiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+      mustChangePassword: true,
+      updatedAt: now.toISOString(),
+    }));
+    await this.revokeUserTokens(user.id);
+    await this.repository.createAudit({
+      actorId: actor.id,
+      actorRole: actor.role,
+      action: "user.password_reset",
+      targetType: "user",
+      targetId: user.id,
+      before: null,
+      after: { mustChangePassword: true },
+      requestId,
+    });
+    return { resetToken, userId: user.id };
+  }
+
   /**
    * Returns a safe current-user profile and dynamically resolved permissions.
    */

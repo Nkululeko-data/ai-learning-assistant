@@ -40,8 +40,8 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B10 are complete; B11 is next. B11-B12
-remain to be implemented, with approval required at each phase gate.
+**Current repository position:** B0-B12 are complete in the current workspace.
+Deployment and provider-replacement approval remain operational decisions.
 
 ## Phase details
 
@@ -272,6 +272,15 @@ account erasure workflow.
 **Done when:** Admin APIs expose only permitted metadata, administrative
 changes are auditable, and erasure is safe, repeatable, and covered by tests.
 
+**Current status:** Complete. Safe user listing, role and permission changes,
+user status changes, password-reset issuance, coach request decisions, audit
+and AI-execution metadata, non-secret config reads/updates, and persistent
+privacy-erasure jobs are implemented. Erasure deletes conversations, personal
+documents/chunks/uploads, private learning content, quiz attempts, and refresh
+tokens, then tombstones the account and pseudonymizes retained analytics
+records. Admin responses exclude learner text, course content, chunk text, and
+secrets.
+
 ### B12 — Verify and prepare the release
 
 **Purpose:** Confirm the integrated backend is usable, supportable, and ready
@@ -284,6 +293,15 @@ backup/restore, and handover materials; and resolve deployment choices.
 **Done when:** The agreed checks pass, setup and recovery instructions are
 followable, known limitations are documented, and the deployment target and
 release decisions are approved. Do not claim a check passed unless it was run.
+
+**Current status:** Complete for the current local backend. The suite,
+typecheck and production build are automated; `/openapi.json` and `/api/docs`
+publish the API contract; Docker and docker-compose provide a one-instance
+persistent deployment; backup and restore scripts operate on JSON, SQLite and
+upload data; the offline AI evaluation fixture checks deterministic citation
+and refusal behavior. [Handover.md](HANDOVER.md) documents operations and known
+limitations. Live provider evaluation and deployment approval remain external
+operator decisions.
 
 ## Important rules that apply to every phase
 

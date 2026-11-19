@@ -18,6 +18,8 @@ import {
   refreshRequestSchema,
   registerRequestSchema,
   userRoleUpdateSchema,
+  adminUserListQuerySchema,
+  userStatusUpdateSchema,
 } from "./auth.schemas";
 
 const refreshCookieName = "refreshToken";
@@ -235,6 +237,58 @@ export function createAuthRouter(
     },
   );
 
+  router.get(
+    "/admin/users",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("role:manage"),
+    (request, response) => {
+      const query = adminUserListQuerySchema.parse(request.query);
+      const cursor = query.cursor
+        ? decodeBase64UuidCursor(query.cursor)
+        : undefined;
+      const page = dependencies.authService.listUsers(query.limit, cursor);
+      response.status(200).json({
+        data: page.items,
+        ...(page.nextCursor
+          ? { meta: { nextCursor: page.nextCursor } }
+          : {}),
+      });
+    },
+  );
+
+  router.patch(
+    "/admin/users/:id/status",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("user:manage"),
+    async (request, response) => {
+      const body = userStatusUpdateSchema.parse(request.body);
+      const user = await dependencies.authService.changeUserStatus(
+        requireRouteParam(request, "id"),
+        body.status,
+        requireAuthContext(request),
+        request.requestId,
+      );
+      response.status(200).json({ data: { user } });
+    },
+  );
+
+  router.post(
+    "/admin/users/:id/reset-password",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("user:manage"),
+    async (request, response) => {
+      const result = await dependencies.authService.resetUserPassword(
+        requireRouteParam(request, "id"),
+        requireAuthContext(request),
+        request.requestId,
+      );
+      response.status(200).json({ data: result });
+    },
+  );
+
   return router;
 }
 
@@ -296,6 +350,18 @@ function requireRouteParam(request: Request, name: string): string {
     throw new AppError("VALIDATION_FAILED", 422, `Missing route parameter: ${name}`);
   }
   return value;
+}
+
+function decodeBase64UuidCursor(cursor: string): string {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      decoded,
+    )
+  ) {
+    throw new AppError("VALIDATION_FAILED", 422, "The cursor is invalid");
+  }
+  return decoded;
 }
 
 /**
