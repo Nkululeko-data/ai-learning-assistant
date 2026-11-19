@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { chatIntentSchema, type ChatIntent } from "../../ai/schemas/chat.schemas";
 import type {
   GroundingStatus,
@@ -58,32 +58,8 @@ export interface ConversationExchange {
   retrievalScoreTop: number | null;
 }
 
-interface ConversationRow {
-  id: string;
-  user_id: string;
-  course_id: string;
-  title: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MessageRow {
-  id: string;
-  conversation_id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
-  execution_id: string | null;
-  intent: string | null;
-  grounding_status: GroundingStatus | null;
-  cited_chunk_ids: string | null;
-  cited_document_ids: string | null;
-  citations: string | null;
-  retrieval_score_top: number | null;
-}
-
 export class ConversationRepository {
-  public constructor(private readonly database: Database.Database) {}
+  public constructor(private readonly database: DatabaseSync) {}
 
   public dailyTokenUsage(userId: string, usageDate: string): number {
     const row = this.database
@@ -132,14 +108,14 @@ export class ConversationRepository {
   public findConversation(id: string): ConversationRecord | null {
     const row = this.database
       .prepare("SELECT * FROM conversations WHERE id = ?")
-      .get(id) as ConversationRow | undefined;
+      .get(id);
     return row ? mapConversation(row) : null;
   }
 
   public findMessage(id: string): ConversationMessageRecord | null {
     const row = this.database
       .prepare("SELECT * FROM messages WHERE id = ?")
-      .get(id) as MessageRow | undefined;
+      .get(id);
     return row ? mapMessage(row) : null;
   }
 
@@ -156,14 +132,14 @@ export class ConversationRepository {
              WHERE user_id = ? AND course_id = ? AND id > ?
              ORDER BY id ASC LIMIT ?`,
           )
-          .all(userId, courseId, cursorId ?? "", limit + 1) as ConversationRow[]
+          .all(userId, courseId, cursorId ?? "", limit + 1)
       : (this.database
           .prepare(
             `SELECT * FROM conversations
              WHERE user_id = ? AND id > ?
              ORDER BY id ASC LIMIT ?`,
           )
-          .all(userId, cursorId ?? "", limit + 1) as ConversationRow[]);
+          .all(userId, cursorId ?? "", limit + 1));
     const hasMore = rows.length > limit;
     const items = (hasMore ? rows.slice(0, limit) : rows).map(mapConversation);
     const lastItem = items.at(-1);
@@ -181,7 +157,7 @@ export class ConversationRepository {
          WHERE conversation_id = ?
          ORDER BY created_at ASC, rowid ASC`,
       )
-      .all(conversationId) as MessageRow[];
+      .all(conversationId);
     return rows.map(mapMessage);
   }
 
@@ -200,7 +176,7 @@ export class ConversationRepository {
          )
          ORDER BY created_at ASC, rowid ASC`,
       )
-      .all(conversationId, maximumMessages) as MessageRow[];
+      .all(conversationId, maximumMessages);
     return rows.map(mapMessage);
   }
 
@@ -213,7 +189,8 @@ export class ConversationRepository {
     const now = new Date();
     const createdAt = now.toISOString();
     const assistantCreatedAt = new Date(now.getTime() + 1).toISOString();
-    const transaction = this.database.transaction(() => {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
       if (exchange.createConversation) {
         this.database
           .prepare(
@@ -270,8 +247,11 @@ export class ConversationRepository {
         JSON.stringify(exchange.citations),
         exchange.retrievalScoreTop,
       );
-    });
-    transaction();
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
     return { userMessageId, assistantMessageId };
   }
 
@@ -298,30 +278,69 @@ export class ConversationRepository {
 
 }
 
-function mapConversation(row: ConversationRow): ConversationRecord {
+function mapConversation(row: Record<string, unknown>): ConversationRecord {
   return {
-    id: row.id,
-    userId: row.user_id,
-    courseId: row.course_id,
-    title: row.title,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: requiredString(row.id, "id"),
+    userId: requiredString(row.user_id, "user_id"),
+    courseId: requiredString(row.course_id, "course_id"),
+    title: nullableString(row.title, "title"),
+    createdAt: requiredString(row.created_at, "created_at"),
+    updatedAt: requiredString(row.updated_at, "updated_at"),
   };
 }
 
-function mapMessage(row: MessageRow): ConversationMessageRecord {
+function mapMessage(row: Record<string, unknown>): ConversationMessageRecord {
+  const role = requiredString(row.role, "role");
+  if (role !== "user" && role !== "assistant") {
+    throw new Error("Stored conversation message role is invalid");
+  }
+  const groundingStatus = nullableString(
+    row.grounding_status,
+    "grounding_status",
+  );
+  if (
+    groundingStatus !== null &&
+    groundingStatus !== "grounded" &&
+    groundingStatus !== "insufficient" &&
+    groundingStatus !== "unverified"
+  ) {
+    throw new Error("Stored conversation grounding status is invalid");
+  }
+
   return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    role: row.role,
-    content: row.content,
-    createdAt: row.created_at,
-    executionId: row.execution_id,
-    intent: parseIntent(row.intent),
-    groundingStatus: row.grounding_status,
-    citations: decodeCitations(row.citations),
-    retrievalScoreTop: row.retrieval_score_top,
+    id: requiredString(row.id, "id"),
+    conversationId: requiredString(row.conversation_id, "conversation_id"),
+    role,
+    content: requiredString(row.content, "content"),
+    createdAt: requiredString(row.created_at, "created_at"),
+    executionId: nullableString(row.execution_id, "execution_id"),
+    intent: parseIntent(nullableString(row.intent, "intent")),
+    groundingStatus,
+    citations: decodeCitations(nullableString(row.citations, "citations")),
+    retrievalScoreTop: nullableNumber(
+      row.retrieval_score_top,
+      "retrieval_score_top",
+    ),
   };
+}
+
+function requiredString(value: unknown, column: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Stored conversation column ${column} is invalid`);
+  }
+  return value;
+}
+
+function nullableString(value: unknown, column: string): string | null {
+  return value === null ? null : requiredString(value, column);
+}
+
+function nullableNumber(value: unknown, column: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number") {
+    throw new Error(`Stored conversation column ${column} is invalid`);
+  }
+  return value;
 }
 
 function parseIntent(value: string | null): ChatIntent | null {

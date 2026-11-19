@@ -56,9 +56,9 @@ export function openConversationDatabase(dataDirectory: string): DatabaseSync {
 
   const database = new DatabaseSync(join(databaseDirectory, "conversations.db"));
   database.exec(schema);
-  const messageColumns = database.pragma("table_info(messages)") as Array<{
-    name: string;
-  }>;
+  const messageColumns = database
+    .prepare("PRAGMA table_info(messages)")
+    .all() as Array<{ name: string }>;
   if (!messageColumns.some((column) => column.name === "citations")) {
     database.exec("ALTER TABLE messages ADD COLUMN citations TEXT");
   }

@@ -103,6 +103,39 @@ describe("ConversationRepository", () => {
     expect(repository.listMessages(conversationId)).toEqual([]);
   });
 
+  test("rolls back a conversation when saving its assistant message fails", () => {
+    database.exec(`
+      CREATE TRIGGER reject_assistant_message
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'assistant'
+      BEGIN
+        SELECT RAISE(ABORT, 'assistant insert failed');
+      END;
+    `);
+
+    expect(() =>
+      repository.saveExchange({
+        conversationId,
+        userId,
+        courseId,
+        title: "What is a database?",
+        createConversation: true,
+        question: "What is a database?",
+        answer: "A database stores data.",
+        executionId,
+        intent: "question",
+        groundingStatus: "grounded",
+        citations: [],
+        retrievalScoreTop: null,
+      }),
+    ).toThrow("assistant insert failed");
+
+    expect(repository.findConversation(conversationId)).toBeNull();
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM messages").get(),
+    ).toMatchObject({ count: 0 });
+  });
+
   test("enforces daily request limits and stores only quota counts", () => {
     expect(
       repository.reserveDailyRequest(userId, "2026-11-17", 1),
