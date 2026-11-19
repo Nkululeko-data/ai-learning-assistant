@@ -61,10 +61,11 @@ for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 
-The backend implementation is complete through phases B0-B11. B0-B1 cover
+The backend implementation is complete through phases B0-B12. B0-B1 cover
 repository assessment and design/contracts; B2-B9 provide the main runnable
-features; B10 adds feedback and privacy-safe course insights, and B11 adds
-administrative operations and privacy erasure:
+features; B10 adds feedback and privacy-safe course insights, B11 adds
+administrative operations and privacy erasure, and B12 provides release
+verification and operating artefacts:
 
 - **B2 — Backend foundation:** configuration, logging and shared error
   handling, storage initialization, health/readiness checks, and administrator
@@ -186,6 +187,12 @@ administrative operations and privacy erasure:
 
   Use `PATCH /api/v1/admin/users/{id}/status` for the body above, and
   `POST /api/v1/admin/users/{id}/erase` to enqueue erasure.
+- **B12 — Release verification and packaging:** the API contract is published
+  at `/openapi.json` and Swagger UI at `/api/docs`. Docker packaging uses one
+  container and a persistent named-volume deployment; the JSON store remains
+  single-writer and must not be horizontally scaled. Offline AI evaluation
+  checks deterministic citation and refusal behavior and does not call external
+  providers. Backup/restore scripts and the handover guide are included.
 
 For B6, the upload endpoint is `POST /api/v1/documents/upload`; requests use
 multipart fields `courseId`, `scope` (`course` or `personal`), and `file`.
@@ -193,8 +200,12 @@ Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
 50 MB. See the [API specification](docs/api/API-Specification.md) for all
 request formats and related endpoints.
 
-**Not implemented yet:** B12 (full release verification, packaging, Docker,
-backup/restore, and handover) remains for the final phase.
+**Release status:** B0-B12 are implemented. Deployment approval still requires
+the operator to choose credentials, persistent storage, backup retention, and
+a supported replacement for the Inception provider before its December 28,
+2026 shutdown. Docker image builds are verified; container startup must also
+be smoke-tested on the target Linux host because the current Windows Docker
+Desktop host produced a native `better-sqlite3` startup crash.
 
 **Provider deployment warning:** the Inception API is scheduled to wind down
 on December 28, 2026. Choose and test a replacement before that date.

@@ -1,0 +1,2876 @@
+{
+  "info": {
+    "name": "AI Learning Assistant API",
+    "description": "Imported from docs/api/openapi-draft.json. Set accessToken after login/register. Public auth endpoints do not require a bearer token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "courseId",
+      "value": "00000000-0000-4000-8000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "resourceId",
+      "value": "00000000-0000-4000-8000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "documentId",
+      "value": "00000000-0000-4000-8000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "conversationId",
+      "value": "00000000-0000-4000-8000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "messageId",
+      "value": "00000000-0000-4000-8000-000000000004",
+      "type": "string"
+    },
+    {
+      "key": "summaryId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "flashcardId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "quizId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "jobId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "enrolmentId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    },
+    {
+      "key": "requestId",
+      "value": "{{resourceId}}",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register a learner and optionally request coach approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/auth/register",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"learner@example.test\",\n  \"password\": \"Learning123!\",\n  \"displayName\": \"Test Learner\",\n  \"requestCoach\": false,\n  \"coachMessage\": \"I would like to teach\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Authenticate and issue tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/auth/login",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"learner@example.test\",\n  \"password\": \"Learning123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "if (json && json.data && json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rotate the refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/auth/refresh",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "if (json && json.data && json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke the refresh-token family",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/auth/logout",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Change the current user's password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/auth/change-password",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Learning123!\",\n  \"newPassword\": \"Learning456!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get the current user's safe profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/me",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "List active course cards and accessible courses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Create a course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Database Systems\",\n  \"description\": \"Introduction to databases\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get a course visible to the caller",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update or archive an owned course",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Database Systems\",\n  \"description\": \"Introduction to databases\",\n  \"status\": \"active\",\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Enrolments",
+      "item": [
+        {
+          "name": "Request to join a course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/join",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List the current user's enrolments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/me/enrolments",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List join requests for an owned course",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/join-requests",
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Approve or reject a join request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/enrolments/{{enrolmentId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "enrolmentId",
+                  "value": "{{enrolmentId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Remove a learner enrolment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/enrolment",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Upload a document and enqueue ingestion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/documents/upload",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "courseId",
+                  "type": "text",
+                  "value": "{{courseId}}"
+                },
+                {
+                  "key": "scope",
+                  "type": "text",
+                  "value": "course"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get ingestion status and safe diagnostics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/documents/{{documentId}}/status",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "documentId",
+                  "value": "{{documentId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Retry failed ingestion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/documents/{{documentId}}/retry",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "documentId",
+                  "value": "{{documentId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List document metadata visible to the caller",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/documents",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Enqueue hard deletion of a document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/documents/{{documentId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "documentId",
+                  "value": "{{documentId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Ask a grounded question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/chat/ask",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "Returns JSON by default or a post-validation SSE replay when requested. No answer is streamed before citation validation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"question\": \"What is a database?\",\n  \"conversationId\": \"{{conversationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Conversations",
+      "item": [
+        {
+          "name": "List the caller's conversations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/conversations",
+              "query": [
+                {
+                  "key": "courseId",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get an owned conversation and messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/conversations/{{conversationId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "conversationId",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Rename an owned conversation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/conversations/{{conversationId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "conversationId",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Database study\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Hard-delete an owned conversation and its messages",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/conversations/{{conversationId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "conversationId",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Learning",
+      "item": [
+        {
+          "name": "Generate a summary from selected sources",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/summaries/generate",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"selection\": {\n    \"documentIds\": [\n      \"{{documentId}}\"\n    ],\n    \"sections\": [\n      \"Basics\"\n    ],\n    \"topic\": \"database fundamentals\"\n  },\n  \"scope\": \"document\",\n  \"regenerate\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List summaries visible to the caller",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/summaries",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get a caller-visible summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/summaries/{{summaryId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "summaryId",
+                  "value": "{{summaryId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Publish an owned coach summary draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/summaries/{{summaryId}}/publish",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "summaryId",
+                  "value": "{{summaryId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Generate flashcards from selected sources",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/flashcards/generate",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"selection\": {\n    \"documentIds\": [\n      \"{{documentId}}\"\n    ]\n  },\n  \"count\": 10,\n  \"regenerate\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List flashcard sets visible to the caller",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/flashcards",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get a caller-visible flashcard set",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/flashcards/{{flashcardId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "flashcardId",
+                  "value": "{{flashcardId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Publish an owned coach flashcard draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/flashcards/{{flashcardId}}/publish",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "flashcardId",
+                  "value": "{{flashcardId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quizzes",
+      "item": [
+        {
+          "name": "Generate a private quiz or coach draft from selected sources",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes/generate",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"selection\": {\n    \"documentIds\": [\n      \"{{documentId}}\"\n    ]\n  },\n  \"count\": 10,\n  \"types\": [\n    \"mcq\"\n  ],\n  \"difficulty\": \"medium\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create a coach quiz draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"{{courseId}}\",\n  \"title\": \"Database basics\",\n  \"sourceDocumentIds\": [\n    \"{{documentId}}\"\n  ],\n  \"questions\": [\n    {\n      \"type\": \"mcq\",\n      \"prompt\": \"What is a database?\",\n      \"options\": [\n        {\n          \"id\": \"a\",\n          \"text\": \"An organized collection of data\"\n        },\n        {\n          \"id\": \"b\",\n          \"text\": \"A programming language\"\n        }\n      ],\n      \"correctOptionId\": \"a\",\n      \"explanation\": \"A database organizes related data.\",\n      \"sourceChunkIds\": [\n        \"{{documentId}}:0\"\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get caller-specific quiz view",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes/{{quizId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "quizId",
+                  "value": "{{quizId}}"
+                }
+              ]
+            },
+            "description": "Learner view never includes correctOptionId or explanation before submission."
+          }
+        },
+        {
+          "name": "Edit draft or create a new quiz version",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes/{{quizId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "quizId",
+                  "value": "{{quizId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1,\n  \"title\": \"Database basics revised\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Publish a coach quiz",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes/{{quizId}}/publish",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "quizId",
+                  "value": "{{quizId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List quizzes visible to the caller",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/quizzes",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Submit answers and receive server-scored results",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/quizzes/{{quizId}}/attempts",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "quizId",
+                  "value": "{{quizId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"questionId\": \"replace-with-question-id\",\n      \"selectedOptionId\": \"a\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List the current user's quiz attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/me/quiz-attempts",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feedback",
+      "item": [
+        {
+          "name": "Submit or update feedback for an answer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/feedback",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"{{messageId}}\",\n  \"conversationId\": \"{{conversationId}}\",\n  \"courseId\": \"{{courseId}}\",\n  \"rating\": \"helpful\",\n  \"comment\": \"The answer was clear\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Insights",
+      "item": [
+        {
+          "name": "Get owner-only cohort aggregates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/insights",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get latest theme-only gap report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/gap-report",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Enqueue a gap-report job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/courses/{{courseId}}/gap-report/refresh",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Reassign a course to an active coach",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/courses/{{courseId}}/owner",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Archive or reactivate a course",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/courses/{{courseId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "courseId",
+                  "value": "{{courseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List coach requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/coach-requests",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Approve or reject a coach request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/coach-requests/{{requestId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "requestId",
+                  "value": "{{requestId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"decisionNote\": \"Approved for testing\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List user metadata without content",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Change a user's role; self-role changes are forbidden",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users/{{userId}}/role",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"learner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Grant or revoke fine-grained permissions",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users/{{userId}}/permissions",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permission\": \"content:generate\",\n  \"effect\": \"grant\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Suspend, stash or restore a user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users/{{userId}}/status",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Issue a one-time password reset token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users/{{userId}}/reset-password",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Enqueue privacy erasure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/users/{{userId}}/erase",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List redacted audit metadata",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/audit-logs",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List AI execution metadata only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/executions",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get effective non-secret configuration",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/config",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update a validated non-secret configuration subset",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/config",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"insightMinCohortSize\": 3,\n  \"insightPeriodDays\": 7,\n  \"gapReportsMaxPerCourse\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List safe job metadata",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/jobs",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Retry a failed or dead-letter job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/admin/jobs/{{jobId}}/retry",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "jobId",
+                  "value": "{{jobId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "Get caller-authorized job status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/jobs/{{jobId}}",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                },
+                {
+                  "key": "jobId",
+                  "value": "{{jobId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Liveness check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/health",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Readiness check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{{baseUrl}}}/api/v1/ready",
+              "query": [],
+              "variable": [
+                {
+                  "key": "baseUrl",
+                  "value": "{{baseUrl}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ]
+}

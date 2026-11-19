@@ -1,4 +1,7 @@
 import cors from "cors";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import swaggerUi from "swagger-ui-express";
 import express, { type Request, type RequestHandler } from "express";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
@@ -97,6 +100,12 @@ export function createApp(dependencies: AppDependencies): express.Express {
 
   app.get("/health", healthHandler);
   app.get("/ready", createReadinessHandler(dependencies.getReadiness));
+  app.get("/openapi.json", openApiHandler);
+  app.use(
+    "/api/docs",
+    swaggerUi.serve,
+    swaggerUi.setup(undefined, { swaggerUrl: "/openapi.json" }),
+  );
   if (dependencies.auth) {
     app.use("/api/v1", createAuthRouter(dependencies.auth));
   }
@@ -156,6 +165,15 @@ function createCorsOriginValidator(
  */
 const healthHandler: RequestHandler = (_request, response) => {
   response.status(200).json({ data: { status: "ok" } });
+};
+
+const openApiHandler: RequestHandler = (_request, response, next) => {
+  try {
+    const openApiPath = resolve(process.cwd(), "docs", "api", "openapi-draft.json");
+    response.type("application/json").send(readFileSync(openApiPath, "utf8"));
+  } catch (error) {
+    next(error);
+  }
 };
 
 /**

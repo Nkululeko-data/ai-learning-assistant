@@ -1,0 +1,18 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/backend/data
+    ports:
+      - "3000:3000"
+    volumes:
+      - ai_learning_assistant_data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  ai_learning_assistant_data:

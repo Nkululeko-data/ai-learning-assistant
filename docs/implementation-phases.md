@@ -40,8 +40,8 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B11 are complete; B12 is next. B12 remains
-to be implemented, with approval required at the final phase gate.
+**Current repository position:** B0-B12 are complete in the current workspace.
+Deployment and provider-replacement approval remain operational decisions.
 
 ## Phase details
 
@@ -293,6 +293,15 @@ backup/restore, and handover materials; and resolve deployment choices.
 **Done when:** The agreed checks pass, setup and recovery instructions are
 followable, known limitations are documented, and the deployment target and
 release decisions are approved. Do not claim a check passed unless it was run.
+
+**Current status:** Complete for the current local backend. The suite,
+typecheck and production build are automated; `/openapi.json` and `/api/docs`
+publish the API contract; Docker and docker-compose provide a one-instance
+persistent deployment; backup and restore scripts operate on JSON, SQLite and
+upload data; the offline AI evaluation fixture checks deterministic citation
+and refusal behavior. [Handover.md](HANDOVER.md) documents operations and known
+limitations. Live provider evaluation and deployment approval remain external
+operator decisions.
 
 ## Important rules that apply to every phase
 
