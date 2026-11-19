@@ -28,6 +28,7 @@ const permissionDefinitions = [
   "user:manage",
   "role:manage",
   "config:manage",
+  "config:view",
   "audit:view",
   "executions:view",
 ];
@@ -55,6 +56,7 @@ const baselinePermissions: Record<string, string[]> = {
     "user:manage",
     "role:manage",
     "config:manage",
+    "config:view",
     "audit:view",
     "executions:view",
   ],

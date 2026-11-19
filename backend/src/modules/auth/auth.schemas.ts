@@ -55,3 +55,16 @@ export const permissionOverrideSchema = z
     effect: z.enum(["grant", "revoke"]),
   })
   .strict();
+
+export const adminUserListQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  })
+  .strict();
+
+export const userStatusUpdateSchema = z
+  .object({
+    status: z.enum(["active", "suspended", "archived"]),
+  })
+  .strict();

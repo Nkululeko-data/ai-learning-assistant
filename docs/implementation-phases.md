@@ -40,8 +40,8 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B10 are complete; B11 is next. B11-B12
-remain to be implemented, with approval required at each phase gate.
+**Current repository position:** B0-B11 are complete; B12 is next. B12 remains
+to be implemented, with approval required at the final phase gate.
 
 ## Phase details
 
@@ -271,6 +271,15 @@ account erasure workflow.
 
 **Done when:** Admin APIs expose only permitted metadata, administrative
 changes are auditable, and erasure is safe, repeatable, and covered by tests.
+
+**Current status:** Complete. Safe user listing, role and permission changes,
+user status changes, password-reset issuance, coach request decisions, audit
+and AI-execution metadata, non-secret config reads/updates, and persistent
+privacy-erasure jobs are implemented. Erasure deletes conversations, personal
+documents/chunks/uploads, private learning content, quiz attempts, and refresh
+tokens, then tombstones the account and pseudonymizes retained analytics
+records. Admin responses exclude learner text, course content, chunk text, and
+secrets.
 
 ### B12 — Verify and prepare the release
 

@@ -61,9 +61,10 @@ for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 
-The backend implementation is complete through phases B0-B10. B0-B1 cover
+The backend implementation is complete through phases B0-B11. B0-B1 cover
 repository assessment and design/contracts; B2-B9 provide the main runnable
-features, and B10 adds feedback and privacy-safe course insights:
+features; B10 adds feedback and privacy-safe course insights, and B11 adds
+administrative operations and privacy erasure:
 
 - **B2 — Backend foundation:** configuration, logging and shared error
   handling, storage initialization, health/readiness checks, and administrator
@@ -167,6 +168,24 @@ features, and B10 adds feedback and privacy-safe course insights:
     "comment": "The explanation was clear"
   }
   ```
+- **B11 — Administration and privacy erasure:** admins can list safe user
+  metadata, change roles and coach permission overrides, suspend or restore
+  accounts, issue one-time password reset tokens, and review redacted audit
+  and AI execution metadata. Effective non-secret insight settings can be read
+  and changed by authorized admins. Privacy erasure is queued as a persistent
+  job and deletes conversations, personal documents/chunks/uploads, private
+  learning content, quiz attempts, and refresh tokens. It then tombstones the
+  user and pseudonymizes retained feedback/activity records. Admin APIs never
+  return conversation text, document text, chunk text, secrets, or credentials.
+
+  Example status and erasure requests:
+
+  ```json
+  { "status": "suspended" }
+  ```
+
+  Use `PATCH /api/v1/admin/users/{id}/status` for the body above, and
+  `POST /api/v1/admin/users/{id}/erase` to enqueue erasure.
 
 For B6, the upload endpoint is `POST /api/v1/documents/upload`; requests use
 multipart fields `courseId`, `scope` (`course` or `personal`), and `file`.
@@ -174,8 +193,8 @@ Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
 50 MB. See the [API specification](docs/api/API-Specification.md) for all
 request formats and related endpoints.
 
-**Not implemented yet:** B11-B12 (administrative operations, privacy erasure,
-and release handover) remain for later phases.
+**Not implemented yet:** B12 (full release verification, packaging, Docker,
+backup/restore, and handover) remains for the final phase.
 
 **Provider deployment warning:** the Inception API is scheduled to wind down
 on December 28, 2026. Choose and test a replacement before that date.

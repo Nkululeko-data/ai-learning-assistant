@@ -38,6 +38,10 @@ import {
   createInsightsRouter,
   type InsightsRouteDependencies,
 } from "./modules/insights/insights.routes";
+import {
+  createAdminRouter,
+  type AdminRouteDependencies,
+} from "./modules/admin/admin.routes";
 
 export interface ReadinessStatus {
   jsonStoreOpen: boolean;
@@ -59,6 +63,7 @@ export interface AppDependencies {
   learning?: LearningRouteDependencies;
   feedback?: FeedbackRouteDependencies;
   insights?: InsightsRouteDependencies;
+  admin?: AdminRouteDependencies;
 }
 
 /**
@@ -115,6 +120,9 @@ export function createApp(dependencies: AppDependencies): express.Express {
   }
   if (dependencies.insights) {
     app.use("/api/v1", createInsightsRouter(dependencies.insights));
+  }
+  if (dependencies.admin) {
+    app.use("/api/v1", createAdminRouter(dependencies.admin));
   }
   app.use(notFoundHandler);
   app.use(createErrorHandler(dependencies.logger));
