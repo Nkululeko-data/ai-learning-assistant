@@ -267,7 +267,33 @@
         "operationId": "askChat",
         "summary": "Ask a grounded question",
         "description": "Returns JSON by default or a post-validation SSE replay when requested. No answer is streamed before citation validation.",
-        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "503": { "$ref": "#/components/responses/ApiError" } }
+        "parameters": [
+          {
+            "name": "Accept",
+            "in": "header",
+            "required": false,
+            "description": "Use text/event-stream to replay the already-validated response as SSE.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/AskChatRequest" },
+        "responses": {
+          "200": {
+            "description": "Grounded response or a response event followed by a done event",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatAskEnvelope" } },
+              "text/event-stream": { "schema": { "type": "string" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ApiError" },
+          "403": { "$ref": "#/components/responses/ApiError" },
+          "404": { "$ref": "#/components/responses/ApiError" },
+          "422": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/ApiError" },
+          "502": { "$ref": "#/components/responses/ApiError" },
+          "503": { "$ref": "#/components/responses/ApiError" },
+          "504": { "$ref": "#/components/responses/ApiError" }
+        }
       }
     },
     "/conversations": {
@@ -275,7 +301,12 @@
         "tags": ["Conversations"],
         "operationId": "listConversations",
         "summary": "List the caller's conversations",
-        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+        "parameters": [
+          { "name": "courseId", "in": "query", "required": false, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/conversations/{conversationId}": {
@@ -290,7 +321,8 @@
         "tags": ["Conversations"],
         "operationId": "renameConversation",
         "summary": "Rename an owned conversation",
-        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+        "requestBody": { "$ref": "#/components/requestBodies/UpdateConversationRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       },
       "delete": {
         "tags": ["Conversations"],
@@ -304,7 +336,40 @@
         "tags": ["Learning"],
         "operationId": "generateSummary",
         "summary": "Generate a summary from selected sources",
+        "requestBody": { "$ref": "#/components/requestBodies/GenerateSummaryRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/summaries": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Learning"],
+        "operationId": "listCourseSummaries",
+        "summary": "List summaries visible to the caller",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/summaries/{summaryId}": {
+      "parameters": [{ "$ref": "#/components/parameters/summaryId" }],
+      "get": {
+        "tags": ["Learning"],
+        "operationId": "getSummary",
+        "summary": "Get a caller-visible summary",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/summaries/{summaryId}/publish": {
+      "parameters": [{ "$ref": "#/components/parameters/summaryId" }],
+      "post": {
+        "tags": ["Learning"],
+        "operationId": "publishSummary",
+        "summary": "Publish an owned coach summary draft",
+        "requestBody": { "$ref": "#/components/requestBodies/PublishContentRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
     "/flashcards/generate": {
@@ -312,7 +377,40 @@
         "tags": ["Learning"],
         "operationId": "generateFlashcards",
         "summary": "Generate flashcards from selected sources",
+        "requestBody": { "$ref": "#/components/requestBodies/GenerateFlashcardsRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/courses/{courseId}/flashcards": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Learning"],
+        "operationId": "listCourseFlashcards",
+        "summary": "List flashcard sets visible to the caller",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/flashcards/{flashcardId}": {
+      "parameters": [{ "$ref": "#/components/parameters/flashcardId" }],
+      "get": {
+        "tags": ["Learning"],
+        "operationId": "getFlashcards",
+        "summary": "Get a caller-visible flashcard set",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/ApiError" } }
+      }
+    },
+    "/flashcards/{flashcardId}/publish": {
+      "parameters": [{ "$ref": "#/components/parameters/flashcardId" }],
+      "post": {
+        "tags": ["Learning"],
+        "operationId": "publishFlashcards",
+        "summary": "Publish an owned coach flashcard draft",
+        "requestBody": { "$ref": "#/components/requestBodies/PublishContentRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
     "/quizzes/generate": {
@@ -320,6 +418,7 @@
         "tags": ["Quizzes"],
         "operationId": "generateQuiz",
         "summary": "Generate a private quiz or coach draft from selected sources",
+        "requestBody": { "$ref": "#/components/requestBodies/GenerateQuizRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -328,6 +427,7 @@
         "tags": ["Quizzes"],
         "operationId": "createQuiz",
         "summary": "Create a coach quiz draft",
+        "requestBody": { "$ref": "#/components/requestBodies/CreateQuizRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -344,6 +444,7 @@
         "tags": ["Quizzes"],
         "operationId": "updateQuiz",
         "summary": "Edit draft or create a new quiz version",
+        "requestBody": { "$ref": "#/components/requestBodies/UpdateQuizRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -353,6 +454,7 @@
         "tags": ["Quizzes"],
         "operationId": "publishQuiz",
         "summary": "Publish a coach quiz",
+        "requestBody": { "$ref": "#/components/requestBodies/PublishContentRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" } }
       }
     },
@@ -362,6 +464,10 @@
         "tags": ["Quizzes"],
         "operationId": "listCourseQuizzes",
         "summary": "List quizzes visible to the caller",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } }
+        ],
         "responses": { "200": { "$ref": "#/components/responses/Success" } }
       }
     },
@@ -371,6 +477,7 @@
         "tags": ["Quizzes"],
         "operationId": "submitQuizAttempt",
         "summary": "Submit answers and receive server-scored results",
+        "requestBody": { "$ref": "#/components/requestBodies/SubmitQuizAttemptRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -379,6 +486,10 @@
         "tags": ["Quizzes"],
         "operationId": "listMyQuizAttempts",
         "summary": "List the current user's quiz attempts",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } }
+        ],
         "responses": { "200": { "$ref": "#/components/responses/Success" } }
       }
     },
@@ -387,6 +498,7 @@
         "tags": ["Feedback"],
         "operationId": "submitFeedback",
         "summary": "Submit or update feedback for an answer",
+        "requestBody": { "$ref": "#/components/requestBodies/SubmitFeedbackRequest" },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
@@ -666,6 +778,86 @@
             "schema": { "$ref": "#/components/schemas/DocumentUploadRequest" }
           }
         }
+      },
+      "AskChatRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AskChatRequest" }
+          }
+        }
+      },
+      "UpdateConversationRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UpdateConversationRequest" }
+          }
+        }
+      },
+      "SubmitFeedbackRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SubmitFeedbackRequest" }
+          }
+        }
+      },
+      "GenerateSummaryRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/GenerateSummaryRequest" }
+          }
+        }
+      },
+      "GenerateFlashcardsRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/GenerateFlashcardsRequest" }
+          }
+        }
+      },
+      "GenerateQuizRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/GenerateQuizRequest" }
+          }
+        }
+      },
+      "CreateQuizRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CreateQuizRequest" }
+          }
+        }
+      },
+      "UpdateQuizRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/UpdateQuizRequest" }
+          }
+        }
+      },
+      "PublishContentRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/PublishContentRequest" }
+          }
+        }
+      },
+      "SubmitQuizAttemptRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SubmitQuizAttemptRequest" }
+          }
+        }
       }
     },
     "parameters": {
@@ -675,10 +867,244 @@
       "enrolmentId": { "name": "enrolmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "conversationId": { "name": "conversationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "quizId": { "name": "quizId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "summaryId": { "name": "summaryId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "flashcardId": { "name": "flashcardId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "userId": { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "jobId": { "name": "jobId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
     },
     "schemas": {
+      "ChatAskEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/ChatAskResult" }
+        }
+      },
+      "ChatAskResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["conversationId", "userMessageId", "messageId", "executionId", "groundingStatus", "answer", "message", "citations", "retrievalScoreTop", "suggestedAction"],
+        "properties": {
+          "conversationId": { "type": "string", "format": "uuid" },
+          "userMessageId": { "type": "string", "format": "uuid" },
+          "messageId": { "type": "string", "format": "uuid" },
+          "executionId": { "type": "string", "format": "uuid" },
+          "groundingStatus": { "type": ["string", "null"], "enum": ["grounded", "insufficient", "unverified", null] },
+          "answer": { "type": ["string", "null"] },
+          "message": { "type": ["string", "null"] },
+          "citations": { "type": "array", "items": { "$ref": "#/components/schemas/ChatCitation" } },
+          "retrievalScoreTop": { "type": ["number", "null"] },
+          "suggestedAction": { "oneOf": [{ "$ref": "#/components/schemas/SuggestedAction" }, { "type": "null" }] }
+        }
+      },
+      "ChatCitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["marker", "chunkId", "documentId", "documentName", "pageStart", "pageEnd", "section"],
+        "properties": {
+          "marker": { "type": "integer", "minimum": 1 },
+          "chunkId": { "type": "string", "minLength": 1 },
+          "documentId": { "type": "string", "format": "uuid" },
+          "documentName": { "type": "string", "minLength": 1 },
+          "pageStart": { "type": "integer", "minimum": 1 },
+          "pageEnd": { "type": "integer", "minimum": 1 },
+          "section": { "type": ["string", "null"] }
+        }
+      },
+      "SuggestedAction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "endpoint"],
+        "properties": {
+          "type": { "type": "string", "enum": ["summary", "quiz", "flashcards"] },
+          "endpoint": { "type": "string", "minLength": 1 }
+        }
+      },
+      "AskChatRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "question"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "question": { "type": "string", "minLength": 1, "maxLength": 4000 },
+          "conversationId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "UpdateConversationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      },
+      "SubmitFeedbackRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId", "conversationId", "courseId", "rating"],
+        "properties": {
+          "messageId": { "type": "string", "format": "uuid" },
+          "conversationId": { "type": "string", "format": "uuid" },
+          "courseId": { "type": "string", "format": "uuid" },
+          "rating": { "type": "string", "enum": ["helpful", "not_helpful"] },
+          "comment": { "type": ["string", "null"], "minLength": 1, "maxLength": 1000 }
+        }
+      },
+      "LearningSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["documentIds"],
+        "properties": {
+          "documentIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "sections": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "topic": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "GenerateSummaryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "selection", "scope"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "selection": { "$ref": "#/components/schemas/LearningSelection" },
+          "scope": { "type": "string", "enum": ["document", "section"] },
+          "regenerate": { "type": "boolean", "default": false }
+        }
+      },
+      "GenerateFlashcardsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "selection"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "selection": { "$ref": "#/components/schemas/LearningSelection" },
+          "count": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 },
+          "regenerate": { "type": "boolean", "default": false }
+        }
+      },
+      "GenerateQuizRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "selection"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "selection": { "$ref": "#/components/schemas/LearningSelection" },
+          "count": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 },
+          "types": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": { "type": "string", "enum": ["mcq", "true_false"] },
+            "default": ["mcq"]
+          },
+          "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"], "default": "medium" }
+        }
+      },
+      "QuizQuestionContent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "prompt", "options", "correctOptionId", "explanation", "sourceChunkIds"],
+        "properties": {
+          "type": { "type": "string", "enum": ["mcq", "true_false"] },
+          "prompt": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "text"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 40 },
+                "text": { "type": "string", "minLength": 1, "maxLength": 500 }
+              }
+            }
+          },
+          "correctOptionId": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "explanation": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "sourceChunkIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+          }
+        }
+      },
+      "CreateQuizRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseId", "title", "sourceDocumentIds", "questions"],
+        "properties": {
+          "courseId": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "sourceDocumentIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "questions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/QuizQuestionContent" }
+          }
+        }
+      },
+      "UpdateQuizRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "properties": {
+          "version": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "questions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/QuizQuestionContent" }
+          }
+        }
+      },
+      "PublishContentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "properties": { "version": { "type": "integer", "minimum": 1 } }
+      },
+      "SubmitQuizAttemptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["answers"],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["questionId", "selectedOptionId"],
+              "properties": {
+                "questionId": { "type": "string", "minLength": 1, "maxLength": 100 },
+                "selectedOptionId": { "type": "string", "minLength": 1, "maxLength": 40 }
+              }
+            }
+          }
+        }
+      },
       "RegisterRequest": {
         "type": "object",
         "additionalProperties": false,

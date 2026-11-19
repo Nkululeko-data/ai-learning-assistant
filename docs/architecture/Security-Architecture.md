@@ -46,11 +46,13 @@
 
 ## AI provider privacy and safety
 
-Document and personal-note text is sent to Mistral for embeddings. Questions and context may be sent to the configured LLM provider for generation. This data flow must be disclosed in the user-facing upload/privacy notices and in deployment documentation before a user uploads a document or personal note. OCR is not performed; low-text PDFs fail with a safe diagnostic.
+Document and personal-note text and chat questions are sent to Mistral for embeddings. Bounded conversation history and retrieved evidence may be sent to the configured LLM provider for generation. This data flow must be disclosed in the user-facing upload/privacy notices and in deployment documentation before a user uploads a document or personal note or asks a question. OCR is not performed; low-text PDFs fail with a safe diagnostic.
 
-Provider SDKs are isolated behind adapters; secrets are environment/secret-manager values. Logs and `agent_executions` contain metadata only: no prompts, outputs, document text or question text. Production tracing to external services is disabled and startup fails if prohibited tracing variables are set.
+Provider access is isolated behind adapters; provider credentials are environment/secret-manager values. Logs and JSON `agent_executions` contain metadata only: no prompts, outputs, document text or question text. Conversation bodies are stored separately in the caller-owned SQLite conversation store. Production tracing to external services is forced off and startup fails if tracing is enabled.
 
 Structured output is Zod-validated with one repair attempt and the documented bounded fallback. Citation validation is deterministic and citations are resolved from system-owned chunk metadata. Semantic faithfulness is evaluated offline; citation existence alone is not proof of entailment.
+
+Chat requests are limited per authenticated user by a short fixed window and by configurable daily request/token quotas. Daily usage records contain only user ID, UTC date, and counts. LangChain tracing is explicitly disabled; do not enable external tracing for requests containing learner data.
 
 ## Storage, deletion and recovery
 

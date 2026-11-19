@@ -245,6 +245,40 @@ describe("RetrievalService", () => {
     });
   });
 
+  test("restricts selected-source searches and rejects another learner's selected note", async () => {
+    const courseDocument = documentRecord(courseDocumentId, "course", coachId);
+    const personalDocument = documentRecord(
+      personalDocumentId,
+      "personal",
+      learnerId,
+    );
+    const otherPersonalDocument = documentRecord(
+      otherPersonalDocumentId,
+      "personal",
+      otherLearnerId,
+    );
+    const { service, storage } = createService(
+      [courseDocument, personalDocument, otherPersonalDocument],
+      new Map([
+        [courseDocumentId, chunkFile(courseDocument, [1, 0])],
+        [personalDocumentId, chunkFile(personalDocument, [1, 0])],
+        [otherPersonalDocumentId, chunkFile(otherPersonalDocument, [1, 0])],
+      ]),
+    );
+
+    await expect(
+      service.search(learner, courseId, [1, 0], {
+        documentIds: [personalDocumentId],
+      }),
+    ).resolves.toMatchObject([{ documentId: personalDocumentId }]);
+    await expect(
+      service.search(learner, courseId, [1, 0], {
+        documentIds: [otherPersonalDocumentId],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", statusCode: 404 });
+    expect(storage.readChunks).toHaveBeenCalledTimes(1);
+  });
+
   test("excludes archived courses and rejects invalid query vectors", async () => {
     const document = documentRecord(courseDocumentId, "course", coachId);
     const archived = { ...course, status: "archived" as const };

@@ -37,6 +37,14 @@ const schema = `
     ON messages(conversation_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_msg_grounding
     ON messages(grounding_status) WHERE grounding_status IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS chat_daily_usage (
+    user_id TEXT NOT NULL,
+    usage_date TEXT NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(user_id, usage_date)
+  );
 `;
 
 /**
@@ -48,6 +56,12 @@ export function openConversationDatabase(dataDirectory: string): DatabaseSync {
 
   const database = new DatabaseSync(join(databaseDirectory, "conversations.db"));
   database.exec(schema);
+  const messageColumns = database.pragma("table_info(messages)") as Array<{
+    name: string;
+  }>;
+  if (!messageColumns.some((column) => column.name === "citations")) {
+    database.exec("ALTER TABLE messages ADD COLUMN citations TEXT");
+  }
   return database;
 }
 

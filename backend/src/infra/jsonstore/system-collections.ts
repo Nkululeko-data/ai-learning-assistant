@@ -165,6 +165,185 @@ export const documentSchema = z
   })
   .strict();
 
+const learningSelectionSchema = z
+  .object({
+    documentIds: z.array(idSchema).min(1).max(10),
+    sections: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+    topic: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+const generationParamsSchema = z
+  .object({
+    selection: learningSelectionSchema,
+    count: z.number().int().positive().optional(),
+    types: z.array(z.enum(["mcq", "true_false"])).optional(),
+    difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+    scope: z.enum(["document", "section"]).optional(),
+  })
+  .strict();
+
+const generatedBySchema = z
+  .object({
+    executionId: idSchema,
+    provider: z.enum(["inception", "groq"]),
+    model: z.string().min(1).max(100),
+    promptVersion: z.string().min(1).max(80),
+  })
+  .strict();
+
+const sourcedTextSchema = z
+  .object({
+    heading: z.string().trim().min(1).max(200),
+    text: z.string().trim().min(1).max(5000),
+    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+  })
+  .strict();
+
+const learningContentBase = {
+  id: idSchema,
+  courseId: idSchema,
+  createdBy: idSchema,
+  ownerId: idSchema.nullable(),
+  visibility: z.enum(["course", "private"]),
+  status: z.enum(["draft", "published"]),
+  title: z.string().trim().min(1).max(200),
+  sourceDocumentIds: z.array(idSchema).min(1).max(10),
+  sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+  version: z.number().int().positive(),
+  generatedBy: generatedBySchema.nullable(),
+  createdAt: timestampSchema,
+};
+
+export const learningSummarySchema = z
+  .object({
+    ...learningContentBase,
+    scope: z.enum(["document", "section"]),
+    sectionRef: z.string().max(1000).nullable(),
+    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+    blocks: z.array(sourcedTextSchema).min(1).max(100),
+    generationParams: generationParamsSchema,
+  })
+  .strict();
+
+export const flashcardSchema = z
+  .object({
+    ...learningContentBase,
+    cards: z
+      .array(
+        z
+          .object({
+            id: idSchema,
+            front: z.string().trim().min(1).max(1000),
+            back: z.string().trim().min(1).max(2000),
+            sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+    generationParams: generationParamsSchema,
+  })
+  .strict();
+
+const quizQuestionSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    type: z.enum(["mcq", "true_false"]),
+    prompt: z.string().trim().min(1).max(2000),
+    options: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(40),
+            text: z.string().trim().min(1).max(500),
+          })
+          .strict(),
+      )
+      .min(2)
+      .max(5),
+    correctOptionId: z.string().min(1).max(40),
+    explanation: z.string().trim().min(1).max(2000),
+    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+  })
+  .strict()
+  .superRefine((question, context) => {
+    const optionIds = question.options.map((option) => option.id);
+    if (new Set(optionIds).size !== optionIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "Option IDs must be unique",
+      });
+    }
+    if (!optionIds.includes(question.correctOptionId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["correctOptionId"],
+        message: "The correct option must exist",
+      });
+    }
+    if (
+      question.type === "true_false" &&
+      (optionIds.length !== 2 ||
+        !optionIds.includes("true") ||
+        !optionIds.includes("false"))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "True/false questions require true and false options",
+      });
+    }
+  });
+
+export const quizSchema = z
+  .object({
+    id: idSchema,
+    lineageId: idSchema,
+    version: z.number().int().positive(),
+    courseId: idSchema,
+    createdBy: idSchema,
+    origin: z.enum(["coach", "learner_generated"]),
+    visibility: z.enum(["course", "private"]),
+    ownerId: idSchema.nullable(),
+    status: z.enum(["draft", "published", "superseded"]),
+    title: z.string().trim().min(1).max(200),
+    questions: z.array(quizQuestionSchema).min(1).max(50),
+    sourceDocumentIds: z.array(idSchema).min(1).max(10),
+    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+    generationParams: generationParamsSchema.nullable(),
+    generatedBy: generatedBySchema.nullable(),
+    publishedAt: timestampSchema.nullable(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const quizAttemptSchema = z
+  .object({
+    id: idSchema,
+    quizId: idSchema,
+    lineageId: idSchema,
+    quizVersion: z.number().int().positive(),
+    courseId: idSchema,
+    userId: idSchema,
+    answers: z.array(
+      z
+        .object({
+          questionId: z.string().min(1).max(100),
+          selectedOptionId: z.string().min(1).max(40),
+          correct: z.boolean(),
+        })
+        .strict(),
+    ),
+    score: z.number().int().nonnegative(),
+    maxScore: z.number().int().positive(),
+    startedAt: timestampSchema,
+    submittedAt: timestampSchema,
+  })
+  .strict();
+
 export const auditLogSchema = z
   .object({
     id: idSchema,
@@ -176,6 +355,111 @@ export const auditLogSchema = z
     before: z.record(z.string(), z.unknown()).nullable().optional(),
     after: z.record(z.string(), z.unknown()).nullable().optional(),
     requestId: z.string().nullable().optional(),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
+export const feedbackSchema = z
+  .object({
+    id: idSchema,
+    messageId: idSchema,
+    conversationId: idSchema,
+    courseId: idSchema,
+    userId: idSchema,
+    rating: z.enum(["helpful", "not_helpful"]),
+    comment: z.string().trim().min(1).max(1000).nullable(),
+    groundingStatus: z.enum(["grounded", "insufficient", "unverified"]),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const activityEventSchema = z
+  .object({
+    id: idSchema,
+    dedupeKey: z.string().min(1).max(128),
+    courseId: idSchema,
+    userId: idSchema,
+    type: z.enum([
+      "question",
+      "summary",
+      "flashcards",
+      "quiz_generated",
+      "quiz_attempt",
+      "document_upload",
+    ]),
+    groundingStatus: z
+      .enum(["grounded", "insufficient", "unverified"])
+      .nullable(),
+    usedPersonalScope: z.boolean(),
+    citedCourseDocumentIds: z.array(idSchema).max(50),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
+export const gapTopicSchema = z
+  .object({
+    topicId: z.string().min(1).max(80),
+    theme: z.string().min(1).max(200),
+    questionCount: z.number().int().nonnegative(),
+    distinctLearnerCount: z.number().int().nonnegative(),
+    suggestedAction: z.string().min(1).max(500),
+    trend: z.enum(["up", "down", "flat", "new"]),
+    previousCount: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+export const gapReportSchema = z
+  .object({
+    id: idSchema,
+    courseId: idSchema,
+    periodStart: timestampSchema,
+    periodEnd: timestampSchema,
+    totalGapQuestions: z.number().int().nonnegative(),
+    minCohortSizeUsed: z.number().int().positive(),
+    topics: z.array(gapTopicSchema).max(50),
+    otherCount: z.number().int().nonnegative(),
+    generatedBy: z
+      .object({
+        executionId: idSchema,
+        provider: z.enum(["inception", "groq"]),
+        model: z.string().min(1).max(100),
+        promptVersion: z.string().min(1).max(80),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
+export const agentExecutionSchema = z
+  .object({
+    id: idSchema,
+    executionId: idSchema,
+    requestId: z.string().min(1).max(128),
+    graph: z.enum(["chat", "learning", "insights"]),
+    node: z.string().min(1).max(100),
+    status: z.enum(["ok", "error", "timeout", "skipped"]),
+    startedAt: timestampSchema,
+    durationMs: z.number().int().nonnegative(),
+    tokenUsage: z
+      .object({
+        input: z.number().int().nonnegative(),
+        output: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable(),
+    provider: z.enum(["inception", "groq"]).nullable(),
+    model: z.string().max(100).nullable(),
+    fallbackUsed: z.boolean(),
+    retryCount: z.number().int().nonnegative(),
+    promptVersion: z.string().max(80).nullable(),
+    errorCode: z.string().regex(/^[A-Z0-9_]{1,80}$/).nullable(),
+    userId: idSchema,
+    courseId: idSchema,
+    conversationId: idSchema.nullable().optional(),
+    usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     createdAt: timestampSchema,
   })
   .strict();
@@ -245,7 +529,16 @@ export type CoachRequestRecord = z.infer<typeof coachRequestSchema>;
 export type CourseRecord = z.infer<typeof courseSchema>;
 export type EnrolmentRecord = z.infer<typeof enrolmentSchema>;
 export type DocumentRecord = z.infer<typeof documentSchema>;
+export type LearningSummaryRecord = z.infer<typeof learningSummarySchema>;
+export type FlashcardRecord = z.infer<typeof flashcardSchema>;
+export type QuizRecord = z.infer<typeof quizSchema>;
+export type QuizAttemptRecord = z.infer<typeof quizAttemptSchema>;
 export type AuditLogRecord = z.infer<typeof auditLogSchema>;
+export type FeedbackRecord = z.infer<typeof feedbackSchema>;
+export type ActivityEventRecord = z.infer<typeof activityEventSchema>;
+export type GapTopicRecord = z.infer<typeof gapTopicSchema>;
+export type GapReportRecord = z.infer<typeof gapReportSchema>;
+export type AgentExecutionRecord = z.infer<typeof agentExecutionSchema>;
 export type JobRecord = z.infer<typeof jobSchema>;
 export type SchedulerStateRecord = z.infer<typeof schedulerStateSchema>;
 
@@ -260,7 +553,15 @@ export interface SystemCollections {
   courses: JsonCollection<CourseRecord>;
   enrolments: JsonCollection<EnrolmentRecord>;
   documents: JsonCollection<DocumentRecord>;
+  learningSummaries: JsonCollection<LearningSummaryRecord>;
+  flashcards: JsonCollection<FlashcardRecord>;
+  quizzes: JsonCollection<QuizRecord>;
+  quizAttempts: JsonCollection<QuizAttemptRecord>;
   auditLogs: JsonCollection<AuditLogRecord>;
+  feedback: JsonCollection<FeedbackRecord>;
+  activityEvents: JsonCollection<ActivityEventRecord>;
+  gapReports: JsonCollection<GapReportRecord>;
+  agentExecutions: JsonCollection<AgentExecutionRecord>;
   jobs: JsonCollection<JobRecord>;
   schedulerState: JsonCollection<SchedulerStateRecord>;
 }
@@ -403,6 +704,65 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "status", key: (record) => record.status },
       ],
     }),
+    learningSummaries: store.register({
+      name: "learning_summaries",
+      schema: learningSummarySchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "sourceHash", key: (record) => record.sourceHash },
+        {
+          name: "sourceHashVersion",
+          key: (record) =>
+            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          unique: true,
+        },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "ownerId", key: (record) => record.ownerId ?? undefined },
+      ],
+    }),
+    flashcards: store.register({
+      name: "flashcards",
+      schema: flashcardSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "sourceHash", key: (record) => record.sourceHash },
+        {
+          name: "sourceHashVersion",
+          key: (record) =>
+            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          unique: true,
+        },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "ownerId", key: (record) => record.ownerId ?? undefined },
+      ],
+    }),
+    quizzes: store.register({
+      name: "quizzes",
+      schema: quizSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        {
+          name: "lineageVersion",
+          key: (record) => `${record.lineageId}:${record.version}`,
+          unique: true,
+        },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "ownerId", key: (record) => record.ownerId ?? undefined },
+      ],
+    }),
+    quizAttempts: store.register({
+      name: "quiz_attempts",
+      schema: quizAttemptSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "userId", key: (record) => record.userId },
+        { name: "quizId", key: (record) => record.quizId },
+        {
+          name: "courseLineage",
+          key: (record) => `${record.courseId}:${record.lineageId}`,
+        },
+      ],
+    }),
     auditLogs: store.register({
       name: "audit_logs",
       schema: auditLogSchema,
@@ -410,6 +770,57 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "id", key: (record) => record.id, unique: true },
         { name: "actorId", key: (record) => record.actorId },
         { name: "createdAt", key: (record) => record.createdAt },
+      ],
+    }),
+    feedback: store.register({
+      name: "feedback",
+      schema: feedbackSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        {
+          name: "messageUser",
+          key: (record) => `${record.messageId}:${record.userId}`,
+          unique: true,
+        },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "userId", key: (record) => record.userId },
+      ],
+    }),
+    activityEvents: store.register({
+      name: "activity_events",
+      schema: activityEventSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "dedupeKey", key: (record) => record.dedupeKey, unique: true },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "userId", key: (record) => record.userId },
+        { name: "createdAt", key: (record) => record.createdAt },
+      ],
+    }),
+    gapReports: store.register({
+      name: "gap_reports",
+      schema: gapReportSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "courseId", key: (record) => record.courseId },
+        { name: "createdAt", key: (record) => record.createdAt },
+      ],
+    }),
+    agentExecutions: store.register({
+      name: "agent_executions",
+      schema: agentExecutionSchema,
+      indexes: [
+        { name: "id", key: (record) => record.id, unique: true },
+        { name: "executionId", key: (record) => record.executionId },
+        { name: "createdAt", key: (record) => record.createdAt },
+        {
+          name: "graphNodeCreatedAt",
+          key: (record) => `${record.graph}:${record.node}:${record.createdAt}`,
+        },
+        {
+          name: "userUsageDate",
+          key: (record) => `${record.userId}:${record.usageDate}`,
+        },
       ],
     }),
     jobs: store.register({

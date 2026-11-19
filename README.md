@@ -63,9 +63,9 @@ for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 
-The backend implementation is complete through phases B0-B7. B0-B1 cover
-repository assessment and design/contracts; B2-B6 provide the current runnable
-features, and B7 adds internal access-filtered retrieval:
+The backend implementation is complete through phases B0-B10. B0-B1 cover
+repository assessment and design/contracts; B2-B9 provide the main runnable
+features, and B10 adds feedback and privacy-safe course insights:
 
 - **B2 — Backend foundation:** configuration, logging and shared error
   handling, storage initialization, health/readiness checks, and administrator
@@ -89,9 +89,86 @@ features, and B7 adds internal access-filtered retrieval:
   learner's own notes, with source metadata. Focus on approved enrolment and
   course ownership checks, personal-note isolation, archived-course exclusion,
   stale embedding models, and ranking. This is an internal service, not a
-  standalone HTTP endpoint; B8 will connect it to question answering. Run its
-  focused tests from `backend` with
+  standalone HTTP endpoint. Run its focused tests from `backend` with
   `npm test -- --runTestsByPath tests/unit/retrieval.service.test.ts tests/unit/private-file-storage.test.ts`.
+- **B8 — Grounded question answering:** `POST /api/v1/chat/ask` uses the
+  caller's permitted course material, gates insufficient evidence, and returns
+  only system-validated citations. Conversations and messages are stored in
+  SQLite and are visible only to their owner. JSON is the default response;
+  `Accept: text/event-stream` replays the complete validated response (not
+  model tokens). Test prompt injection handling, evidence threshold behavior,
+  citation suppression, access isolation, conversation CRUD, provider failure
+  fallback, and request/daily quotas. Focused offline tests:
+
+  ```powershell
+  npm test -- --runTestsByPath tests/unit/chat.graph.test.ts tests/unit/chat.service.test.ts tests/unit/conversation.repository.test.ts tests/unit/structured-output.service.test.ts
+  ```
+
+  Example request (replace the bearer token and course ID with values from an
+  active account and a course the user owns or is approved to access):
+
+  ```json
+  {
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "question": "What does the course material say about this topic?"
+  }
+  ```
+
+  Include `conversationId` from a previous response to continue that
+  conversation. Ensure the course has at least one `ready` document. Chat
+  sends questions to Mistral for embeddings and sends bounded history and
+  retrieved evidence to the configured LLM provider. The default limits are
+  10 requests/minute, 100 requests/UTC day, and 100,000 provider tokens/UTC
+  day; they are configurable.
+- **B9 — Learning content and quizzes:** summaries, flashcards, and quizzes
+  are generated only from selected, accessible, ready course documents.
+  Learner-generated content is private; coach summaries, flashcards, and
+  quizzes remain drafts until the course owner publishes them. Learner quiz
+  views omit answer keys before submission; the server scores attempts and
+  returns explanations afterward. Test source selection/isolation, invalid
+  citation rejection, coach publish permissions, learner answer-key privacy,
+  attempt scoring, and quiz versioning. Focused offline tests:
+
+  ```powershell
+  npm test -- --runTestsByPath tests/unit/learning.service.test.ts tests/unit/retrieval.service.test.ts tests/unit/structured-output.service.test.ts
+  ```
+
+  Example summary request to `POST /api/v1/summaries/generate`:
+
+  ```json
+  {
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "selection": {
+      "documentIds": ["00000000-0000-4000-8000-000000000002"],
+      "sections": ["Transactions"],
+      "topic": "atomicity"
+    },
+    "scope": "section"
+  }
+  ```
+
+  Learners can read published course content and their own private content;
+  coaches can read their drafts and publish with `{ "version": 1 }` to the
+  corresponding `/summaries/{id}/publish` or `/flashcards/{id}/publish`
+  endpoint. See the API specification for flashcard, quiz, and attempt bodies.
+- **B10 — Feedback and course insights:** learners can submit or update feedback
+  for an owned assistant answer with `POST /api/v1/feedback`. Coach insight
+  endpoints are owner-only and use `insights:view`; aggregates are withheld
+  until the configured cohort threshold is reached. Gap-report refresh queues
+  a privacy-safe background job. Feedback comments and conversation text are
+  never exposed by coach insight responses.
+
+  Example feedback body:
+
+  ```json
+  {
+    "messageId": "00000000-0000-4000-8000-000000000010",
+    "conversationId": "00000000-0000-4000-8000-000000000011",
+    "courseId": "00000000-0000-4000-8000-000000000001",
+    "rating": "helpful",
+    "comment": "The explanation was clear"
+  }
+  ```
 
 Run the focused B6 tests from the `backend` directory:
 
@@ -111,9 +188,11 @@ Uploads are limited to 10 MB, with expanded DOCX and extracted text limited to
 50 MB. See the [API specification](docs/api/API-Specification.md) for all
 request formats and related endpoints.
 
-**Not implemented yet:** B8 and later AI learning features (including grounded
-question answering, summaries, flashcards, and quizzes) are not available to
-test yet. They will be implemented in later phases.
+**Not implemented yet:** B11-B12 (administrative operations, privacy erasure,
+and release handover) remain for later phases.
+
+**Provider deployment warning:** the Inception API is scheduled to wind down
+on December 28, 2026. Choose and test a replacement before that date.
 
 ## Production build
 

@@ -124,6 +124,8 @@ Rules: JSON store engine uses a per-collection write queue, atomic temp-file-and
 
 All provider access goes through adapters; fallback uses bounded retries then switches to Groq; the provider actually used is recorded per execution. LangSmith/LangChain tracing is forced off. Fake providers are used in all non-evaluation tests.
 
+The B8 adapters call the documented OpenAI-compatible REST APIs through `fetch`. The Inception and Groq SDK packages were not added because the Inception SDK's optional Zod 3 peer dependency conflicts with this project’s Zod 4; no forced or legacy-peer installation was used. Reassess the Inception adapter/provider before the announced API wind-down on **December 28, 2026**.
+
 ---
 
 ## 9. Bootstrap
@@ -168,7 +170,7 @@ All provider access goes through adapters; fallback uses bounded retries then sw
 | 11 | `minCohortSize` | 3, configurable |
 | 13 | Existing repository for the assessment phase | Confirm |
 | 15 | Pending-coach access level | Learner access only |
-| 16 | Does the Groq fallback support JSON-schema structured output? (Inception confirmed: `mercury-3`, `response_format` json_schema, strict) | Verify before the chat graph is built; otherwise JSON mode + Zod repair on the fallback |
+| 16 | RESOLVED — Does the Groq fallback support JSON-schema structured output? | Yes. Groq documents strict JSON Schema for selected models; B8 defaults to `openai/gpt-oss-20b`. Requests still undergo Zod validation and the one-repair policy. |
 | 19, 21-22 | Data-design points (feedback comment visibility for coaches, question embedding storage, conversation hard delete) | See `Database-Design.md` section 12. OPEN-20 was resolved by E-3. |
 | 17 | AWS vs Azure target | Decide before deployment |
 | 18 | When to move to real databases | After coach approval; interfaces make it a swap |
