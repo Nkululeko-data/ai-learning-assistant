@@ -169,7 +169,8 @@ content or another learner's notes.
 
 **Work:** Implement retrieval behind the agreed service boundary. Check
 enrolment and ownership, filter candidates by course and document visibility
-before scoring, and return source metadata with the selected chunks.
+before scoring, combine BM25 keyword relevance and cosine similarity with
+weighted reciprocal-rank fusion, and return source metadata with selected chunks.
 
 **Done when:** Retrieval returns relevant authorized chunks, and isolation
 tests prove that unauthorized course content and other learners' personal notes
@@ -180,7 +181,8 @@ course access, coach ownership or approved learner enrolment, and filters to
 ready documents matching the current embedding model before loading chunks.
 Course documents and the requesting learner's own notes are searchable;
 archived courses, other learners' notes, failed documents, and stale-model
-chunks are excluded. Results are cosine-ranked with source metadata. Chunk
+chunks are excluded. Results combine BM25 keyword relevance and cosine
+similarity with semantic-first weighted reciprocal-rank fusion. Chunk
 files are validated on read and loaded through a configurable LRU cache
 (`CHUNK_CACHE_MAX_DOCUMENTS`, default 100). Retrieval has no standalone HTTP
 endpoint; B8 will call the service from grounded question answering.

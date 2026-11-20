@@ -97,6 +97,21 @@ export const courseSchema = z
     ownerId: idSchema,
     name: z.string().min(1).max(120),
     description: z.string().max(2000).optional(),
+    lessons: z
+      .array(
+        z
+          .object({
+            id: idSchema,
+            title: z.string().trim().min(1).max(120),
+            introduction: z.string().trim().min(1).max(4000),
+            pdfDocumentId: idSchema.nullable(),
+            videoDocumentId: idSchema.nullable().optional(),
+            videoUrl: z.string().url().max(2048).nullable(),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
     status: z.enum(["active", "archived"]),
     archivedAt: timestampSchema.nullable().optional(),
     archivedBy: idSchema.nullable().optional(),
@@ -133,17 +148,16 @@ export const documentSchema = z
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
+      "video/mp4",
     ]),
     sizeBytes: z.number().int().positive(),
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
-    status: z.enum([
-      "uploaded",
-      "processing",
-      "ready",
-      "failed",
-      "deleting",
-    ]),
-    errorCode: z.string().regex(/^[A-Z0-9_]{1,80}$/).nullable().optional(),
+    status: z.enum(["uploaded", "processing", "ready", "failed", "deleting"]),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z0-9_]{1,80}$/)
+      .nullable()
+      .optional(),
     errorDetail: z.string().max(500).nullable().optional(),
     extractionDiagnostics: z
       .object({
@@ -285,9 +299,7 @@ const quizQuestionSchema = z
     }
     if (
       question.type === "true_false" &&
-      (optionIds.length !== 2 ||
-        !optionIds.includes("true") ||
-        !optionIds.includes("false"))
+      (optionIds.length !== 2 || !optionIds.includes("true") || !optionIds.includes("false"))
     ) {
       context.addIssue({
         code: "custom",
@@ -380,17 +392,8 @@ export const activityEventSchema = z
     dedupeKey: z.string().min(1).max(128),
     courseId: idSchema,
     userId: idSchema,
-    type: z.enum([
-      "question",
-      "summary",
-      "flashcards",
-      "quiz_generated",
-      "quiz_attempt",
-      "document_upload",
-    ]),
-    groundingStatus: z
-      .enum(["grounded", "insufficient", "unverified"])
-      .nullable(),
+    type: z.enum(["question", "summary", "flashcards", "quiz_generated", "quiz_attempt", "document_upload"]),
+    groundingStatus: z.enum(["grounded", "insufficient", "unverified"]).nullable(),
     usedPersonalScope: z.boolean(),
     citedCourseDocumentIds: z.array(idSchema).max(50),
     createdAt: timestampSchema,
@@ -467,7 +470,10 @@ export const agentExecutionSchema = z
     fallbackUsed: z.boolean(),
     retryCount: z.number().int().nonnegative(),
     promptVersion: z.string().max(80).nullable(),
-    errorCode: z.string().regex(/^[A-Z0-9_]{1,80}$/).nullable(),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z0-9_]{1,80}$/)
+      .nullable(),
     userId: idSchema,
     courseId: idSchema,
     conversationId: idSchema.nullable().optional(),
@@ -484,17 +490,7 @@ const jobDataSchema = z.record(
 export const jobSchema = z
   .object({
     id: idSchema,
-    type: z.enum([
-      "ingest",
-      "reembed",
-      "generate",
-      "cluster",
-      "cleanup",
-      "reconcile",
-      "backup",
-      "erase",
-      "prune",
-    ]),
+    type: z.enum(["ingest", "reembed", "generate", "cluster", "cleanup", "reconcile", "backup", "erase", "prune"]),
     status: z.enum(["queued", "running", "done", "failed", "dead"]),
     attempts: z.number().int().nonnegative(),
     maxAttempts: z.number().int().min(1).max(10),
@@ -534,9 +530,7 @@ export type UserRecord = z.infer<typeof userSchema>;
 export type RoleRecord = z.infer<typeof roleSchema>;
 export type PermissionRecord = z.infer<typeof permissionSchema>;
 export type RolePermissionRecord = z.infer<typeof rolePermissionSchema>;
-export type UserPermissionOverrideRecord = z.infer<
-  typeof userPermissionOverrideSchema
->;
+export type UserPermissionOverrideRecord = z.infer<typeof userPermissionOverrideSchema>;
 export type RefreshTokenRecord = z.infer<typeof refreshTokenSchema>;
 export type CoachRequestRecord = z.infer<typeof coachRequestSchema>;
 export type CourseRecord = z.infer<typeof courseSchema>;
@@ -705,8 +699,7 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "courseId", key: (record) => record.courseId },
         {
           name: "courseScopeOwner",
-          key: (record) =>
-            `${record.courseId}:${record.scope}:${record.ownerId}`,
+          key: (record) => `${record.courseId}:${record.scope}:${record.ownerId}`,
         },
         {
           name: "courseScopeOwnerHash",
@@ -727,8 +720,7 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "sourceHash", key: (record) => record.sourceHash },
         {
           name: "sourceHashVersion",
-          key: (record) =>
-            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          key: (record) => `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
           unique: true,
         },
         { name: "courseId", key: (record) => record.courseId },
@@ -743,8 +735,7 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "sourceHash", key: (record) => record.sourceHash },
         {
           name: "sourceHashVersion",
-          key: (record) =>
-            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          key: (record) => `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
           unique: true,
         },
         { name: "courseId", key: (record) => record.courseId },
@@ -826,7 +817,11 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
       schema: configVersionSchema,
       indexes: [
         { name: "id", key: (record) => record.id, unique: true },
-        { name: "version", key: (record) => String(record.version), unique: true },
+        {
+          name: "version",
+          key: (record) => String(record.version),
+          unique: true,
+        },
         { name: "changedBy", key: (record) => record.changedBy },
         { name: "createdAt", key: (record) => record.createdAt },
       ],

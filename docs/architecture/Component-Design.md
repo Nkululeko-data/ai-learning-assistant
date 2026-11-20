@@ -13,7 +13,7 @@
 | `enrolments` | Join requests and coach decisions | Enrolment service and policy | Course/user/enrolment repositories |
 | `documents` | Validate upload requests, metadata, listing, retry and deletion lifecycle | Document service | Storage adapter, job service, document repository |
 | `ingestion` | Extract, chunk and embed documents | Ingestion job handler | Parsers, embedding provider, chunk repository |
-| `retrieval` | Enforce access before similarity search | `RetrievalService.search(user, courseId, embedding, opts)` | Course/enrolment/document/chunk repositories |
+| `retrieval` | Enforce access before hybrid search | `RetrievalService.search(user, courseId, embedding, { queryText, ...opts })` | Course/enrolment/document/chunk repositories |
 | `chat` / `conversations` | Coordinate chat graph, own conversation history and feedback references | Chat and conversation services | GraphRunner, retrieval, SQLite repository |
 | `learning` / `quizzes` | Generate summaries, flashcards and quizzes; publish and score attempts | Learning and quiz services | GraphRunner, retrieval, repositories |
 | `feedback` | Store learner ratings and comments under privacy rules | Feedback service | Feedback repository, message reference |

@@ -18,12 +18,57 @@ const { fileTypeFromBuffer }: {
 
 export const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const MAX_LESSON_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 
 export interface ValidatedUpload {
   filename: string;
   mimeType: "application/pdf" | typeof DOCX_MIME_TYPE | "text/plain";
   sizeBytes: number;
   contentHash: string;
+}
+
+export interface ValidatedLessonVideoUpload {
+  filename: string;
+  mimeType: "video/mp4";
+  sizeBytes: number;
+  contentHash: string;
+}
+
+/**
+ * Validates an uploaded MP4 by extension, declared MIME and file signature.
+ */
+export async function validateLessonVideoUpload(
+  file: Express.Multer.File,
+): Promise<ValidatedLessonVideoUpload> {
+  if (
+    file.size < 1 ||
+    file.size !== file.buffer.length ||
+    file.size > MAX_LESSON_VIDEO_SIZE_BYTES
+  ) {
+    throw new AppError(
+      file.size > MAX_LESSON_VIDEO_SIZE_BYTES ? "FILE_TOO_LARGE" : "VALIDATION_FAILED",
+      file.size > MAX_LESSON_VIDEO_SIZE_BYTES ? 413 : 422,
+      file.size > MAX_LESSON_VIDEO_SIZE_BYTES
+        ? "The lesson video exceeds the 100 MB limit"
+        : "The uploaded file is empty or invalid",
+    );
+  }
+  const filename = sanitizeFilename(file.originalname);
+  if (extname(filename).toLowerCase() !== ".mp4") {
+    throw unsupportedVideoFile();
+  }
+  const declaredMime = file.mimetype.toLowerCase();
+  if (!["video/mp4", "application/octet-stream"].includes(declaredMime)) {
+    throw unsupportedVideoFile();
+  }
+  const detected = await fileTypeFromBuffer(file.buffer);
+  if (detected?.mime !== "video/mp4") throw unsupportedVideoFile();
+  return {
+    filename,
+    mimeType: "video/mp4",
+    sizeBytes: file.size,
+    contentHash: createHash("sha256").update(file.buffer).digest("hex"),
+  };
 }
 
 /**
@@ -191,5 +236,13 @@ function unsupportedFile(): AppError {
     "FILE_TYPE_NOT_ALLOWED",
     415,
     "Only valid PDF, DOCX and UTF-8 TXT files are supported",
+  );
+}
+
+function unsupportedVideoFile(): AppError {
+  return new AppError(
+    "FILE_TYPE_NOT_ALLOWED",
+    415,
+    "Only valid MP4 lesson videos are supported",
   );
 }

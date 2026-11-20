@@ -36,7 +36,10 @@ export async function retrievalNode(
       dependencies.actor,
       state.courseId,
       queryEmbedding,
-      { limit: dependencies.config.chatTopK },
+      {
+        limit: dependencies.config.chatTopK,
+        queryText: `${state.question} ${state.rewrittenQuery}`,
+      },
     );
   } catch (error) {
     if (error instanceof AppError && error.code === "INVALID_QUERY_EMBEDDING") {

@@ -52,8 +52,9 @@ Invoke-RestMethod http://localhost:3000/health
 ```
 
 The `/ready` endpoint also checks the data stores, schema version, and provider
-configuration. It returns `503` until all three provider keys are configured
-in `.env`: `INCEPTION_API_KEY`, `GROQ_API_KEY`, and `MISTRAL_API_KEY`.
+configuration. It returns `503` until `MISTRAL_API_KEY` and at least one LLM
+provider key (`INCEPTION_API_KEY` or `GROQ_API_KEY`) are configured in `.env`.
+Configuring both LLM providers enables fallback between them.
 
 Document upload and ingestion support PDF, DOCX and UTF-8 TXT. The configured
 upload limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB.
@@ -86,7 +87,8 @@ verification and operating artefacts:
   status, retry, listing, deduplication, and deletion. Focus on upload limits
   and invalid files, course-owner versus personal-note access, ingestion
   success/failure, and retry/delete behavior.
-- **B7 — Access-filtered retrieval:** cosine-ranked search over ready chunks
+- **B7 — Access-filtered retrieval:** hybrid BM25 keyword and cosine semantic
+  search over ready chunks, combined with weighted reciprocal-rank fusion
   for active courses, restricted to course documents and the requesting
   learner's own notes, with source metadata. Focus on approved enrolment and
   course ownership checks, personal-note isolation, archived-course exclusion,

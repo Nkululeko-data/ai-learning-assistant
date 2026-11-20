@@ -20,6 +20,7 @@ const personalDocumentId = "00000000-0000-4000-8000-000000000006";
 const otherPersonalDocumentId = "00000000-0000-4000-8000-000000000007";
 const staleModelDocumentId = "00000000-0000-4000-8000-000000000008";
 const failedDocumentId = "00000000-0000-4000-8000-000000000009";
+const videoDocumentId = "00000000-0000-4000-8000-000000000011";
 const createdAt = "2026-11-17T08:00:00.000Z";
 
 const learner: AuthenticatedUser = {
@@ -77,6 +78,7 @@ function chunkFile(
   document: DocumentRecord,
   vector: number[],
   embeddingOverride?: string,
+  textOverride?: string,
 ): Record<string, unknown> {
   const bytes = Buffer.alloc(vector.length * Float32Array.BYTES_PER_ELEMENT);
   vector.forEach((value, index) =>
@@ -101,7 +103,7 @@ function chunkFile(
         pageStart: 2,
         pageEnd: 2,
         section: "Introduction",
-        text: `Text from ${document.filename}`,
+        text: textOverride ?? `Text from ${document.filename}`,
         embedding: embeddingOverride ?? bytes.toString("base64"),
       },
     ],
@@ -160,12 +162,17 @@ describe("RetrievalService", () => {
     const failedDocument = documentRecord(failedDocumentId, "course", coachId, {
       status: "failed",
     });
+    const videoDocument = documentRecord(videoDocumentId, "course", coachId, {
+      filename: "lesson.mp4",
+      mimeType: "video/mp4",
+    });
     const documents = [
       courseDocument,
       personalDocument,
       otherPersonalDocument,
       staleModelDocument,
       failedDocument,
+      videoDocument,
     ];
     const files = new Map<string, unknown>([
       [courseDocumentId, chunkFile(courseDocument, [1, 0])],
@@ -173,6 +180,7 @@ describe("RetrievalService", () => {
       [otherPersonalDocumentId, chunkFile(otherPersonalDocument, [0, 1])],
       [staleModelDocumentId, chunkFile(staleModelDocument, [1, 0])],
       [failedDocumentId, chunkFile(failedDocument, [1, 0])],
+      [videoDocumentId, chunkFile(videoDocument, [1, 0])],
     ]);
     const { service, storage } = createService(documents, files);
 
@@ -195,6 +203,50 @@ describe("RetrievalService", () => {
     expect(storage.readChunks).toHaveBeenCalledTimes(2);
     expect(storage.readChunks).toHaveBeenNthCalledWith(1, courseDocumentId);
     expect(storage.readChunks).toHaveBeenNthCalledWith(2, personalDocumentId);
+  });
+
+  test("combines BM25 keyword relevance with cosine ranking", async () => {
+    const semanticDocument = documentRecord(courseDocumentId, "course", coachId);
+    const keywordDocument = documentRecord(
+      personalDocumentId,
+      "personal",
+      learnerId,
+    );
+    const { service } = createService(
+      [semanticDocument, keywordDocument],
+      new Map([
+        [
+          courseDocumentId,
+          chunkFile(
+            semanticDocument,
+            [1, 0],
+            undefined,
+            "Transactions use isolation levels.",
+          ),
+        ],
+        [
+          personalDocumentId,
+          chunkFile(
+            keywordDocument,
+            [0, 1],
+            undefined,
+            "B-tree indexes support fast database lookup.",
+          ),
+        ],
+      ]),
+    );
+
+    const results = await service.search(learner, courseId, [1, 0], {
+      limit: 2,
+      queryText: "B-tree index lookup",
+    });
+
+    expect(results.map((result) => result.documentId)).toEqual([
+      personalDocumentId,
+      courseDocumentId,
+    ]);
+    expect(results[0]?.score).toBe(0);
+    expect(results[0]?.keywordScore).toBeGreaterThan(0.5);
   });
 
   test("denies a learner without approved enrolment before reading any chunks", async () => {

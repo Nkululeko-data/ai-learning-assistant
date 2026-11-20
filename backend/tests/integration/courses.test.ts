@@ -12,6 +12,10 @@ import { CourseService } from "../../src/modules/courses/course.service";
 import { JsonCourseRepository } from "../../src/modules/courses/course.types";
 import { bootstrapSystem } from "../../scripts/bootstrap";
 
+jest.mock("file-type", () => ({
+  fileTypeFromBuffer: async () => undefined,
+}));
+
 const adminPassword = "B4-test-admin-passphrase-2026!";
 const changedAdminPassword = "B4-changed-admin-passphrase-2026!";
 const learnerPassword = "B4-test-learner-passphrase-2026!";
@@ -103,11 +107,9 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     bootstrapAdminEmail: "admin@example.test",
     bootstrapAdminPassword: adminPassword,
   };
-  const authService = new AuthService(
-    new JsonAuthRepository(collections),
-    config,
-    { allowRefreshTokenInBody: true },
-  );
+  const authService = new AuthService(new JsonAuthRepository(collections), config, {
+    allowRefreshTokenInBody: true,
+  });
   const courseService = new CourseService(
     new JsonCourseRepository(collections),
     config.enrolmentReRequestCooldownHours,
@@ -126,23 +128,10 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     courses: { authService, courseService },
   });
 
-  const firstAdminLogin = await authService.login(
-    "admin@example.test",
-    adminPassword,
-  );
-  const firstAdmin = authService.authenticateAccessToken(
-    firstAdminLogin.tokens.accessToken,
-  );
-  await authService.changePassword(
-    firstAdmin,
-    adminPassword,
-    changedAdminPassword,
-    "b4-admin-password-change",
-  );
-  const adminLogin = await authService.login(
-    "admin@example.test",
-    changedAdminPassword,
-  );
+  const firstAdminLogin = await authService.login("admin@example.test", adminPassword);
+  const firstAdmin = authService.authenticateAccessToken(firstAdminLogin.tokens.accessToken);
+  await authService.changePassword(firstAdmin, adminPassword, changedAdminPassword, "b4-admin-password-change");
+  const adminLogin = await authService.login("admin@example.test", changedAdminPassword);
 
   return {
     app,
@@ -156,10 +145,7 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
 /**
  * Registers and signs in a learner through the public authentication routes.
  */
-async function registerLearner(
-  app: CourseTestContext["app"],
-  email: string,
-): Promise<{ id: string; token: string }> {
+async function registerLearner(app: CourseTestContext["app"], email: string): Promise<{ id: string; token: string }> {
   const registration = await request(app).post("/api/v1/auth/register").send({
     email,
     password: learnerPassword,
@@ -184,29 +170,26 @@ async function registerLearner(
 /**
  * Registers a coach applicant and completes the admin approval workflow.
  */
-async function registerCoach(
-  context: CourseTestContext,
-  email: string,
-): Promise<{ id: string; token: string }> {
-  const registration = await request(context.app)
-    .post("/api/v1/auth/register")
-    .send({
-      email,
-      password: learnerPassword,
-      displayName: "Test Coach",
-      requestCoach: true,
-      coachMessage: "I teach a class.",
-    });
+async function registerCoach(context: CourseTestContext, email: string): Promise<{ id: string; token: string }> {
+  const registration = await request(context.app).post("/api/v1/auth/register").send({
+    email,
+    password: learnerPassword,
+    displayName: "Test Coach",
+    requestCoach: true,
+    coachMessage: "I teach a class.",
+  });
   if (registration.status !== 201) {
     throw new Error(`Coach registration failed with ${registration.status}`);
   }
   const requests = await request(context.app)
     .get("/api/v1/admin/coach-requests?status=pending")
     .set("Authorization", `Bearer ${context.adminToken}`);
-  const coachRequest = (requests.body.data as Array<{
-    id: string;
-    applicant: { email: string };
-  }>).find((candidate) => candidate.applicant.email === email);
+  const coachRequest = (
+    requests.body.data as Array<{
+      id: string;
+      applicant: { email: string };
+    }>
+  ).find((candidate) => candidate.applicant.email === email);
   if (!coachRequest) throw new Error("Coach request was not created");
   const approval = await request(context.app)
     .patch(`/api/v1/admin/coach-requests/${coachRequest.id}`)
@@ -249,6 +232,181 @@ async function createCourse(
   };
 }
 
+async function verifiesCoachOwnedCourseListing(): Promise<void> {
+  const context = await createCourseTestContext();
+  const owner = await registerCoach(context, "course-list-owner@example.test");
+  const otherCoach = await registerCoach(context, "course-list-other@example.test");
+  const learner = await registerLearner(context.app, "course-list-learner@example.test");
+  const firstOwnedCourse = await createCourse(
+    context.app,
+    owner.token,
+    "Owned course one",
+  );
+  const secondOwnedCourse = await createCourse(
+    context.app,
+    owner.token,
+    "Owned course two",
+  );
+  const otherCourse = await createCourse(
+    context.app,
+    otherCoach.token,
+    "Other coach course",
+  );
+
+  const firstPage = await request(context.app)
+    .get("/api/v1/me/courses?limit=1")
+    .set("Authorization", `Bearer ${owner.token}`);
+  expect(firstPage.status).toBe(200);
+  expect(firstPage.body.data).toHaveLength(1);
+  expect(firstPage.body.meta.nextCursor).toEqual(expect.any(String));
+
+  const secondPage = await request(context.app)
+    .get(
+      `/api/v1/me/courses?limit=1&cursor=${encodeURIComponent(firstPage.body.meta.nextCursor as string)}`,
+    )
+    .set("Authorization", `Bearer ${owner.token}`);
+  expect(secondPage.status).toBe(200);
+  const listedCourseIds = [...firstPage.body.data, ...secondPage.body.data].map(
+    (course: { id: string }) => course.id,
+  );
+  expect(listedCourseIds).toHaveLength(2);
+  expect(listedCourseIds).toEqual(
+    expect.arrayContaining([firstOwnedCourse.id, secondOwnedCourse.id]),
+  );
+  expect(listedCourseIds).not.toContain(otherCourse.id);
+
+  const learnerAccess = await request(context.app)
+    .get("/api/v1/me/courses")
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerAccess.status).toBe(403);
+}
+
+async function verifiesCourseLessonsAccessAndVersioning(): Promise<void> {
+  const context = await createCourseTestContext();
+  const owner = await registerCoach(context, "lesson-owner@example.test");
+  const otherCoach = await registerCoach(context, "lesson-other@example.test");
+  const learner = await registerLearner(context.app, "lesson-learner@example.test");
+  const course = await createCourse(context.app, owner.token, "Human Biology");
+  const lesson = {
+    id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7912",
+    title: "Cells and their functions",
+    introduction: "Explore the main structures of a cell and what each one does.",
+    pdfDocumentId: null,
+    videoDocumentId: null,
+    videoUrl: null,
+  };
+
+  const initial = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`);
+  expect(initial.status).toBe(200);
+  expect(initial.body.data).toMatchObject({
+    courseId: course.id,
+    version: course.version,
+    lessons: [],
+  });
+
+  const updated = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({ version: course.version, lessons: [lesson] });
+  expect(updated.status).toBe(200);
+  expect(updated.body.data.version).toBe(course.version + 1);
+  expect(updated.body.data.lessons[0]).toMatchObject({
+    ...lesson,
+    pdfFilename: null,
+  });
+
+  const unapprovedAccess = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(unapprovedAccess.status).toBe(404);
+
+  const previewAccess = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/preview`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(previewAccess.status).toBe(200);
+  expect(previewAccess.body.data).toEqual({
+    courseId: course.id,
+    lessons: [{ id: lesson.id, title: lesson.title }],
+  });
+
+  const joinRequest = await request(context.app)
+    .post(`/api/v1/courses/${course.id}/join`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  const approval = await request(context.app)
+    .patch(`/api/v1/enrolments/${joinRequest.body.data.id}`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({ status: "approved" });
+  expect(approval.status).toBe(200);
+
+  const learnerAccess = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerAccess.status).toBe(200);
+  expect(learnerAccess.body.data.lessons).toHaveLength(1);
+
+  const otherOwnerAccess = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${otherCoach.token}`)
+    .send({ version: updated.body.data.version, lessons: [] });
+  expect(otherOwnerAccess.status).toBe(404);
+
+  const unsupportedVideo = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({
+      version: updated.body.data.version,
+      lessons: [{ ...lesson, videoUrl: "https://example.com/video" }],
+    });
+  expect(unsupportedVideo.status).toBe(422);
+
+  const unavailablePdf = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({
+      version: updated.body.data.version,
+      lessons: [
+        {
+          ...lesson,
+          pdfDocumentId: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7914",
+        },
+      ],
+    });
+  expect(unavailablePdf.status).toBe(422);
+
+  const staleVersion = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({ version: course.version, lessons: [lesson] });
+  expect(staleVersion.status).toBe(409);
+
+  const legacyVideoUrl = "https://youtu.be/dQw4w9WgXcQ";
+  await context.collections.courses.update(course.id, (current) => ({
+    ...current,
+    lessons: [{ ...lesson, videoUrl: legacyVideoUrl }],
+  }));
+  const retainedLegacyVideo = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({
+      version: updated.body.data.version,
+      lessons: [{ ...lesson, videoUrl: legacyVideoUrl }],
+    });
+  expect(retainedLegacyVideo.status).toBe(200);
+  expect(retainedLegacyVideo.body.data.lessons[0].videoUrl).toBe(legacyVideoUrl);
+
+  const removedLegacyVideo = await request(context.app)
+    .put(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${owner.token}`)
+    .send({
+      version: retainedLegacyVideo.body.data.version,
+      lessons: [{ ...lesson, videoUrl: null }],
+    });
+  expect(removedLegacyVideo.status).toBe(200);
+  expect(removedLegacyVideo.body.data.lessons[0].videoUrl).toBeNull();
+}
+
 /**
  * Verifies coach ownership and that public discovery exposes only course cards.
  */
@@ -258,15 +416,9 @@ async function verifiesCourseOwnershipAndDiscovery(): Promise<void> {
   const otherCoach = await registerCoach(context, "other@example.test");
   const learner = await registerLearner(context.app, "learner@example.test");
   const course = await createCourse(context.app, owner.token);
-  const secondCourse = await createCourse(
-    context.app,
-    owner.token,
-    "Chemistry",
-  );
+  const secondCourse = await createCourse(context.app, owner.token, "Chemistry");
 
-  const discovery = await request(context.app)
-    .get("/api/v1/courses")
-    .set("Authorization", `Bearer ${learner.token}`);
+  const discovery = await request(context.app).get("/api/v1/courses").set("Authorization", `Bearer ${learner.token}`);
   expect(discovery.status).toBe(200);
   expect(discovery.body.data).toHaveLength(2);
   expect(discovery.body.data.map((card: { id: string }) => card.id)).toEqual(
@@ -463,6 +615,11 @@ async function verifiesCourseVersioningAndArchiveRules(): Promise<void> {
     .send({ status: "archived", version: 2 });
   expect(archived.body.data.status).toBe("archived");
 
+  const archivedPreview = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/preview`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(archivedPreview.status).toBe(404);
+
   const join = await request(context.app)
     .post(`/api/v1/courses/${course.id}/join`)
     .set("Authorization", `Bearer ${learner.token}`);
@@ -550,6 +707,8 @@ async function verifiesAdminOwnerReassignmentAndArchive(): Promise<void> {
 }
 
 describe("courses and enrolments", () => {
+  test("lists only the authenticated coach's courses", verifiesCoachOwnedCourseListing);
+  test("stores ordered lessons and restricts them to course members", verifiesCourseLessonsAccessAndVersioning);
   test("enforces course ownership and safe discovery", verifiesCourseOwnershipAndDiscovery);
   test("keeps pending learners on course-card access until approval", verifiesJoinApprovalAndAccess);
   test("rejects conflicting concurrent enrolment decisions", verifiesConflictingEnrolmentDecisions);

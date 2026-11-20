@@ -1,11 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { AppError } from "../../common/errors/app-error";
-import {
-  requireAuthentication,
-  requirePasswordChangeComplete,
-  requirePermission,
-} from "../auth/auth.middleware";
+import { requireAuthentication, requirePasswordChangeComplete, requirePermission } from "../auth/auth.middleware";
 import type { AuthService } from "../auth/auth.service";
 import {
   adminCourseStatusRequestSchema,
@@ -14,6 +10,7 @@ import {
   enrolmentListQuerySchema,
   paginationQuerySchema,
   reassignCourseOwnerRequestSchema,
+  updateCourseLessonsRequestSchema,
   updateCourseRequestSchema,
 } from "./course.schemas";
 import { CourseService } from "./course.service";
@@ -26,15 +23,22 @@ export interface CourseRouteDependencies {
 /**
  * Creates course and enrolment routes under the /api/v1 prefix.
  */
-export function createCourseRouter(
-  dependencies: CourseRouteDependencies,
-): Router {
+export function createCourseRouter(dependencies: CourseRouteDependencies): Router {
   const router = Router();
   const authenticate = requireAuthentication(dependencies.authService);
 
   router.get("/courses", authenticate, (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
-    const page = dependencies.courseService.listCourses(
+    const page = dependencies.courseService.listCourses(requireAuthContext(request), query);
+    response.status(200).json({
+      data: page.items,
+      ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
+    });
+  });
+
+  router.get("/me/courses", authenticate, (request, response) => {
+    const query = paginationQuerySchema.parse(request.query);
+    const page = dependencies.courseService.listMyCourses(
       requireAuthContext(request),
       query,
     );
@@ -68,21 +72,49 @@ export function createCourseRouter(
     response.status(200).json({ data: course });
   });
 
-  router.patch(
-    "/courses/:courseId",
+  router.get("/courses/:courseId/preview", authenticate, (request, response) => {
+    const preview = dependencies.courseService.getCoursePreview(
+      requireAuthContext(request),
+      requireRouteParam(request, "courseId"),
+    );
+    response.status(200).json({ data: preview });
+  });
+
+  router.get("/courses/:courseId/lessons", authenticate, (request, response) => {
+    const lessons = dependencies.courseService.getCourseLessons(
+      requireAuthContext(request),
+      requireRouteParam(request, "courseId"),
+    );
+    response.status(200).json({ data: lessons });
+  });
+
+  router.put(
+    "/courses/:courseId/lessons",
     authenticate,
     requirePasswordChangeComplete,
+    requirePermission("course:edit"),
     async (request, response) => {
-      const body = updateCourseRequestSchema.parse(request.body);
-      const course = await dependencies.courseService.updateCourse(
+      const body = updateCourseLessonsRequestSchema.parse(request.body);
+      const lessons = await dependencies.courseService.updateCourseLessons(
         requireAuthContext(request),
         requireRouteParam(request, "courseId"),
         body,
         request.requestId,
       );
-      response.status(200).json({ data: course });
+      response.status(200).json({ data: lessons });
     },
   );
+
+  router.patch("/courses/:courseId", authenticate, requirePasswordChangeComplete, async (request, response) => {
+    const body = updateCourseRequestSchema.parse(request.body);
+    const course = await dependencies.courseService.updateCourse(
+      requireAuthContext(request),
+      requireRouteParam(request, "courseId"),
+      body,
+      request.requestId,
+    );
+    response.status(200).json({ data: course });
+  });
 
   router.post("/courses/:courseId/join", authenticate, async (request, response) => {
     const result = await dependencies.courseService.requestJoin(
@@ -97,10 +129,7 @@ export function createCourseRouter(
 
   router.get("/me/enrolments", authenticate, (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
-    const page = dependencies.courseService.listMyEnrolments(
-      requireAuthContext(request),
-      query,
-    );
+    const page = dependencies.courseService.listMyEnrolments(requireAuthContext(request), query);
     response.status(200).json({
       data: page.items,
       ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
@@ -144,18 +173,14 @@ export function createCourseRouter(
     },
   );
 
-  router.delete(
-    "/courses/:courseId/enrolment",
-    authenticate,
-    async (request, response) => {
-      await dependencies.courseService.removeMyEnrolment(
-        requireAuthContext(request),
-        requireRouteParam(request, "courseId"),
-        request.requestId,
-      );
-      response.status(204).end();
-    },
-  );
+  router.delete("/courses/:courseId/enrolment", authenticate, async (request, response) => {
+    await dependencies.courseService.removeMyEnrolment(
+      requireAuthContext(request),
+      requireRouteParam(request, "courseId"),
+      request.requestId,
+    );
+    response.status(204).end();
+  });
 
   router.patch(
     "/admin/courses/:courseId/owner",

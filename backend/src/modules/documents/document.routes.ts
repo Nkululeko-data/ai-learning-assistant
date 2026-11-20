@@ -2,17 +2,11 @@ import { Router, type Request, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { AppError } from "../../common/errors/app-error";
-import {
-  requireAuthentication,
-  requirePasswordChangeComplete,
-  requirePermission,
-} from "../auth/auth.middleware";
+import { requireAuthentication, requirePasswordChangeComplete, requirePermission } from "../auth/auth.middleware";
 import type { AuthService } from "../auth/auth.service";
-import {
-  documentListQuerySchema,
-  documentUploadFieldsSchema,
-} from "./document.schemas";
+import { documentListQuerySchema, documentUploadFieldsSchema } from "./document.schemas";
 import { DocumentService } from "./document.service";
+import { MAX_LESSON_VIDEO_SIZE_BYTES } from "./document.validation";
 
 export interface DocumentRouteDependencies {
   authService: AuthService;
@@ -23,12 +17,11 @@ export interface DocumentRouteDependencies {
 /**
  * Creates authenticated document upload, status, retry, listing and deletion routes.
  */
-export function createDocumentRouter(
-  dependencies: DocumentRouteDependencies,
-): Router {
+export function createDocumentRouter(dependencies: DocumentRouteDependencies): Router {
   const router = Router();
   const authenticate = requireAuthentication(dependencies.authService);
   const parseUpload = createUploadMiddleware(dependencies.maxUploadSizeBytes);
+  const parseLessonVideoUpload = createUploadMiddleware(MAX_LESSON_VIDEO_SIZE_BYTES);
 
   router.post(
     "/documents/upload",
@@ -51,34 +44,59 @@ export function createDocumentRouter(
     },
   );
 
-  router.get(
-    "/documents/:documentId/status",
+  router.post(
+    "/courses/:courseId/lesson-videos",
     authenticate,
-    (request, response) => {
-      const document = dependencies.documentService.getStatus(
+    requirePasswordChangeComplete,
+    requirePermission("course:edit"),
+    requirePermission("document:upload"),
+    parseLessonVideoUpload,
+    async (request, response) => {
+      if (!request.file) {
+        throw new AppError("VALIDATION_FAILED", 422, "An MP4 video file is required");
+      }
+      const video = await dependencies.documentService.uploadCourseLessonVideo(
         requireAuthContext(request),
-        requireUuidParam(request, "documentId"),
+        requireUuidParam(request, "courseId"),
+        request.file,
       );
-      response.status(200).json({ data: document });
+      response.status(201).json({ data: video });
     },
   );
 
-  router.get(
-    "/courses/:courseId/documents",
-    authenticate,
-    (request, response) => {
-      const query = documentListQuerySchema.parse(request.query);
-      const page = dependencies.documentService.listForCourse(
-        requireAuthContext(request),
-        requireUuidParam(request, "courseId"),
-        query,
-      );
-      response.status(200).json({
-        data: page.items,
-        ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
-      });
-    },
-  );
+  router.get("/documents/:documentId/file", authenticate, async (request, response) => {
+    const file = await dependencies.documentService.getCourseFile(
+      requireAuthContext(request),
+      requireUuidParam(request, "documentId"),
+    );
+    response
+      .set("Content-Type", file.mimeType)
+      .set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`)
+      .set("Cache-Control", "private, no-store")
+      .set("X-Content-Type-Options", "nosniff")
+      .send(file.bytes);
+  });
+
+  router.get("/documents/:documentId/status", authenticate, (request, response) => {
+    const document = dependencies.documentService.getStatus(
+      requireAuthContext(request),
+      requireUuidParam(request, "documentId"),
+    );
+    response.status(200).json({ data: document });
+  });
+
+  router.get("/courses/:courseId/documents", authenticate, (request, response) => {
+    const query = documentListQuerySchema.parse(request.query);
+    const page = dependencies.documentService.listForCourse(
+      requireAuthContext(request),
+      requireUuidParam(request, "courseId"),
+      query,
+    );
+    response.status(200).json({
+      data: page.items,
+      ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
+    });
+  });
 
   router.post(
     "/documents/:documentId/retry",
@@ -132,22 +150,10 @@ function createUploadMiddleware(maxUploadSizeBytes: number): RequestHandler {
     upload(request, response, (error: unknown) => {
       if (error instanceof multer.MulterError) {
         if (error.code === "LIMIT_FILE_SIZE") {
-          next(
-            new AppError(
-              "FILE_TOO_LARGE",
-              413,
-              "The uploaded file exceeds the configured size limit",
-            ),
-          );
+          next(new AppError("FILE_TOO_LARGE", 413, "The uploaded file exceeds the configured size limit"));
           return;
         }
-        next(
-          new AppError(
-            "VALIDATION_FAILED",
-            422,
-            "The multipart upload contains invalid fields",
-          ),
-        );
+        next(new AppError("VALIDATION_FAILED", 422, "The multipart upload contains invalid fields"));
         return;
       }
       next(error);

@@ -37,7 +37,7 @@ Modules communicate through their exported `index.ts` service surface. Repositor
 | Validation | Zod for environment, request, response and AI schemas |
 | Primary data | JSON file collections behind repository interfaces |
 | Conversations | SQLite, limited to conversations and messages |
-| Retrieval | In-process cosine similarity over Mistral embeddings; access filtering before scoring |
+| Retrieval | Access-filtered in-process BM25 keyword and cosine-vector search, combined with weighted reciprocal-rank fusion |
 | Orchestration | LangGraph.js with stateless graphs |
 | LLM | Inception Labs primary, Groq fallback |
 | Embeddings | Mistral only; no embedding fallback |

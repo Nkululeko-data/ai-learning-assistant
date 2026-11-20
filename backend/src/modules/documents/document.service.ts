@@ -6,7 +6,10 @@ import type { JobService } from "../jobs/job.service";
 import type { DocumentListQuery } from "./document.schemas";
 import { JsonDocumentRepository } from "./document.types";
 import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
-import { validateDocumentUpload } from "./document.validation";
+import {
+  validateDocumentUpload,
+  validateLessonVideoUpload,
+} from "./document.validation";
 
 export interface DocumentView {
   id: string;
@@ -49,18 +52,8 @@ export class DocumentService {
   ): Promise<DocumentView> {
     const course = this.requireCourse(input.courseId);
     this.assertCanUpload(actor, course, input.scope);
-    const validated = await validateDocumentUpload(
-      file,
-      this.config.maxDocxExpandedSizeBytes,
-    );
-    if (
-      this.repository.findDuplicate(
-        input.courseId,
-        input.scope,
-        actor.id,
-        validated.contentHash,
-      )
-    ) {
+    const validated = await validateDocumentUpload(file, this.config.maxDocxExpandedSizeBytes);
+    if (this.repository.findDuplicate(input.courseId, input.scope, actor.id, validated.contentHash)) {
       throw new ConflictError("This file has already been uploaded");
     }
 
@@ -126,11 +119,104 @@ export class DocumentService {
   }
 
   /**
+   * Stores a course-owner MP4 as ready lesson media without sending it to ingestion.
+   */
+  public async uploadCourseLessonVideo(
+    actor: AuthenticatedUser,
+    courseId: string,
+    file: Express.Multer.File,
+  ): Promise<DocumentView> {
+    const course = this.requireCourse(courseId);
+    this.assertCanUpload(actor, course, "course");
+    if (!actor.permissions.includes("course:edit")) {
+      throw new AppError("FORBIDDEN", 403, "The required permission is not granted");
+    }
+    const validated = await validateLessonVideoUpload(file);
+
+    return this.repository.withMutationLock(async () => {
+      if (
+        this.repository.findDuplicate(
+          courseId,
+          "course",
+          actor.id,
+          validated.contentHash,
+        )
+      ) {
+        throw new ConflictError(
+          "This video has already been uploaded; select it from the course files",
+        );
+      }
+
+      const storageKey = await this.storage.storeUpload(file.buffer);
+      try {
+        const timestamp = new Date().toISOString();
+        const document = await this.repository.createDocument({
+          courseId,
+          ownerId: actor.id,
+          scope: "course",
+          filename: validated.filename,
+          storageKey,
+          mimeType: validated.mimeType,
+          sizeBytes: validated.sizeBytes,
+          contentHash: validated.contentHash,
+          status: "ready",
+          errorCode: null,
+          errorDetail: null,
+          extractionDiagnostics: null,
+          chunkCount: null,
+          embeddingModel: null,
+          ingestJobId: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          readyAt: timestamp,
+        });
+        return toDocumentView(document);
+      } catch (error) {
+        try {
+          await this.storage.removeUpload(storageKey);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "Lesson video upload failed and its temporary file could not be removed",
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
    * Returns safe document metadata only to the uploader or an approved course member.
    */
   public getStatus(actor: AuthenticatedUser, documentId: string): DocumentView {
     const document = this.requireVisibleDocument(actor, documentId);
     return toDocumentView(document);
+  }
+
+  /**
+   * Reads a ready course PDF only for the owner or an approved course learner.
+   */
+  public async getCourseFile(
+    actor: AuthenticatedUser,
+    documentId: string,
+  ): Promise<{
+    bytes: Buffer;
+    filename: string;
+    mimeType: "application/pdf" | "video/mp4";
+  }> {
+    const document = this.requireVisibleDocument(actor, documentId);
+    if (
+      document.scope !== "course" ||
+      (document.mimeType !== "application/pdf" && document.mimeType !== "video/mp4") ||
+      document.status !== "ready"
+    ) {
+      throw new NotFoundError("Course file not found");
+    }
+    return {
+      bytes: await this.storage.readUpload(document.storageKey),
+      filename: document.filename,
+      mimeType: document.mimeType,
+    };
   }
 
   /**
@@ -145,15 +231,8 @@ export class DocumentService {
     this.assertCanViewCourse(actor, course.id);
     const visible = this.repository
       .listDocumentsByCourse(courseId)
-      .filter(
-        (document) =>
-          document.scope === "course" || document.ownerId === actor.id,
-      );
-    const page = this.repository.listPage(
-      visible,
-      query.limit,
-      query.cursor,
-    );
+      .filter((document) => document.scope === "course" || document.ownerId === actor.id);
+    const page = this.repository.listPage(visible, query.limit, query.cursor);
     return {
       items: page.items.map(toDocumentView),
       nextCursor: page.nextCursor,
@@ -163,51 +242,31 @@ export class DocumentService {
   /**
    * Requeues a failed document using its existing terminal job when possible.
    */
-  public async retry(
-    actor: AuthenticatedUser,
-    documentId: string,
-    requestId: string,
-  ): Promise<DocumentView> {
+  public async retry(actor: AuthenticatedUser, documentId: string, requestId: string): Promise<DocumentView> {
     return this.repository.withDocumentLock(documentId, async () => {
-      const document = this.requireManageableDocument(
-        actor,
-        documentId,
-        "document:upload",
-      );
+      const document = this.requireManageableDocument(actor, documentId, "document:upload");
       if (document.status !== "failed") {
         throw new ConflictError("Only failed documents can be retried");
       }
       const course = this.requireCourse(document.courseId);
       if (course.status !== "active") {
-        throw new AppError(
-          "COURSE_ARCHIVED",
-          409,
-          "Documents in archived courses cannot be retried",
-        );
+        throw new AppError("COURSE_ARCHIVED", 409, "Documents in archived courses cannot be retried");
       }
 
-      const jobStatus = document.ingestJobId
-        ? this.jobs.getJobStatus(document.ingestJobId)
-        : null;
+      const jobStatus = document.ingestJobId ? this.jobs.getJobStatus(document.ingestJobId) : null;
       if (jobStatus === "queued" || jobStatus === "running") {
         throw new ConflictError("Document ingestion is already queued");
       }
 
-      const updated = await this.repository.updateDocument(
-        document.id,
-        (current) => ({
-          ...current,
-          status: "uploaded",
-          errorCode: null,
-          errorDetail: null,
-          updatedAt: new Date().toISOString(),
-        }),
-      );
+      const updated = await this.repository.updateDocument(document.id, (current) => ({
+        ...current,
+        status: "uploaded",
+        errorCode: null,
+        errorDetail: null,
+        updatedAt: new Date().toISOString(),
+      }));
       try {
-        if (
-          updated.ingestJobId &&
-          (jobStatus === "failed" || jobStatus === "dead")
-        ) {
+        if (updated.ingestJobId && (jobStatus === "failed" || jobStatus === "dead")) {
           await this.jobs.retryJob(updated.ingestJobId);
         } else {
           const job = await this.jobs.enqueue({
@@ -232,9 +291,7 @@ export class DocumentService {
         }));
         throw error;
       }
-      return toDocumentView(
-        this.repository.findDocument(document.id) ?? updated,
-      );
+      return toDocumentView(this.repository.findDocument(document.id) ?? updated);
     });
   }
 
@@ -246,50 +303,45 @@ export class DocumentService {
     documentId: string,
     requestId: string,
   ): Promise<{ id: string; status: "deleting"; cleanupJobId: string }> {
-    return this.repository.withDocumentLock(documentId, async () => {
-      const document = this.requireManageableDocument(
-        actor,
-        documentId,
-        "document:delete",
-      );
-      const updated = await this.repository.updateDocument(
-        document.id,
-        (current) => ({
+    return this.repository.withCourseContentMutationLock(() =>
+      this.repository.withDocumentLock(documentId, async () => {
+        const document = this.requireManageableDocument(actor, documentId, "document:delete");
+        if (this.repository.isCourseLessonMediaReferenced(document.id)) {
+          throw new ConflictError("Remove this file from its course lesson before deleting it");
+        }
+        const updated = await this.repository.updateDocument(document.id, (current) => ({
           ...current,
           status: "deleting",
-          updatedAt: new Date().toISOString(),
-        }),
-      );
-      try {
-        const cleanupJob = await this.jobs.enqueue({
-          type: "cleanup",
-          payload: { documentId: document.id },
-          createdBy: actor.id,
-          requestId,
-        });
-        return {
-          id: document.id,
-          status: "deleting",
-          cleanupJobId: cleanupJob.id,
-        };
-      } catch (error) {
-        await this.repository.updateDocument(document.id, (current) => ({
-          ...current,
-          status: updated.status,
           updatedAt: new Date().toISOString(),
         }));
-        throw error;
-      }
-    });
+        try {
+          const cleanupJob = await this.jobs.enqueue({
+            type: "cleanup",
+            payload: { documentId: document.id },
+            createdBy: actor.id,
+            requestId,
+          });
+          return {
+            id: document.id,
+            status: "deleting",
+            cleanupJobId: cleanupJob.id,
+          };
+        } catch (error) {
+          await this.repository.updateDocument(document.id, (current) => ({
+            ...current,
+            status: updated.status,
+            updatedAt: new Date().toISOString(),
+          }));
+          throw error;
+        }
+      }),
+    );
   }
 
   /**
    * Finds a document visible to the caller while hiding protected resource existence.
    */
-  private requireVisibleDocument(
-    actor: AuthenticatedUser,
-    documentId: string,
-  ): DocumentRecord {
+  private requireVisibleDocument(actor: AuthenticatedUser, documentId: string): DocumentRecord {
     const document = this.repository.findDocument(documentId);
     if (!document || actor.status !== "active" || actor.role === "admin") {
       throw new NotFoundError("Document not found");
@@ -345,11 +397,7 @@ export class DocumentService {
       throw new AppError("FORBIDDEN", 403, "The required permission is not granted");
     }
     if (course.status !== "active") {
-      throw new AppError(
-        "COURSE_ARCHIVED",
-        409,
-        "Documents cannot be uploaded to archived courses",
-      );
+      throw new AppError("COURSE_ARCHIVED", 409, "Documents cannot be uploaded to archived courses");
     }
     if (scope === "course") {
       if (actor.role !== "coach" || course.ownerId !== actor.id) {
@@ -357,10 +405,7 @@ export class DocumentService {
       }
       return;
     }
-    if (
-      actor.role !== "learner" ||
-      this.repository.findEnrolment(course.id, actor.id)?.status !== "approved"
-    ) {
+    if (actor.role !== "learner" || this.repository.findEnrolment(course.id, actor.id)?.status !== "approved") {
       throw new NotFoundError("Course not found");
     }
   }
@@ -374,10 +419,7 @@ export class DocumentService {
     }
     const course = this.requireCourse(courseId);
     if (course.ownerId === actor.id && actor.role === "coach") return;
-    if (
-      actor.role === "learner" &&
-      this.repository.findEnrolment(course.id, actor.id)?.status === "approved"
-    ) {
+    if (actor.role === "learner" && this.repository.findEnrolment(course.id, actor.id)?.status === "approved") {
       return;
     }
     throw new NotFoundError("Course not found");

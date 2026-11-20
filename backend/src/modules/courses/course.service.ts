@@ -1,13 +1,11 @@
 import { AppError, ConflictError, NotFoundError } from "../../common/errors/app-error";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import type {
-  CourseRecord,
-  EnrolmentRecord,
-} from "../../infra/jsonstore/system-collections";
+import type { CourseRecord, EnrolmentRecord } from "../../infra/jsonstore/system-collections";
 import type {
   CreateCourseRequest,
   EnrolmentDecisionRequest,
+  UpdateCourseLessonsRequest,
   UpdateCourseRequest,
 } from "./course.schemas";
 import type { CourseRepository } from "./course.types";
@@ -26,6 +24,32 @@ export interface CourseView extends CourseCard {
   archivedBy?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CoursePreviewView {
+  courseId: string;
+  lessons: Array<{
+    id: string;
+    title: string;
+  }>;
+}
+
+export interface CourseLessonView {
+  id: string;
+  title: string;
+  introduction: string;
+  pdfDocumentId: string | null;
+  pdfFilename: string | null;
+  videoDocumentId: string | null;
+  videoFilename: string | null;
+  videoSizeBytes: number | null;
+  videoUrl: string | null;
+}
+
+export interface CourseLessonsView {
+  courseId: string;
+  version: number;
+  lessons: CourseLessonView[];
 }
 
 export interface EnrolmentView extends EnrolmentRecord {
@@ -77,9 +101,8 @@ export class CourseService {
       const created = await this.repository.createCourse({
         ownerId: actor.id,
         name: input.name,
-        ...(input.description === undefined
-          ? {}
-          : { description: input.description }),
+        ...(input.description === undefined ? {} : { description: input.description }),
+        lessons: [],
         status: "active",
         archivedAt: null,
         archivedBy: null,
@@ -87,11 +110,18 @@ export class CourseService {
         createdAt: now,
         updatedAt: now,
       });
-      await this.audit(actor, "course.created", created.id, null, {
-        ownerId: created.ownerId,
-        status: created.status,
-        version: created.version,
-      }, requestId);
+      await this.audit(
+        actor,
+        "course.created",
+        created.id,
+        null,
+        {
+          ownerId: created.ownerId,
+          status: created.status,
+          version: created.version,
+        },
+        requestId,
+      );
       return created;
     });
     return toCourseView(course);
@@ -100,16 +130,11 @@ export class CourseService {
   /**
    * Lists active course cards and archived courses accessible to the caller.
    */
-  public listCourses(
-    actor: AuthenticatedUser,
-    pageOptions: PageOptions,
-  ): PageResult<CourseCard | CourseView> {
-    const accessible = this.repository
-      .listCourses()
-      .filter((course) => {
-        if (course.status === "active" || course.ownerId === actor.id) return true;
-        return this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
-      });
+  public listCourses(actor: AuthenticatedUser, pageOptions: PageOptions): PageResult<CourseCard | CourseView> {
+    const accessible = this.repository.listCourses().filter((course) => {
+      if (course.status === "active" || course.ownerId === actor.id) return true;
+      return this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
+    });
     const page = paginate(accessible, pageOptions);
     return {
       items: page.items.map((course) => {
@@ -123,20 +148,140 @@ export class CourseService {
   }
 
   /**
+   * Lists only courses owned by the authenticated coach.
+   */
+  public listMyCourses(
+    actor: AuthenticatedUser,
+    pageOptions: PageOptions,
+  ): PageResult<CourseView> {
+    assertCoach(actor);
+    const owned = this.repository
+      .listCourses()
+      .filter((course) => course.ownerId === actor.id);
+    const page = paginate(owned, pageOptions);
+    return {
+      items: page.items.map(toCourseView),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    };
+  }
+
+  /**
    * Returns full details only to the owner or an approved learner.
    */
-  public getCourse(
-    actor: AuthenticatedUser,
-    courseId: string,
-  ): CourseCard | CourseView {
+  public getCourse(actor: AuthenticatedUser, courseId: string): CourseCard | CourseView {
     const course = this.requireCourse(courseId);
     const enrolment = this.repository.findEnrolment(course.id, actor.id);
-    const hasCourseAccess =
-      course.ownerId === actor.id || enrolment?.status === "approved";
+    const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
     if (course.status === "archived" && !hasCourseAccess) {
       throw new NotFoundError();
     }
     return hasCourseAccess ? toCourseView(course) : toCourseCard(course);
+  }
+
+  /**
+   * Returns only lesson titles for active courses to support course discovery.
+   */
+  public getCoursePreview(actor: AuthenticatedUser, courseId: string): CoursePreviewView {
+    const course = this.requireCourse(courseId);
+    const enrolment = this.repository.findEnrolment(course.id, actor.id);
+    const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
+    if (course.status === "archived" && !hasCourseAccess) {
+      throw new NotFoundError();
+    }
+    return {
+      courseId: course.id,
+      lessons: (course.lessons ?? []).map(({ id, title }) => ({ id, title })),
+    };
+  }
+
+  /**
+   * Lists ordered lessons only for the course owner and approved learners.
+   */
+  public getCourseLessons(actor: AuthenticatedUser, courseId: string): CourseLessonsView {
+    const course = this.requireCourseAccess(actor, courseId);
+    return toCourseLessonsView(course, this.repository);
+  }
+
+  /**
+   * Replaces the ordered lesson list for an active, owned course.
+   */
+  public async updateCourseLessons(
+    actor: AuthenticatedUser,
+    courseId: string,
+    input: UpdateCourseLessonsRequest,
+    requestId: string,
+  ): Promise<CourseLessonsView> {
+    assertCoach(actor);
+    requirePermission(actor, "course:edit");
+    return this.repository.withCourseContentMutationLock(async () => {
+      const current = this.requireOwnedCourse(actor, courseId);
+      if (current.status !== "active") {
+        throw new AppError("COURSE_ARCHIVED", 409, "Archived courses are read-only until reactivated");
+      }
+      assertExpectedVersion(current, input.version);
+      for (const lesson of input.lessons) {
+        if (lesson.pdfDocumentId === null) continue;
+        const document = this.repository.findDocumentById(lesson.pdfDocumentId);
+        if (
+          !document ||
+          document.courseId !== courseId ||
+          document.scope !== "course" ||
+          document.mimeType !== "application/pdf" ||
+          document.status !== "ready"
+        ) {
+          throw new AppError("VALIDATION_FAILED", 422, "Lesson PDFs must be ready PDF documents from this course");
+        }
+      }
+      for (const lesson of input.lessons) {
+        const existingLesson = current.lessons?.find(
+          (currentLesson) => currentLesson.id === lesson.id,
+        );
+        if (
+          lesson.videoUrl !== null &&
+          lesson.videoUrl !== existingLesson?.videoUrl
+        ) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "New external lesson video links are not supported; upload an MP4 video",
+          );
+        }
+        if (lesson.videoDocumentId === null) continue;
+        const video = this.repository.findDocumentById(lesson.videoDocumentId);
+        if (
+          !video ||
+          video.courseId !== courseId ||
+          video.scope !== "course" ||
+          video.mimeType !== "video/mp4" ||
+          video.status !== "ready"
+        ) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "Lesson videos must be ready MP4 files uploaded to this course",
+          );
+        }
+      }
+
+      const updated = await this.repository.updateCourse(
+        courseId,
+        (course) => ({
+          ...course,
+          lessons: input.lessons,
+          updatedAt: new Date().toISOString(),
+        }),
+        input.version,
+      );
+      await this.audit(
+        actor,
+        "course.lessons_updated",
+        updated.id,
+        { lessonCount: current.lessons?.length ?? 0 },
+        { lessonCount: input.lessons.length },
+        requestId,
+      );
+      return toCourseLessonsView(updated, this.repository);
+    });
   }
 
   /**
@@ -149,24 +294,15 @@ export class CourseService {
     requestId: string,
   ): Promise<CourseView> {
     assertCoach(actor);
-    const changesDetails =
-      input.name !== undefined || input.description !== undefined;
+    const changesDetails = input.name !== undefined || input.description !== undefined;
     if (changesDetails) requirePermission(actor, "course:edit");
     if (input.status !== undefined) requirePermission(actor, "course:archive");
 
     return this.repository.withMutationLock(async () => {
       const current = this.requireOwnedCourse(actor, courseId);
       assertExpectedVersion(current, input.version);
-      if (
-        current.status === "archived" &&
-        changesDetails &&
-        input.status !== "active"
-      ) {
-        throw new AppError(
-          "COURSE_ARCHIVED",
-          409,
-          "Archived courses are read-only until reactivated",
-        );
+      if (current.status === "archived" && changesDetails && input.status !== "active") {
+        throw new AppError("COURSE_ARCHIVED", 409, "Archived courses are read-only until reactivated");
       }
       if (!changesDetails && input.status === current.status) {
         return toCourseView(current);
@@ -178,9 +314,7 @@ export class CourseService {
         (course) => ({
           ...course,
           ...(input.name === undefined ? {} : { name: input.name }),
-          ...(input.description === undefined
-            ? {}
-            : { description: input.description }),
+          ...(input.description === undefined ? {} : { description: input.description }),
           ...(input.status === undefined
             ? {}
             : {
@@ -192,7 +326,14 @@ export class CourseService {
         }),
         input.version,
       );
-      await this.audit(actor, "course.updated", updated.id, courseAuditState(current), courseAuditState(updated), requestId);
+      await this.audit(
+        actor,
+        "course.updated",
+        updated.id,
+        courseAuditState(current),
+        courseAuditState(updated),
+        requestId,
+      );
       return toCourseView(updated);
     });
   }
@@ -215,11 +356,7 @@ export class CourseService {
       const target = this.repository.findUserById(ownerId);
       const role = target ? this.repository.findRoleById(target.roleId) : null;
       if (!target || target.status !== "active" || role?.name !== "coach") {
-        throw new AppError(
-          "VALIDATION_FAILED",
-          422,
-          "The new course owner must be an active coach",
-        );
+        throw new AppError("VALIDATION_FAILED", 422, "The new course owner must be an active coach");
       }
       if (current.ownerId === ownerId) return toCourseView(current);
       const updated = await this.repository.updateCourse(
@@ -231,15 +368,22 @@ export class CourseService {
         }),
         version,
       );
-      await this.audit(actor, "course.owner_reassigned", updated.id, {
-        ownerId: current.ownerId,
-        status: current.status,
-        version: current.version,
-      }, {
-        ownerId: updated.ownerId,
-        status: updated.status,
-        version: updated.version,
-      }, requestId);
+      await this.audit(
+        actor,
+        "course.owner_reassigned",
+        updated.id,
+        {
+          ownerId: current.ownerId,
+          status: current.status,
+          version: current.version,
+        },
+        {
+          ownerId: updated.ownerId,
+          status: updated.status,
+          version: updated.version,
+        },
+        requestId,
+      );
       return toCourseView(updated);
     });
   }
@@ -265,9 +409,7 @@ export class CourseService {
         const owner = this.repository.findUserById(current.ownerId);
         const role = owner ? this.repository.findRoleById(owner.roleId) : null;
         if (!owner || owner.status !== "active" || role?.name !== "coach") {
-          throw new ConflictError(
-            "Reassign the course to an active coach before reactivating it",
-          );
+          throw new ConflictError("Reassign the course to an active coach before reactivating it");
         }
       }
       const now = new Date().toISOString();
@@ -306,11 +448,7 @@ export class CourseService {
     return this.repository.withMutationLock(async () => {
       const course = this.requireCourse(courseId);
       if (course.status !== "active") {
-        throw new AppError(
-          "COURSE_ARCHIVED",
-          409,
-          "Archived courses do not accept new enrolment requests",
-        );
+        throw new AppError("COURSE_ARCHIVED", 409, "Archived courses do not accept new enrolment requests");
       }
       if (course.ownerId === actor.id) {
         throw new ConflictError("Course owners cannot request enrolment in their course");
@@ -350,10 +488,17 @@ export class CourseService {
           updatedAt: now,
         });
       }
-      await this.audit(actor, "enrolment.requested", enrolment.id, null, {
-        courseId,
-        status: enrolment.status,
-      }, requestId);
+      await this.audit(
+        actor,
+        "enrolment.requested",
+        enrolment.id,
+        null,
+        {
+          courseId,
+          status: enrolment.status,
+        },
+        requestId,
+      );
       return { enrolment, created: true };
     });
   }
@@ -361,10 +506,7 @@ export class CourseService {
   /**
    * Lists the caller's enrolments with safe course-card metadata.
    */
-  public listMyEnrolments(
-    actor: AuthenticatedUser,
-    pageOptions: PageOptions,
-  ): PageResult<EnrolmentView> {
+  public listMyEnrolments(actor: AuthenticatedUser, pageOptions: PageOptions): PageResult<EnrolmentView> {
     const enrolments = this.repository.listEnrolmentsByUser(actor.id).map((enrolment) => {
       const course = this.requireCourse(enrolment.courseId);
       return {
@@ -429,11 +571,7 @@ export class CourseService {
         throw new ConflictError("Only pending enrolment requests can be decided");
       }
       if (input.status === "approved" && course.status !== "active") {
-        throw new AppError(
-          "COURSE_ARCHIVED",
-          409,
-          "Archived courses cannot approve new enrolments",
-        );
+        throw new AppError("COURSE_ARCHIVED", 409, "Archived courses cannot approve new enrolments");
       }
       if (input.status === "approved") {
         const applicant = this.repository.findUserById(current.userId);
@@ -446,24 +584,28 @@ export class CourseService {
       }
 
       const now = new Date().toISOString();
-      const updated = await this.repository.updateEnrolment(
-        current.id,
-        (enrolment) => ({
-          ...enrolment,
-          status: input.status,
-          decidedBy: actor.id,
-          decidedAt: now,
-          decisionNote: input.decisionNote?.trim() || null,
-          updatedAt: now,
-        }),
+      const updated = await this.repository.updateEnrolment(current.id, (enrolment) => ({
+        ...enrolment,
+        status: input.status,
+        decidedBy: actor.id,
+        decidedAt: now,
+        decisionNote: input.decisionNote?.trim() || null,
+        updatedAt: now,
+      }));
+      await this.audit(
+        actor,
+        "enrolment.decided",
+        updated.id,
+        {
+          courseId: updated.courseId,
+          status: current.status,
+        },
+        {
+          courseId: updated.courseId,
+          status: updated.status,
+        },
+        requestId,
       );
-      await this.audit(actor, "enrolment.decided", updated.id, {
-        courseId: updated.courseId,
-        status: current.status,
-      }, {
-        courseId: updated.courseId,
-        status: updated.status,
-      }, requestId);
       return updated;
     });
   }
@@ -471,11 +613,7 @@ export class CourseService {
   /**
    * Removes the caller's approved enrolment without deleting its record.
    */
-  public async removeMyEnrolment(
-    actor: AuthenticatedUser,
-    courseId: string,
-    requestId: string,
-  ): Promise<void> {
+  public async removeMyEnrolment(actor: AuthenticatedUser, courseId: string, requestId: string): Promise<void> {
     assertLearner(actor);
     await this.repository.withMutationLock(async () => {
       this.requireCourse(courseId);
@@ -486,24 +624,28 @@ export class CourseService {
         throw new ConflictError("Only an approved enrolment can be removed");
       }
       const now = new Date().toISOString();
-      const updated = await this.repository.updateEnrolment(
-        current.id,
-        (enrolment) => ({
-          ...enrolment,
-          status: "removed",
-          decidedBy: actor.id,
-          decidedAt: now,
-          decisionNote: null,
-          updatedAt: now,
-        }),
+      const updated = await this.repository.updateEnrolment(current.id, (enrolment) => ({
+        ...enrolment,
+        status: "removed",
+        decidedBy: actor.id,
+        decidedAt: now,
+        decisionNote: null,
+        updatedAt: now,
+      }));
+      await this.audit(
+        actor,
+        "enrolment.removed",
+        updated.id,
+        {
+          courseId,
+          status: current.status,
+        },
+        {
+          courseId,
+          status: updated.status,
+        },
+        requestId,
       );
-      await this.audit(actor, "enrolment.removed", updated.id, {
-        courseId,
-        status: current.status,
-      }, {
-        courseId,
-        status: updated.status,
-      }, requestId);
     });
   }
 
@@ -519,10 +661,7 @@ export class CourseService {
   /**
    * Finds a course owned by an active coach and hides other owners' resources.
    */
-  private requireOwnedCourse(
-    actor: AuthenticatedUser,
-    courseId: string,
-  ): CourseRecord {
+  private requireOwnedCourse(actor: AuthenticatedUser, courseId: string): CourseRecord {
     assertCoach(actor);
     const course = this.requireCourse(courseId);
     if (course.ownerId !== actor.id) throw new NotFoundError();
@@ -530,25 +669,33 @@ export class CourseService {
   }
 
   /**
+   * Finds a course the owner or an approved learner may study.
+   */
+  private requireCourseAccess(actor: AuthenticatedUser, courseId: string): CourseRecord {
+    const course = this.requireCourse(courseId);
+    const isOwner = actor.role === "coach" && course.ownerId === actor.id;
+    const isApprovedLearner =
+      actor.role === "learner" && this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
+    if (actor.status !== "active" || (!isOwner && !isApprovedLearner)) {
+      throw new NotFoundError();
+    }
+    return course;
+  }
+
+  /**
    * Enforces the configured wait after a rejected or removed request.
    */
   private assertReRequestAllowed(enrolment: EnrolmentRecord): void {
-    if (
-      enrolment.status !== "rejected" &&
-      enrolment.status !== "removed"
-    ) {
+    if (enrolment.status !== "rejected" && enrolment.status !== "removed") {
       throw new ConflictError("The enrolment request cannot be reopened");
     }
     if (this.enrolmentReRequestCooldownHours === 0) return;
     const lastDecisionAt = enrolment.decidedAt ?? enrolment.updatedAt;
-    const availableAt =
-      Date.parse(lastDecisionAt) +
-      this.enrolmentReRequestCooldownHours * 60 * 60 * 1000;
+    const availableAt = Date.parse(lastDecisionAt) + this.enrolmentReRequestCooldownHours * 60 * 60 * 1000;
     if (Date.now() < availableAt) {
-      throw new ConflictError(
-        "The enrolment request is still in its re-request cool-down",
-        { availableAt: new Date(availableAt).toISOString() },
-      );
+      throw new ConflictError("The enrolment request is still in its re-request cool-down", {
+        availableAt: new Date(availableAt).toISOString(),
+      });
     }
   }
 
@@ -628,9 +775,7 @@ function toCourseCard(course: CourseRecord): CourseCard {
   return {
     id: course.id,
     name: course.name,
-    ...(course.description === undefined
-      ? {}
-      : { description: course.description }),
+    ...(course.description === undefined ? {} : { description: course.description }),
   };
 }
 
@@ -643,23 +788,51 @@ function toCourseView(course: CourseRecord): CourseView {
     ownerId: course.ownerId,
     status: course.status,
     version: course.version,
-    ...(course.archivedAt === undefined
-      ? {}
-      : { archivedAt: course.archivedAt }),
-    ...(course.archivedBy === undefined
-      ? {}
-      : { archivedBy: course.archivedBy }),
+    ...(course.archivedAt === undefined ? {} : { archivedAt: course.archivedAt }),
+    ...(course.archivedBy === undefined ? {} : { archivedBy: course.archivedBy }),
     createdAt: course.createdAt,
     updatedAt: course.updatedAt,
+  };
+}
+
+function toCourseLessonsView(course: CourseRecord, repository: CourseRepository): CourseLessonsView {
+  return {
+    courseId: course.id,
+    version: course.version,
+    lessons: (course.lessons ?? []).map((lesson) => {
+      const document = lesson.pdfDocumentId ? repository.findDocumentById(lesson.pdfDocumentId) : null;
+      const videoDocument = lesson.videoDocumentId
+        ? repository.findDocumentById(lesson.videoDocumentId)
+        : null;
+      const pdfIsAvailable =
+        document?.courseId === course.id &&
+        document.scope === "course" &&
+        document.mimeType === "application/pdf" &&
+        document.status === "ready";
+      const videoIsAvailable =
+        videoDocument?.courseId === course.id &&
+        videoDocument.scope === "course" &&
+        videoDocument.mimeType === "video/mp4" &&
+        videoDocument.status === "ready";
+      return {
+        id: lesson.id,
+        title: lesson.title,
+        introduction: lesson.introduction,
+        pdfDocumentId: pdfIsAvailable ? document.id : null,
+        pdfFilename: pdfIsAvailable ? document.filename : null,
+        videoDocumentId: videoIsAvailable ? videoDocument.id : null,
+        videoFilename: videoIsAvailable ? videoDocument.filename : null,
+        videoSizeBytes: videoIsAvailable ? videoDocument.sizeBytes : null,
+        videoUrl: lesson.videoUrl,
+      };
+    }),
   };
 }
 
 /**
  * Returns only non-content course fields suitable for audit history.
  */
-function courseAuditState(
-  course: CourseRecord,
-): Record<string, unknown> {
+function courseAuditState(course: CourseRecord): Record<string, unknown> {
   return {
     ownerId: course.ownerId,
     status: course.status,
@@ -670,19 +843,10 @@ function courseAuditState(
 /**
  * Returns a bounded ID-ordered page and encodes the next ID as an opaque cursor.
  */
-function paginate<T extends { id: string }>(
-  records: T[],
-  options: PageOptions,
-): PageResult<T> {
-  const sorted = [...records].sort((left, right) =>
-    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
-  );
-  const cursorId = options.cursor
-    ? decodeCursor(options.cursor)
-    : undefined;
-  const remaining = cursorId
-    ? sorted.filter((record) => record.id > cursorId)
-    : sorted;
+function paginate<T extends { id: string }>(records: T[], options: PageOptions): PageResult<T> {
+  const sorted = [...records].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const cursorId = options.cursor ? decodeCursor(options.cursor) : undefined;
+  const remaining = cursorId ? sorted.filter((record) => record.id > cursorId) : sorted;
   const selected = remaining.slice(0, options.limit + 1);
   const hasMore = selected.length > options.limit;
   const items = selected.slice(0, options.limit);

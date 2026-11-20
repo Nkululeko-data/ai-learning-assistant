@@ -250,6 +250,18 @@ async function verifiesCoachRequestApprovalAndRoleGuards(): Promise<void> {
   expect(pending.status).toBe(200);
   expect(pending.body.data).toHaveLength(1);
 
+  const users = await request(context.app)
+    .get("/api/v1/admin/users")
+    .set("Authorization", `Bearer ${admin.tokens.accessToken}`);
+  expect(users.status).toBe(200);
+  const applicant = users.body.data.find(
+    (user: { email: string }) => user.email === "applicant@example.test",
+  );
+  expect(applicant).toEqual(
+    expect.objectContaining({ email: "applicant@example.test", role: "learner" }),
+  );
+  expect(applicant.passwordHash).toBeUndefined();
+
   const requestId = pending.body.data[0].id as string;
   const approved = await request(context.app)
     .patch(`/api/v1/admin/coach-requests/${requestId}`)

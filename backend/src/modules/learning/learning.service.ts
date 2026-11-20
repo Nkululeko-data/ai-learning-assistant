@@ -296,7 +296,7 @@ export class LearningService {
     input: GenerateQuizRequest,
     requestId: string,
     signal: AbortSignal,
-  ): Promise<QuizRecord> {
+  ): Promise<QuizRecord | QuizLearnerView> {
     this.retrievalService.assertCourseAccess(actor, input.courseId);
     const generationParams = {
       selection: input.selection,
@@ -376,7 +376,7 @@ export class LearningService {
       createdAt: timestamp,
       updatedAt: timestamp,
     });
-    return quiz;
+    return this.quizView(actor, quiz);
   }
 
   public async createCoachQuiz(
@@ -818,6 +818,7 @@ export class LearningService {
       vector,
       {
         limit: this.config.chatTopK,
+        queryText: query,
         documentIds: selection.documentIds,
         ...(selection.sections ? { sections: selection.sections } : {}),
       },

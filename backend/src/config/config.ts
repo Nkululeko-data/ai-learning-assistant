@@ -442,6 +442,6 @@ function loadDefaultConfig(): z.infer<typeof defaultConfigSchema> {
  */
 export function hasProviderConfiguration(config: AppConfig): boolean {
   return Boolean(
-    config.inceptionApiKey && config.groqApiKey && config.mistralApiKey,
+    config.mistralApiKey && (config.inceptionApiKey || config.groqApiKey),
   );
 }

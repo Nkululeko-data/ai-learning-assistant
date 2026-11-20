@@ -123,6 +123,15 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
+    "/courses/{courseId}/preview": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Courses"],
+        "operationId": "getCoursePreview",
+        "summary": "Get course description and lesson topics without lesson content",
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
     "/courses/{courseId}/join": {
       "parameters": [{ "$ref": "#/components/parameters/courseId" }],
       "post": {
@@ -219,6 +228,50 @@
         "summary": "Upload a document and enqueue ingestion",
         "requestBody": { "$ref": "#/components/requestBodies/DocumentUploadRequest" },
         "responses": { "202": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "413": { "$ref": "#/components/responses/ApiError" }, "415": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/courses/{courseId}/lesson-videos": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "post": {
+        "tags": ["Documents"],
+        "operationId": "uploadCourseLessonVideo",
+        "summary": "Upload a course lesson MP4 without ingestion",
+        "description": "Requires course edit and document upload permissions. Accepts MP4 files up to 100 MiB and stores them privately in the course library without embeddings.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "413": { "$ref": "#/components/responses/ApiError" }, "415": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/documents/{documentId}/file": {
+      "parameters": [{ "$ref": "#/components/parameters/documentId" }],
+      "get": {
+        "tags": ["Documents"],
+        "operationId": "getCourseFile",
+        "summary": "Stream an authorized ready course PDF or lesson MP4",
+        "responses": {
+          "200": {
+            "description": "Private course file",
+            "content": {
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } },
+              "video/mp4": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ApiError" },
+          "404": { "$ref": "#/components/responses/ApiError" },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
       }
     },
     "/documents/{documentId}/status": {

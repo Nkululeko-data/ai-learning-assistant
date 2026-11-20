@@ -14,94 +14,100 @@
 
 ## Error catalogue
 
-| Code | HTTP | Meaning |
-|---|---:|---|
-| `VALIDATION_FAILED` | 422 | Request schema failed |
-| `AUTH_INVALID_CREDENTIALS` | 401 | Invalid login credentials |
-| `AUTH_TOKEN_EXPIRED`, `AUTH_TOKEN_INVALID` | 401 | Access/refresh token invalid or expired |
-| `AUTH_ACCOUNT_LOCKED` | 429 | Account is locked after failed logins |
-| `AUTH_PASSWORD_CHANGE_REQUIRED` | 403 | Bootstrap/reset password must be changed before privileged actions |
-| `FORBIDDEN` | 403 | Permission or ownership check failed |
-| `ENROLMENT_REQUIRED` | 403 | Approved course membership required |
-| `NOT_FOUND` | 404 | Resource absent or intentionally hidden |
-| `CONFLICT` | 409 | Duplicate, stale version or conflicting decision |
-| `COURSE_ARCHIVED` | 409 | Operation not allowed for archived course |
-| `FILE_TYPE_NOT_ALLOWED` | 415 | Upload type mismatch |
-| `FILE_TOO_LARGE` | 413 | Upload exceeds configured limit |
-| `INSUFFICIENT_MATERIAL` | 422 | Selected sources cannot support generation |
-| `RATE_LIMITED`, `QUOTA_EXCEEDED` | 429 | Rate or usage limit reached |
-| `GENERATION_FAILED` | 502 | Structured output invalid after repair/fallback |
-| `PROVIDER_UNAVAILABLE` | 503 | Required provider unavailable |
-| `NODE_TIMEOUT` | 504 | A bounded AI workflow node exceeded its configured timeout |
-| `SERVICE_NOT_READY` | 503 | One or more readiness checks failed |
-| `INTERNAL_ERROR` | 500 | Unexpected failure; internals are not exposed |
+| Code                                       | HTTP | Meaning                                                            |
+| ------------------------------------------ | ---: | ------------------------------------------------------------------ |
+| `VALIDATION_FAILED`                        |  422 | Request schema failed                                              |
+| `AUTH_INVALID_CREDENTIALS`                 |  401 | Invalid login credentials                                          |
+| `AUTH_TOKEN_EXPIRED`, `AUTH_TOKEN_INVALID` |  401 | Access/refresh token invalid or expired                            |
+| `AUTH_ACCOUNT_LOCKED`                      |  429 | Account is locked after failed logins                              |
+| `AUTH_PASSWORD_CHANGE_REQUIRED`            |  403 | Bootstrap/reset password must be changed before privileged actions |
+| `FORBIDDEN`                                |  403 | Permission or ownership check failed                               |
+| `ENROLMENT_REQUIRED`                       |  403 | Approved course membership required                                |
+| `NOT_FOUND`                                |  404 | Resource absent or intentionally hidden                            |
+| `CONFLICT`                                 |  409 | Duplicate, stale version or conflicting decision                   |
+| `COURSE_ARCHIVED`                          |  409 | Operation not allowed for archived course                          |
+| `FILE_TYPE_NOT_ALLOWED`                    |  415 | Upload type mismatch                                               |
+| `FILE_TOO_LARGE`                           |  413 | Upload exceeds configured limit                                    |
+| `INSUFFICIENT_MATERIAL`                    |  422 | Selected sources cannot support generation                         |
+| `RATE_LIMITED`, `QUOTA_EXCEEDED`           |  429 | Rate or usage limit reached                                        |
+| `GENERATION_FAILED`                        |  502 | Structured output invalid after repair/fallback                    |
+| `PROVIDER_UNAVAILABLE`                     |  503 | Required provider unavailable                                      |
+| `NODE_TIMEOUT`                             |  504 | A bounded AI workflow node exceeded its configured timeout         |
+| `SERVICE_NOT_READY`                        |  503 | One or more readiness checks failed                                |
+| `INTERNAL_ERROR`                           |  500 | Unexpected failure; internals are not exposed                      |
 
 ## Endpoint groups
 
 All IDs below are opaque identifiers. Unless a route is explicitly public, authentication and policy checks apply.
 
-| Group | Method and path | Purpose |
-|---|---|---|
-| Auth | `POST /auth/register` | Register learner and optionally submit coach request |
-| Auth | `POST /auth/login` | Authenticate and issue access/refresh tokens |
-| Auth | `POST /auth/refresh` | Rotate refresh token |
-| Auth | `POST /auth/logout` | Revoke refresh-token family |
-| Auth | `POST /auth/change-password` | Change password, including forced initial change |
-| Auth | `GET /me` | Get current user's safe profile and effective permissions |
-| Courses | `POST /courses` | Create course |
-| Courses | `GET /courses` | List active course cards and accessible courses |
-| Courses | `GET /courses/{id}` | Get course details allowed to the caller |
-| Courses | `PATCH /courses/{id}` | Update or archive an owned course using optimistic version |
-| Enrolments | `POST /courses/{id}/join` | Request to join course |
-| Enrolments | `GET /me/enrolments` | List current user's enrolments |
-| Enrolments | `GET /courses/{id}/join-requests` | List join requests for owned course |
-| Enrolments | `PATCH /enrolments/{id}` | Approve/reject request |
-| Enrolments | `DELETE /courses/{id}/enrolment` | Remove learner enrolment |
-| Admin | `PATCH /admin/courses/{id}/owner` | Reassign a course to an active coach |
-| Admin | `PATCH /admin/courses/{id}` | Archive a course when its owner cannot be retained |
-| Documents | `POST /documents/upload` | Validate/store upload and enqueue ingestion; returns 202 |
-| Documents | `GET /documents/{id}/status` | Get processing status and safe diagnostics |
-| Documents | `POST /documents/{id}/retry` | Retry failed ingestion |
-| Documents | `GET /courses/{id}/documents` | List visible course document metadata |
-| Documents | `DELETE /documents/{id}` | Enqueue hard deletion |
-| Chat | `POST /chat/ask` | Grounded answer; JSON or validated POST-based SSE |
-| Conversations | `GET /conversations` | List caller's conversations |
-| Conversations | `GET /conversations/{id}` | Read owned conversation and messages |
-| Conversations | `PATCH /conversations/{id}` | Rename owned conversation |
-| Conversations | `DELETE /conversations/{id}` | Hard-delete owned conversation and messages |
-| Learning | `POST /summaries/generate` | Generate/store selected-source summary |
-| Learning | `GET /courses/{id}/summaries`, `GET /summaries/{id}` | List or read caller-visible summaries |
-| Learning | `POST /summaries/{id}/publish` | Publish an owned coach summary draft |
-| Learning | `POST /flashcards/generate` | Generate/store selected-source flashcards |
-| Learning | `GET /courses/{id}/flashcards`, `GET /flashcards/{id}` | List or read caller-visible flashcard sets |
-| Learning | `POST /flashcards/{id}/publish` | Publish an owned coach flashcard draft |
-| Quizzes | `POST /quizzes/generate` | Generate private learner quiz or coach draft |
-| Quizzes | `POST /quizzes` | Create coach quiz draft |
-| Quizzes | `PATCH /quizzes/{id}` | Edit draft or create new version when required |
-| Quizzes | `POST /quizzes/{id}/publish` | Publish coach quiz |
-| Quizzes | `GET /courses/{id}/quizzes` | List visible quizzes using caller-specific view |
-| Quizzes | `GET /quizzes/{id}` | Get learner-safe or owner quiz view |
-| Quizzes | `POST /quizzes/{id}/attempts` | Submit answers; server scores and returns result |
-| Quizzes | `GET /me/quiz-attempts` | List caller's attempts |
-| Feedback | `POST /feedback` | Submit/update rating and optional comment |
-| Insights | `GET /courses/{id}/insights` | Get owner-only cohort aggregates |
-| Insights | `GET /courses/{id}/gap-report` | Get latest theme-only gap report |
-| Insights | `POST /courses/{id}/gap-report/refresh` | Enqueue gap-report job |
-| Admin | `GET /admin/coach-requests`, `PATCH /admin/coach-requests/:id` | List and decide coach requests |
-| Admin | `GET /admin/users` | List user metadata |
-| Admin | `PATCH /admin/users/{id}/role` | Change role (not own role) |
-| Admin | `PATCH /admin/users/{id}/permissions` | Grant/revoke fine-grained permissions |
-| Admin | `PATCH /admin/users/{id}/status` | Stash/suspend/restore user |
-| Admin | `POST /admin/users/{id}/reset-password` | Issue one-time reset token |
-| Admin | `POST /admin/users/{id}/erase` | Enqueue privacy erasure |
-| Admin | `GET /admin/audit-logs` | List redacted audit metadata |
-| Admin | `GET /admin/executions` | List AI execution metadata only |
-| Admin | `GET/PATCH /admin/config` | Read/update validated non-secret config |
-| Admin | `GET /admin/jobs` | List job metadata |
-| Admin | `POST /admin/jobs/{id}/retry` | Retry dead job |
-| Jobs | `GET /jobs/{id}` | Get caller-authorized job status |
-| System | `GET /health` | Liveness |
-| System | `GET /ready` | Readiness of stores, schema and provider configuration |
+| Group         | Method and path                                                | Purpose                                                                                 |
+| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Auth          | `POST /auth/register`                                          | Register learner and optionally submit coach request                                    |
+| Auth          | `POST /auth/login`                                             | Authenticate and issue access/refresh tokens                                            |
+| Auth          | `POST /auth/refresh`                                           | Rotate refresh token                                                                    |
+| Auth          | `POST /auth/logout`                                            | Revoke refresh-token family                                                             |
+| Auth          | `POST /auth/change-password`                                   | Change password, including forced initial change                                        |
+| Auth          | `GET /me`                                                      | Get current user's safe profile and effective permissions                               |
+| Courses       | `POST /courses`                                                | Create course                                                                           |
+| Courses       | `GET /courses`                                                 | List active course cards and accessible courses                                         |
+| Courses       | `GET /me/courses`                                              | List paginated courses owned by the authenticated coach                                 |
+| Courses       | `GET /courses/{id}`                                            | Get course details allowed to the caller                                                |
+| Courses       | `GET /courses/{id}/preview`                                    | Preview ordered lesson titles without accessing lesson content                           |
+| Courses       | `GET /courses/{id}/lessons`                                    | List ordered lesson topics and available course media for the owner or approved learner |
+| Courses       | `PUT /courses/{id}/lessons`                                    | Replace an owned course's ordered lessons using optimistic versioning                   |
+| Documents     | `POST /courses/{id}/lesson-videos`                             | Store an MP4 in the course library without document ingestion                           |
+| Courses       | `PATCH /courses/{id}`                                          | Update or archive an owned course using optimistic version                              |
+| Enrolments    | `POST /courses/{id}/join`                                      | Request to join course                                                                  |
+| Enrolments    | `GET /me/enrolments`                                           | List current user's enrolments                                                          |
+| Enrolments    | `GET /courses/{id}/join-requests`                              | List join requests for owned course                                                     |
+| Enrolments    | `PATCH /enrolments/{id}`                                       | Approve/reject request                                                                  |
+| Enrolments    | `DELETE /courses/{id}/enrolment`                               | Remove learner enrolment                                                                |
+| Admin         | `PATCH /admin/courses/{id}/owner`                              | Reassign a course to an active coach                                                    |
+| Admin         | `PATCH /admin/courses/{id}`                                    | Archive a course when its owner cannot be retained                                      |
+| Documents     | `POST /documents/upload`                                       | Validate/store upload and enqueue ingestion; returns 202                                |
+| Documents     | `GET /documents/{id}/status`                                   | Get processing status and safe diagnostics                                              |
+| Documents     | `GET /documents/{id}/file`                                     | Stream a ready course PDF or lesson MP4 to an authorized course member                  |
+| Documents     | `POST /documents/{id}/retry`                                   | Retry failed ingestion                                                                  |
+| Documents     | `GET /courses/{id}/documents`                                  | List visible course document metadata                                                   |
+| Documents     | `DELETE /documents/{id}`                                       | Enqueue hard deletion                                                                   |
+| Chat          | `POST /chat/ask`                                               | Grounded answer; JSON or validated POST-based SSE                                       |
+| Conversations | `GET /conversations`                                           | List caller's conversations                                                             |
+| Conversations | `GET /conversations/{id}`                                      | Read owned conversation and messages                                                    |
+| Conversations | `PATCH /conversations/{id}`                                    | Rename owned conversation                                                               |
+| Conversations | `DELETE /conversations/{id}`                                   | Hard-delete owned conversation and messages                                             |
+| Learning      | `POST /summaries/generate`                                     | Generate/store selected-source summary                                                  |
+| Learning      | `GET /courses/{id}/summaries`, `GET /summaries/{id}`           | List or read caller-visible summaries                                                   |
+| Learning      | `POST /summaries/{id}/publish`                                 | Publish an owned coach summary draft                                                    |
+| Learning      | `POST /flashcards/generate`                                    | Generate/store selected-source flashcards                                               |
+| Learning      | `GET /courses/{id}/flashcards`, `GET /flashcards/{id}`         | List or read caller-visible flashcard sets                                              |
+| Learning      | `POST /flashcards/{id}/publish`                                | Publish an owned coach flashcard draft                                                  |
+| Quizzes       | `POST /quizzes/generate`                                       | Generate private learner quiz or coach draft                                            |
+| Quizzes       | `POST /quizzes`                                                | Create coach quiz draft                                                                 |
+| Quizzes       | `PATCH /quizzes/{id}`                                          | Edit draft or create new version when required                                          |
+| Quizzes       | `POST /quizzes/{id}/publish`                                   | Publish coach quiz                                                                      |
+| Quizzes       | `GET /courses/{id}/quizzes`                                    | List visible quizzes using caller-specific view                                         |
+| Quizzes       | `GET /quizzes/{id}`                                            | Get learner-safe or owner quiz view                                                     |
+| Quizzes       | `POST /quizzes/{id}/attempts`                                  | Submit answers; server scores and returns result                                        |
+| Quizzes       | `GET /me/quiz-attempts`                                        | List caller's attempts                                                                  |
+| Feedback      | `POST /feedback`                                               | Submit/update rating and optional comment                                               |
+| Insights      | `GET /courses/{id}/insights`                                   | Get owner-only cohort aggregates                                                        |
+| Insights      | `GET /courses/{id}/gap-report`                                 | Get latest theme-only gap report                                                        |
+| Insights      | `POST /courses/{id}/gap-report/refresh`                        | Enqueue gap-report job                                                                  |
+| Admin         | `GET /admin/coach-requests`, `PATCH /admin/coach-requests/:id` | List and decide coach requests                                                          |
+| Admin         | `GET /admin/users`                                             | List safe user metadata, including the role name and status                             |
+| Admin         | `PATCH /admin/users/{id}/role`                                 | Change role (not own role)                                                              |
+| Admin         | `PATCH /admin/users/{id}/permissions`                          | Grant/revoke fine-grained permissions                                                   |
+| Admin         | `PATCH /admin/users/{id}/status`                               | Stash/suspend/restore user                                                              |
+| Admin         | `POST /admin/users/{id}/reset-password`                        | Issue one-time reset token                                                              |
+| Admin         | `POST /admin/users/{id}/erase`                                 | Enqueue privacy erasure                                                                 |
+| Admin         | `GET /admin/audit-logs`                                        | List redacted audit metadata                                                            |
+| Admin         | `GET /admin/executions`                                        | List AI execution metadata only                                                         |
+| Admin         | `GET/PATCH /admin/config`                                      | Read/update validated non-secret config                                                 |
+| Admin         | `GET /admin/jobs`                                              | List job metadata                                                                       |
+| Admin         | `POST /admin/jobs/{id}/retry`                                  | Retry dead job                                                                          |
+| Jobs          | `GET /jobs/{id}`                                               | Get caller-authorized job status                                                        |
+| System        | `GET /health`                                                  | Liveness                                                                                |
+| System        | `GET /ready`                                                   | Readiness of stores, schema and provider configuration                                  |
 
 ## Course and enrolment contracts (B4)
 
@@ -112,13 +118,16 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   ```json
   { "name": "Biology 101", "description": "Introductory biology" }
   ```
+
 - `GET /courses` returns active course cards to signed-in users. Cards expose
   only `id`, `name` and `description`; owners and approved learners also receive
   full details for their accessible courses. `GET /courses/{id}` follows the
   same visibility rule. Archived courses are visible only to their owner and
   approved learners.
-- Course, enrolment and join-request lists accept `limit` (default 20, maximum
-  100) and an opaque base64url `cursor`; paginated responses include
+- `GET /courses/{id}/preview` returns only lesson IDs and titles for an active
+  course to signed-in users. It never includes lesson introductions or media
+  references. Archived courses remain hidden from callers without course access.
+- Course, enrolment and join-request lists accept `limit` (default 20, maximum 100) and an opaque base64url `cursor`; paginated responses include
   `meta.nextCursor` when another page is available.
 - `PATCH /courses/{id}` requires ownership and a current `version`. The body
   may contain `name`, `description`, and/or `status` (`active` or `archived`).
@@ -129,6 +138,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   ```json
   { "name": "Biology 102", "version": 1 }
   ```
+
 - `POST /courses/{id}/join` is for the learner's own request and takes no
   body. A new request returns `201`; repeating a pending request returns `200`
   without creating another record. Approved enrolments grant course access;
@@ -138,7 +148,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   reused. A request during the cooldown returns `409 CONFLICT`.
 - `GET /me/enrolments` returns only the caller's records. Course owners with
   `enrolment:approve` may list their join requests and `PATCH
-  /enrolments/{id}` with `{ "status": "approved" }` or
+/enrolments/{id}` with `{ "status": "approved" }` or
   `{ "status": "rejected", "decisionNote": "..." }`. Repeating the same
   decision is idempotent; a conflicting decision returns `409`.
 - `DELETE /courses/{id}/enrolment` removes the caller's approved enrolment;
@@ -208,6 +218,18 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   by default (about four characters per token); chunks never cross PDF pages.
   OCR is not supported. PDFs with fewer than 50 extracted characters fail
   with `EXTRACTION_LOW_TEXT` and a scanned-file diagnostic.
+- `POST /courses/{id}/lesson-videos` accepts an MP4 file as
+  `multipart/form-data`. It requires course edit and document upload
+  permissions, limits the file to 100 MiB, validates its extension, declared
+  MIME type and file signature, then stores it as a ready course document
+  without enqueuing ingestion or creating embeddings. Videos are not eligible
+  as AI study sources. An attached lesson video cannot be deleted until it is
+  detached from the lesson.
+- `GET /documents/{id}/file` serves ready course PDFs or MP4s only to the
+  course owner or an approved learner. Lesson responses may include
+  `videoDocumentId`, `videoFilename`, and `videoSizeBytes`. Existing external
+  video URLs remain readable and may be retained or removed, but new external
+  URLs are not accepted.
 - Document and personal-note text is sent to Mistral for embeddings. Deployers
   must disclose this before upload. `MISTRAL_API_KEY` is optional at startup
   but required to complete ingestion; provider failures are exposed only as
@@ -243,7 +265,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 - Chat requests are limited to 10 per minute, 100 requests per UTC day, and
   100,000 recorded provider tokens per UTC day by default. These limits are
   configurable. `429 QUOTA_EXCEEDED` indicates a daily limit; `429
-  RATE_LIMITED` indicates the short-window limit.
+RATE_LIMITED` indicates the short-window limit.
 - Each graph node has a configurable timeout (`CHAT_NODE_TIMEOUT_MS`, 60
   seconds by default); an expired node returns `504 NODE_TIMEOUT` and records
   only safe execution metadata.
@@ -280,6 +302,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   Section scope requires at least one selected section. An identical request
   reuses its stored result unless `regenerate` is true; regeneration stores a
   new version.
+
 - Flashcard generation accepts `count` from 1-50 (default 10) and the same
   selection shape. Quiz generation accepts `count` from 1-50 (default 10),
   `types` (`mcq` and/or `true_false`, default `mcq`), and `difficulty`

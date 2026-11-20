@@ -1,6 +1,8 @@
 import { AsyncMutex } from "../../infra/jsonstore/async-mutex";
+import { withCourseContentMutationLock } from "../../infra/jsonstore/course-content-mutex";
 import type {
   CourseRecord,
+  DocumentRecord,
   EnrolmentRecord,
   RoleRecord,
   SystemCollections,
@@ -10,8 +12,10 @@ import type { AuditInput } from "../auth/auth.types";
 
 export interface CourseRepository {
   withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+  withCourseContentMutationLock<T>(operation: () => Promise<T>): Promise<T>;
   findCourseById(id: string): CourseRecord | null;
   listCourses(): CourseRecord[];
+  findDocumentById(id: string): DocumentRecord | null;
   createCourse(input: Omit<CourseRecord, "id">): Promise<CourseRecord>;
   updateCourse(
     id: string,
@@ -23,10 +27,7 @@ export interface CourseRepository {
   listEnrolmentsByCourse(courseId: string): EnrolmentRecord[];
   listEnrolmentsByUser(userId: string): EnrolmentRecord[];
   createEnrolment(input: Omit<EnrolmentRecord, "id">): Promise<EnrolmentRecord>;
-  updateEnrolment(
-    id: string,
-    update: (enrolment: EnrolmentRecord) => EnrolmentRecord,
-  ): Promise<EnrolmentRecord>;
+  updateEnrolment(id: string, update: (enrolment: EnrolmentRecord) => EnrolmentRecord): Promise<EnrolmentRecord>;
   findUserById(id: string): UserRecord | null;
   findRoleById(id: string): RoleRecord | null;
   createAudit(input: AuditInput): Promise<void>;
@@ -51,6 +52,13 @@ export class JsonCourseRepository implements CourseRepository {
   }
 
   /**
+   * Coordinates lesson edits with document deletion across course repositories.
+   */
+  public withCourseContentMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return withCourseContentMutationLock(this.collections, operation);
+  }
+
+  /**
    * Finds a course by its ID.
    */
   public findCourseById(id: string): CourseRecord | null {
@@ -65,11 +73,16 @@ export class JsonCourseRepository implements CourseRepository {
   }
 
   /**
+   * Finds a document for course-lesson attachment validation.
+   */
+  public findDocumentById(id: string): DocumentRecord | null {
+    return this.collections.documents.getById(id);
+  }
+
+  /**
    * Inserts a validated course.
    */
-  public createCourse(
-    input: Omit<CourseRecord, "id">,
-  ): Promise<CourseRecord> {
+  public createCourse(input: Omit<CourseRecord, "id">): Promise<CourseRecord> {
     return this.collections.courses.insert(input);
   }
 
@@ -87,14 +100,8 @@ export class JsonCourseRepository implements CourseRepository {
   /**
    * Finds the unique enrolment for a user and course.
    */
-  public findEnrolment(
-    courseId: string,
-    userId: string,
-  ): EnrolmentRecord | null {
-    return this.collections.enrolments.findUnique(
-      "courseUser",
-      `${courseId}:${userId}`,
-    );
+  public findEnrolment(courseId: string, userId: string): EnrolmentRecord | null {
+    return this.collections.enrolments.findUnique("courseUser", `${courseId}:${userId}`);
   }
 
   /**
@@ -121,9 +128,7 @@ export class JsonCourseRepository implements CourseRepository {
   /**
    * Inserts a validated enrolment.
    */
-  public createEnrolment(
-    input: Omit<EnrolmentRecord, "id">,
-  ): Promise<EnrolmentRecord> {
+  public createEnrolment(input: Omit<EnrolmentRecord, "id">): Promise<EnrolmentRecord> {
     return this.collections.enrolments.insert(input);
   }
 

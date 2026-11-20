@@ -26,12 +26,10 @@ jest.mock("file-type", () => ({
     if (bytes.subarray(0, 5).toString() === "%PDF-") {
       return { ext: "pdf", mime: "application/pdf" };
     }
-    if (
-      bytes[0] === 0x50 &&
-      bytes[1] === 0x4b &&
-      bytes[2] === 0x03 &&
-      bytes[3] === 0x04
-    ) {
+    if (bytes.subarray(4, 8).toString() === "ftyp") {
+      return { ext: "mp4", mime: "video/mp4" };
+    }
+    if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
       return { ext: "zip", mime: "application/zip" };
     }
     return undefined;
@@ -133,19 +131,14 @@ async function createContext(): Promise<DocumentTestContext> {
     bootstrapAdminEmail: "admin@example.test",
     bootstrapAdminPassword: adminPassword,
   };
-  const authService = new AuthService(
-    new JsonAuthRepository(collections),
-    config,
-    { allowRefreshTokenInBody: true },
-  );
+  const authService = new AuthService(new JsonAuthRepository(collections), config, {
+    allowRefreshTokenInBody: true,
+  });
   const courseService = new CourseService(
     new JsonCourseRepository(collections),
     config.enrolmentReRequestCooldownHours,
   );
-  const jobRepository = new JsonJobRepository(
-    collections.jobs,
-    collections.schedulerState,
-  );
+  const jobRepository = new JsonJobRepository(collections.jobs, collections.schedulerState);
   const jobService = new JobService(jobRepository);
   const documentRepository = new JsonDocumentRepository(collections);
   const storage = new PrivateFileStorage(dataDirectory);
@@ -153,15 +146,9 @@ async function createContext(): Promise<DocumentTestContext> {
   const embeddingProvider: DocumentEmbeddingProvider = {
     model: config.mistralEmbeddingModel,
     dimension: config.mistralEmbeddingDimension,
-    embed: async (texts) =>
-      texts.map(() => Array.from({ length: 1024 }, () => 0.25)),
+    embed: async (texts) => texts.map(() => Array.from({ length: 1024 }, () => 0.25)),
   };
-  const documentService = new DocumentService(
-    documentRepository,
-    storage,
-    jobService,
-    config,
-  );
+  const documentService = new DocumentService(documentRepository, storage, jobService, config);
   const ingestionService = new DocumentIngestionService(
     documentRepository,
     storage,
@@ -190,19 +177,9 @@ async function createContext(): Promise<DocumentTestContext> {
   });
 
   const firstLogin = await authService.login("admin@example.test", adminPassword);
-  const firstAdmin = authService.authenticateAccessToken(
-    firstLogin.tokens.accessToken,
-  );
-  await authService.changePassword(
-    firstAdmin,
-    adminPassword,
-    changedAdminPassword,
-    "b6-test-password-change",
-  );
-  const adminLogin = await authService.login(
-    "admin@example.test",
-    changedAdminPassword,
-  );
+  const firstAdmin = authService.authenticateAccessToken(firstLogin.tokens.accessToken);
+  await authService.changePassword(firstAdmin, adminPassword, changedAdminPassword, "b6-test-password-change");
+  const adminLogin = await authService.login("admin@example.test", changedAdminPassword);
   runner = new JobRunner(
     jobService,
     {
@@ -226,36 +203,36 @@ async function registerUser(
   email: string,
   requestCoach = false,
 ): Promise<{ id: string; token: string }> {
-  const response = await request(app).post("/api/v1/auth/register").send({
-    email,
-    password: userPassword,
-    displayName: "B6 Test User",
-    ...(requestCoach
-      ? { requestCoach: true, coachMessage: "I teach a class." }
-      : {}),
-  });
+  const response = await request(app)
+    .post("/api/v1/auth/register")
+    .send({
+      email,
+      password: userPassword,
+      displayName: "B6 Test User",
+      ...(requestCoach ? { requestCoach: true, coachMessage: "I teach a class." } : {}),
+    });
   if (response.status !== 201) {
     throw new Error(`Test user registration failed with ${response.status}`);
   }
   return {
     id: response.body.data.user.id as string,
-    token: (await request(app).post("/api/v1/auth/login").send({
-      email,
-      password: userPassword,
-    })).body.data.accessToken as string,
+    token: (
+      await request(app).post("/api/v1/auth/login").send({
+        email,
+        password: userPassword,
+      })
+    ).body.data.accessToken as string,
   };
 }
 
-async function approveCoach(
-  context: DocumentTestContext,
-  email: string,
-): Promise<{ id: string; token: string }> {
+async function approveCoach(context: DocumentTestContext, email: string): Promise<{ id: string; token: string }> {
   const coach = await registerUser(context.app, email, true);
   const list = await request(context.app)
     .get("/api/v1/admin/coach-requests?status=pending")
     .set("Authorization", `Bearer ${context.adminToken}`);
-  const coachRequest = (list.body.data as Array<{ id: string; applicant: { email: string } }>)
-    .find((item) => item.applicant.email === email);
+  const coachRequest = (list.body.data as Array<{ id: string; applicant: { email: string } }>).find(
+    (item) => item.applicant.email === email,
+  );
   if (!coachRequest) throw new Error("Expected a pending coach request");
   const approval = await request(context.app)
     .patch(`/api/v1/admin/coach-requests/${coachRequest.id}`)
@@ -292,11 +269,7 @@ async function waitForStatus(
   throw new Error(`Timed out waiting for document state ${expected}`);
 }
 
-async function waitForJobStatus(
-  context: DocumentTestContext,
-  jobId: string,
-  expected: string,
-): Promise<void> {
+async function waitForJobStatus(context: DocumentTestContext, jobId: string, expected: string): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (context.collections.jobs.getById(jobId)?.status === expected) return;
@@ -306,6 +279,182 @@ async function waitForJobStatus(
 }
 
 describe("Document ingestion API", () => {
+  test("serves lesson PDFs only to course members and prevents attached-file deletion", async () => {
+    const context = await createContext();
+    const coach = await approveCoach(context, "pdf-owner@example.test");
+    const learner = await registerUser(context.app, "pdf-learner@example.test");
+    const courseResponse = await request(context.app)
+      .post("/api/v1/courses")
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ name: "PDF lesson course" });
+    expect(courseResponse.status).toBe(201);
+    const courseId = courseResponse.body.data.id as string;
+    const courseVersion = courseResponse.body.data.version as number;
+
+    const pdfBytes = Buffer.from("%PDF-1.7\nLesson PDF content");
+    const storage = new PrivateFileStorage(context.dataDirectory);
+    const storageKey = await storage.storeUpload(pdfBytes);
+    const timestamp = new Date().toISOString();
+    const document = await context.collections.documents.insert({
+      courseId,
+      ownerId: coach.id,
+      scope: "course",
+      filename: "lesson-notes.pdf",
+      storageKey,
+      mimeType: "application/pdf",
+      sizeBytes: pdfBytes.length,
+      contentHash: "a".repeat(64),
+      status: "ready",
+      errorCode: null,
+      errorDetail: null,
+      extractionDiagnostics: null,
+      chunkCount: 1,
+      embeddingModel: "mistral-embed",
+      ingestJobId: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      readyAt: timestamp,
+    });
+
+    const lessons = [
+      {
+        id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7912",
+        title: "Microscopy",
+        introduction: "Learn how to observe cells with a microscope.",
+        pdfDocumentId: document.id,
+        videoDocumentId: null,
+        videoUrl: null,
+      },
+    ];
+    const savedLessons = await request(context.app)
+      .put(`/api/v1/courses/${courseId}/lessons`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ version: courseVersion, lessons });
+    expect(savedLessons.status).toBe(200);
+    expect(savedLessons.body.data.lessons[0]).toMatchObject({
+      pdfDocumentId: document.id,
+      pdfFilename: "lesson-notes.pdf",
+    });
+
+    const hiddenFile = await request(context.app)
+      .get(`/api/v1/documents/${document.id}/file`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    expect(hiddenFile.status).toBe(404);
+
+    const joinRequest = await request(context.app)
+      .post(`/api/v1/courses/${courseId}/join`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    const approval = await request(context.app)
+      .patch(`/api/v1/enrolments/${joinRequest.body.data.id}`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ status: "approved" });
+    expect(approval.status).toBe(200);
+
+    const file = await request(context.app)
+      .get(`/api/v1/documents/${document.id}/file`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    expect(file.status).toBe(200);
+    expect(file.headers["content-type"]).toMatch(/application\/pdf/);
+    expect(file.headers["cache-control"]).toContain("no-store");
+    expect(file.body).toEqual(pdfBytes);
+
+    const deletion = await request(context.app)
+      .delete(`/api/v1/documents/${document.id}`)
+      .set("Authorization", `Bearer ${coach.token}`);
+    expect(deletion.status).toBe(409);
+  });
+
+  test("uploads, attaches and serves private MP4 lesson videos", async () => {
+    const context = await createContext();
+    const coach = await approveCoach(context, "video-owner@example.test");
+    const learner = await registerUser(context.app, "video-learner@example.test");
+    const courseResponse = await request(context.app)
+      .post("/api/v1/courses")
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ name: "Video lesson course" });
+    expect(courseResponse.status).toBe(201);
+    const courseId = courseResponse.body.data.id as string;
+    const courseVersion = courseResponse.body.data.version as number;
+    const videoBytes = Buffer.from([
+      0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+      0x00, 0x00, 0x00, 0x00, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32,
+    ]);
+
+    const invalidVideo = await request(context.app)
+      .post(`/api/v1/courses/${courseId}/lesson-videos`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .attach("file", Buffer.from("not an mp4"), {
+        filename: "lesson.mp4",
+        contentType: "video/mp4",
+      });
+    expect(invalidVideo.status).toBe(415);
+
+    const upload = await request(context.app)
+      .post(`/api/v1/courses/${courseId}/lesson-videos`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .attach("file", videoBytes, {
+        filename: "cell-division.mp4",
+        contentType: "video/mp4",
+      });
+    expect(upload.status).toBe(201);
+    expect(upload.body.data).toMatchObject({
+      courseId,
+      filename: "cell-division.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: videoBytes.length,
+      status: "ready",
+      ingestJobId: null,
+    });
+    expect(upload.body.data).not.toHaveProperty("storageKey");
+    expect(upload.body.data).not.toHaveProperty("contentHash");
+
+    const lesson = {
+      id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7913",
+      title: "Cell division",
+      introduction: "Follow the stages of cell division.",
+      pdfDocumentId: null,
+      videoDocumentId: upload.body.data.id as string,
+      videoUrl: null,
+    };
+    const saveLessons = await request(context.app)
+      .put(`/api/v1/courses/${courseId}/lessons`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ version: courseVersion, lessons: [lesson] });
+    expect(saveLessons.status).toBe(200);
+    expect(saveLessons.body.data.lessons[0]).toMatchObject({
+      videoDocumentId: upload.body.data.id,
+      videoFilename: "cell-division.mp4",
+      videoSizeBytes: videoBytes.length,
+    });
+
+    const hiddenFile = await request(context.app)
+      .get(`/api/v1/documents/${upload.body.data.id}/file`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    expect(hiddenFile.status).toBe(404);
+
+    const joinRequest = await request(context.app)
+      .post(`/api/v1/courses/${courseId}/join`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    const approval = await request(context.app)
+      .patch(`/api/v1/enrolments/${joinRequest.body.data.id}`)
+      .set("Authorization", `Bearer ${coach.token}`)
+      .send({ status: "approved" });
+    expect(approval.status).toBe(200);
+
+    const file = await request(context.app)
+      .get(`/api/v1/documents/${upload.body.data.id}/file`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    expect(file.status).toBe(200);
+    expect(file.headers["content-type"]).toMatch(/video\/mp4/);
+    expect(file.headers["cache-control"]).toContain("no-store");
+    expect(file.body).toEqual(videoBytes);
+
+    const deletion = await request(context.app)
+      .delete(`/api/v1/documents/${upload.body.data.id}`)
+      .set("Authorization", `Bearer ${coach.token}`);
+    expect(deletion.status).toBe(409);
+  });
+
   test("processes uploads and enforces document visibility and deletion", async () => {
     const context = await createContext();
     const coach = await approveCoach(context, "coach@example.test");
@@ -367,16 +516,14 @@ describe("Document ingestion API", () => {
     const document = context.collections.documents.getById(documentId);
     if (!document) throw new Error("Expected the uploaded document record");
     const storedChunks = JSON.parse(
-      await readFile(
-        join(context.dataDirectory, "json", "chunks", `${documentId}.json`),
-        "utf8",
-      ),
-    ) as { header: { dimension: number }; chunks: Array<{ text: string; embedding: string }> };
+      await readFile(join(context.dataDirectory, "json", "chunks", `${documentId}.json`), "utf8"),
+    ) as {
+      header: { dimension: number };
+      chunks: Array<{ text: string; embedding: string }>;
+    };
     expect(storedChunks.header.dimension).toBe(1024);
     expect(storedChunks.chunks[0]?.text).toContain("Learning text");
-    expect(
-      Buffer.from(storedChunks.chunks[0]?.embedding ?? "", "base64").length / 4,
-    ).toBe(1024);
+    expect(Buffer.from(storedChunks.chunks[0]?.embedding ?? "", "base64").length / 4).toBe(1024);
 
     const duplicate = await request(context.app)
       .post("/api/v1/documents/upload")
@@ -411,9 +558,7 @@ describe("Document ingestion API", () => {
     const coachList = await request(context.app)
       .get(`/api/v1/courses/${courseId}/documents`)
       .set("Authorization", `Bearer ${coach.token}`);
-    expect(coachList.body.data.map((item: { id: string }) => item.id)).toEqual([
-      documentId,
-    ]);
+    expect(coachList.body.data.map((item: { id: string }) => item.id)).toEqual([documentId]);
 
     const hiddenPersonal = await request(context.app)
       .get(`/api/v1/documents/${personalId}/status`)
@@ -429,12 +574,8 @@ describe("Document ingestion API", () => {
       .set("Authorization", `Bearer ${coach.token}`);
     expect(deletion.status).toBe(202);
     await waitForStatus(context.app, coach.token, documentId, 404);
-    await expect(
-      access(join(context.dataDirectory, "uploads", document.storageKey)),
-    ).rejects.toThrow();
-    await expect(
-      access(join(context.dataDirectory, "json", "chunks", `${documentId}.json`)),
-    ).rejects.toThrow();
+    await expect(access(join(context.dataDirectory, "uploads", document.storageKey))).rejects.toThrow();
+    await expect(access(join(context.dataDirectory, "json", "chunks", `${documentId}.json`))).rejects.toThrow();
 
     const emptyTextUpload = await request(context.app)
       .post("/api/v1/documents/upload")
@@ -455,21 +596,13 @@ describe("Document ingestion API", () => {
       status: "failed",
       errorCode: "DOCUMENT_TEXT_EMPTY",
     });
-    await waitForJobStatus(
-      context,
-      failureStatus.body.data.ingestJobId as string,
-      "failed",
-    );
+    await waitForJobStatus(context, failureStatus.body.data.ingestJobId as string, "failed");
 
     const retry = await request(context.app)
       .post(`/api/v1/documents/${failedId}/retry`)
       .set("Authorization", `Bearer ${coach.token}`);
     expect(retry.status).toBe(202);
     await waitForStatus(context.app, coach.token, failedId, "failed");
-    await waitForJobStatus(
-      context,
-      retry.body.data.ingestJobId as string,
-      "failed",
-    );
+    await waitForJobStatus(context, retry.body.data.ingestJobId as string, "failed");
   });
 });

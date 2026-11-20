@@ -21,6 +21,7 @@ import { LearningRepository } from "../../src/modules/learning/learning.reposito
 import { JsonLearningExecutionRepository } from "../../src/modules/learning/learning-execution.repository";
 import {
   generateFlashcardsRequestSchema,
+  generateQuizRequestSchema,
   generateSummaryRequestSchema,
 } from "../../src/modules/learning/learning.schemas";
 import {
@@ -324,6 +325,51 @@ describe("LearningService", () => {
     expect(service.listSummaries(learner, courseId, 20).items).toMatchObject([
       { id: draft.id, status: "published" },
     ]);
+  });
+
+  test("does not return generated quiz keys to a learner before submission", async () => {
+    const response = JSON.stringify({
+      title: "Database basics quiz",
+      questions: [
+        {
+          type: "mcq",
+          prompt: "What is a database?",
+          options: [
+            { id: "a", text: "An organized collection of data" },
+            { id: "b", text: "A programming language" },
+          ],
+          correctOptionId: "a",
+          explanation: "The source defines a database as an organized collection of data.",
+          sourceChunkIds: [chunkId],
+        },
+      ],
+    });
+    const { service } = await createLearningService(response);
+    const quiz = await service.generateQuiz(
+      learner,
+      generateQuizRequestSchema.parse({
+        courseId,
+        selection: { documentIds: [documentId] },
+        count: 1,
+        types: ["mcq"],
+        difficulty: "medium",
+      }),
+      "request-generated-quiz",
+      new AbortController().signal,
+    );
+
+    expect(quiz).toMatchObject({
+      title: "Database basics quiz",
+      status: "published",
+      questions: [
+        {
+          prompt: "What is a database?",
+          options: expect.any(Array),
+        },
+      ],
+    });
+    expect(JSON.stringify(quiz)).not.toContain("correctOptionId");
+    expect(JSON.stringify(quiz)).not.toContain("explanation");
   });
 
   test("publishes coach flashcards without changing their content version", async () => {

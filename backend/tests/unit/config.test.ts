@@ -1,4 +1,7 @@
-import { loadConfig } from "../../src/config/config";
+import {
+  hasProviderConfiguration,
+  loadConfig,
+} from "../../src/config/config";
 
 const configEnvironmentKeys = [
   "NODE_ENV",
@@ -156,10 +159,39 @@ function verifiesChatDailyQuotaConfiguration(): void {
   );
 }
 
+function verifiesProviderReadinessUsesConfiguredFallbackProviders(): void {
+  process.env.MISTRAL_API_KEY = "test-mistral-key";
+  process.env.GROQ_API_KEY = "test-groq-key";
+  expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
+    true,
+  );
+
+  delete process.env.GROQ_API_KEY;
+  process.env.INCEPTION_API_KEY = "test-inception-key";
+  expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
+    true,
+  );
+
+  delete process.env.INCEPTION_API_KEY;
+  expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
+    false,
+  );
+
+  delete process.env.MISTRAL_API_KEY;
+  process.env.GROQ_API_KEY = "test-groq-key";
+  expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
+    false,
+  );
+}
+
 describe("configuration", () => {
   test("loads validated default values", verifiesDefaultConfiguration);
   test("requires auth secrets and rejects wildcard credentialed CORS", verifiesRequiredSecretsAndCorsValidation);
   test("validates the enrolment re-request cooldown", verifiesEnrolmentCooldownConfiguration);
   test("validates document upload and chunk limits", verifiesDocumentConfiguration);
   test("validates chat daily quota limits", verifiesChatDailyQuotaConfiguration);
+  test(
+    "requires embeddings and at least one configured LLM provider",
+    verifiesProviderReadinessUsesConfiguredFallbackProviders,
+  );
 });

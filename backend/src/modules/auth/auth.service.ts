@@ -510,7 +510,7 @@ export class AuthService {
   }
 
   public listUsers(limit: number, cursor?: string): {
-    items: SafeUser[];
+    items: Array<SafeUser & { role: AuthenticatedUser["role"] }>;
     nextCursor?: string;
   } {
     const records = this.repository
@@ -518,7 +518,13 @@ export class AuthService {
       .filter((record) => record.id >= (cursor ?? ""))
       .sort((left, right) => left.id.localeCompare(right.id));
     const hasMore = records.length > limit;
-    const items = (hasMore ? records.slice(0, limit) : records).map(toSafeUser);
+    const items = (hasMore ? records.slice(0, limit) : records).map((record) => {
+      const role = this.repository.findRoleById(record.roleId);
+      if (!role) {
+        throw new Error(`User "${record.id}" references a missing role`);
+      }
+      return { ...toSafeUser(record), role: role.name };
+    });
     const last = items.at(-1);
     return {
       items,

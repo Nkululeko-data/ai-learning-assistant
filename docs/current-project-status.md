@@ -1,16 +1,21 @@
 # Current Project Status
 
-**Review date:** 2026-11-19
+**Review date:** 2026-11-20
 
 ## Current position
 
-**Current phase: B10 complete.** The B10 feature work is present and the
-backend tests, typecheck, and build pass.
+**Latest completed backend phase: B10 — Feedback and course insights.** Its
+features are implemented, and the backend tests, typecheck, and build pass.
 
-**Next phase: B11 administrative operations.** B11 has not started.
+**Current planned phase: B11 — Administrative operations.** B11 has not
+started yet.
 
-The project is a backend REST API. No frontend source is present in the
-repository. Phase descriptions and acceptance criteria are in
+The repository also includes a React frontend under `frontend/`. Learner course
+pages now present an ordered curriculum of lessons; course owners can edit
+topics, introductions, optional ready course PDFs, and uploaded MP4 videos up
+to 100 MiB. Previously saved YouTube/Vimeo links remain playable until replaced
+or removed.
+Backend phase descriptions and acceptance criteria are in
 [`implementation-phases.md`](implementation-phases.md).
 
 ## Phase-by-phase status and implementation
@@ -113,6 +118,8 @@ artifacts, not runtime functions.
 - [`retrieval.service.ts`](../backend/src/modules/retrieval/retrieval.service.ts):
   `RetrievalService.search()`, `assertCourseAccess()`, and
   `getSelectedChunks()` enforce access filtering and return matching chunks.
+  Search combines BM25 keyword relevance and cosine similarity with
+  semantic-first weighted reciprocal-rank fusion.
 
 ### B8 — Grounded question answering
 
