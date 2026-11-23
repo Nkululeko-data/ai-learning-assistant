@@ -95,7 +95,19 @@ function isRouteActive(
     pathname === targetPath ||
     (targetPath === "/courses" && pathname.startsWith("/courses/"));
   if (!matchesPath) return false;
-  if (routeHash && hash !== `#${routeHash}`) return false;
+  if (
+    /^\/courses\/[^/]+$/.test(targetPath) &&
+    !routeHash &&
+    hash &&
+    hash !== "#main-content" &&
+    pathname === targetPath
+  ) {
+    return false;
+  }
+  const matchesHash =
+    hash === `#${routeHash}` ||
+    (routeHash === "course-join-requests" && hash === "#enrolment-requests-title");
+  if (routeHash && !matchesHash) return false;
   if (targetSearch) {
     const expected = new URLSearchParams(targetSearch);
     const current = new URLSearchParams(search);

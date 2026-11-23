@@ -146,7 +146,7 @@ describe("DashboardPage", () => {
     expect(await screen.findByText("Taylor Learner")).toBeVisible();
     expect(screen.getByRole("link", { name: "Review request" })).toHaveAttribute(
       "href",
-      `/courses/${courseId}#enrolment-requests-title`,
+      `/courses/${courseId}#course-join-requests`,
     );
     expect(screen.getByText("12")).toBeVisible();
     expect(screen.getByText("7")).toBeVisible();

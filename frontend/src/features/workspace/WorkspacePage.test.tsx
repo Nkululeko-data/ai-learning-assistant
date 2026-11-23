@@ -235,6 +235,29 @@ describe("WorkspaceLayout", () => {
     expect(within(coachNavigation).queryByRole("link", { name: "History" })).toBeNull();
   });
 
+  it("marks the selected course section as active", async () => {
+    renderWorkspace(
+      makeUser("coach", [
+        "course:edit",
+        "enrolment:approve",
+        "quiz:create",
+        "content:generate",
+        "insights:view",
+      ]),
+      `/courses/${courseId}#course-quizzes`,
+    );
+
+    const courseNavigation = await screen.findByRole("navigation", {
+      name: "Course: Applied Systems",
+    });
+    expect(
+      within(courseNavigation).getByRole("link", { name: "Quizzes" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(courseNavigation).getByRole("link", { name: "Overview" }),
+    ).not.toHaveAttribute("aria-current", "page");
+  });
+
   it("shows permitted course links and the course name for course routes", async () => {
     renderWorkspace(
       makeUser("coach", [

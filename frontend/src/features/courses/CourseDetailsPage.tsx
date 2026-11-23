@@ -26,6 +26,27 @@ import { CoachQuizzesPanel } from "./CoachQuizzesPanel";
 import { EnrolmentRequestsPanel } from "./EnrolmentRequestsPanel";
 import { CourseLearnersPanel } from "./CourseLearnersPanel";
 
+type CoachCourseSection =
+  "overview" | "lessons" | "quizzes" | "people" | "join-requests" | "insights";
+
+function getCoachCourseSection(hash: string): CoachCourseSection {
+  switch (hash) {
+    case "#course-lessons-editor":
+      return "lessons";
+    case "#course-quizzes":
+      return "quizzes";
+    case "#course-people":
+      return "people";
+    case "#course-join-requests":
+    case "#enrolment-requests-title":
+      return "join-requests";
+    case "#course-insights":
+      return "insights";
+    default:
+      return "overview";
+  }
+}
+
 export function CourseDetailsPage() {
   const { courseId = "" } = useParams();
   const { hash } = useLocation();
@@ -38,7 +59,7 @@ export function CourseDetailsPage() {
 
   useEffect(() => {
     if (!hash || !courseQuery.data) return;
-    document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
+    document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
   }, [courseQuery.data, hash]);
 
   if (!courseId) {
@@ -74,6 +95,21 @@ export function CourseDetailsPage() {
     course.status === "active" &&
     user?.permissions.includes("course:edit");
   const canManageQuizzes = canEditLessons && user?.permissions.includes("quiz:create");
+  const canManageCoursePeople =
+    ownedCourse && user?.permissions.includes("enrolment:approve") === true;
+  const requestedSection = getCoachCourseSection(hash);
+  const activeSection: CoachCourseSection =
+    requestedSection === "lessons" && canEditLessons
+      ? "lessons"
+      : requestedSection === "quizzes" && canManageQuizzes
+        ? "quizzes"
+        : requestedSection === "people" && canManageCoursePeople
+          ? "people"
+          : requestedSection === "join-requests" && canManageCoursePeople
+            ? "join-requests"
+            : requestedSection === "insights" && canViewInsights
+              ? "insights"
+              : "overview";
 
   if (user?.role === "learner") {
     return (
@@ -109,67 +145,74 @@ export function CourseDetailsPage() {
             />
           )}
         </Stack>
-        <Typography color="text.secondary" sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
-          {course.description || "No description provided."}
-        </Typography>
-        {isCourseView(course) && (
-          <Button
-            component={RouterLink}
-            to={`/courses/${course.id}/documents`}
-            variant="outlined"
-            sx={{ mt: 2 }}
-          >
-            Document library
-          </Button>
-        )}
-        {canUseStudyTools && (
-          <Button
-            component={RouterLink}
-            to={`/courses/${course.id}/study`}
-            variant="contained"
-            sx={{ mt: 2, ml: { sm: 1 } }}
-          >
-            Study tools
-          </Button>
-        )}
-        {canEditLessons && (
-          <Button
-            href="#course-lessons-editor"
-            variant="outlined"
-            sx={{ mt: 2, ml: { sm: 1 } }}
-          >
-            Manage lessons
-          </Button>
-        )}
-        {canManageQuizzes && (
-          <Button
-            href="#course-quizzes"
-            variant="outlined"
-            sx={{ mt: 2, ml: { sm: 1 } }}
-          >
-            Manage quizzes
-          </Button>
+        {activeSection === "overview" && (
+          <>
+            <Typography component="h2" variant="h5" fontWeight={650} sx={{ mt: 2 }}>
+              Course overview
+            </Typography>
+            <Typography color="text.secondary" sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
+              {course.description || "No description provided."}
+            </Typography>
+            {isCourseView(course) && (
+              <Button
+                component={RouterLink}
+                to={`/courses/${course.id}/documents`}
+                variant="outlined"
+                sx={{ mt: 2 }}
+              >
+                Document library
+              </Button>
+            )}
+            {canUseStudyTools && (
+              <Button
+                component={RouterLink}
+                to={`/courses/${course.id}/study`}
+                variant="contained"
+                sx={{ mt: 2, ml: { sm: 1 } }}
+              >
+                Study tools
+              </Button>
+            )}
+            {canEditLessons && (
+              <Button
+                component={RouterLink}
+                to={`/courses/${course.id}#course-lessons-editor`}
+                variant="outlined"
+                sx={{ mt: 2, ml: { sm: 1 } }}
+              >
+                Manage lessons
+              </Button>
+            )}
+            {canManageQuizzes && (
+              <Button
+                component={RouterLink}
+                to={`/courses/${course.id}#course-quizzes`}
+                variant="outlined"
+                sx={{ mt: 2, ml: { sm: 1 } }}
+              >
+                Manage quizzes
+              </Button>
+            )}
+          </>
         )}
       </Box>
-      {canEditLessons && isCourseView(course) && (
+      {activeSection === "lessons" && canEditLessons && isCourseView(course) && (
         <CourseLessonsEditor courseId={course.id} />
       )}
-      {canManageQuizzes && isCourseView(course) && (
+      {activeSection === "quizzes" && canManageQuizzes && isCourseView(course) && (
         <CoachQuizzesPanel
           courseId={course.id}
           canGenerate={Boolean(user?.permissions.includes("content:generate"))}
         />
       )}
-      {ownedCourse &&
-        isCourseView(course) &&
-        user?.permissions.includes("enrolment:approve") && (
-          <CourseLearnersPanel courseId={course.id} canRemoveLearners />
-        )}
-      {canViewInsights && isCourseView(course) && (
+      {activeSection === "people" && canManageCoursePeople && isCourseView(course) && (
+        <CourseLearnersPanel courseId={course.id} canRemoveLearners />
+      )}
+      {activeSection === "insights" && canViewInsights && isCourseView(course) && (
         <CourseInsightsPanel courseId={course.id} />
       )}
-      {ownedCourse &&
-        user?.permissions.includes("enrolment:approve") &&
+      {activeSection === "join-requests" &&
+        canManageCoursePeople &&
         isCourseView(course) && (
           <EnrolmentRequestsPanel
             courseId={course.id}

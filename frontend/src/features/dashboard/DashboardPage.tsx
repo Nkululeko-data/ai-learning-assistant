@@ -312,7 +312,7 @@ export function DashboardPage() {
                         </Box>
                         <Button
                           component={RouterLink}
-                          to={`/courses/${course.id}#enrolment-requests-title`}
+                          to={`/courses/${course.id}#course-join-requests`}
                           size="small"
                         >
                           Review request

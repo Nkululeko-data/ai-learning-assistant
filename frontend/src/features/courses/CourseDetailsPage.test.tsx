@@ -39,14 +39,17 @@ function createAuthContext(user: AuthenticatedUser): AuthContextValue {
   };
 }
 
-function renderCourseDetails(user: AuthenticatedUser) {
+function renderCourseDetails(
+  user: AuthenticatedUser,
+  initialEntry = `/courses/${courseId}`,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <AuthContext.Provider value={createAuthContext(user)}>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[`/courses/${courseId}`]}>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/courses/:courseId" element={<CourseDetailsPage />} />
           </Routes>
@@ -173,10 +176,54 @@ describe("CourseDetailsPage", () => {
       permissions: ["insights:view"],
       permsVersion: 1,
     };
-    renderCourseDetails(user);
+    renderCourseDetails(user, `/courses/${courseId}#course-insights`);
 
     expect(await screen.findByText(/minimum cohort size \(5\)/i)).toBeVisible();
     expect(screen.queryByText("2", { exact: true })).toBeNull();
+  });
+
+  it("keeps coach course sections out of the overview", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            description: "An introduction to the course.",
+            ownerId: coachId,
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/lessons`, () =>
+        HttpResponse.json({
+          data: { courseId, version: 1, lessons: [] },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/documents`, () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+
+    renderCourseDetails({
+      id: coachId,
+      email: "coach@example.test",
+      displayName: "Test coach",
+      role: "coach",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["course:edit"],
+      permsVersion: 1,
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Course overview" }),
+    ).toBeVisible();
+    expect(screen.getByText("An introduction to the course.")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Course lessons" })).toBeNull();
   });
 
   it("shows a removed learner the coach's recorded reason", async () => {
@@ -331,16 +378,19 @@ describe("CourseDetailsPage", () => {
         HttpResponse.json({ data: [] }),
       ),
     );
-    renderCourseDetails({
-      id: coachId,
-      email: "coach@example.test",
-      displayName: "Test coach",
-      role: "coach",
-      status: "active",
-      mustChangePassword: false,
-      permissions: ["course:edit"],
-      permsVersion: 1,
-    });
+    renderCourseDetails(
+      {
+        id: coachId,
+        email: "coach@example.test",
+        displayName: "Test coach",
+        role: "coach",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["course:edit"],
+        permsVersion: 1,
+      },
+      `/courses/${courseId}#course-lessons-editor`,
+    );
 
     expect(
       await screen.findByRole("heading", { name: "Course lessons" }),
@@ -380,9 +430,8 @@ describe("CourseDetailsPage", () => {
             : [],
         }),
       ),
-      http.get(
-        `http://localhost:3000/api/v1/courses/${courseId}/join-requests`,
-        () => HttpResponse.json({ data: [] }),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/join-requests`, () =>
+        HttpResponse.json({ data: [] }),
       ),
       http.post(
         `http://localhost:3000/api/v1/enrolments/${enrolmentId}/remove`,
@@ -406,16 +455,19 @@ describe("CourseDetailsPage", () => {
         },
       ),
     );
-    renderCourseDetails({
-      id: coachId,
-      email: "coach@example.test",
-      displayName: "Test coach",
-      role: "coach",
-      status: "active",
-      mustChangePassword: false,
-      permissions: ["enrolment:approve"],
-      permsVersion: 1,
-    });
+    renderCourseDetails(
+      {
+        id: coachId,
+        email: "coach@example.test",
+        displayName: "Test coach",
+        role: "coach",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["enrolment:approve"],
+        permsVersion: 1,
+      },
+      `/courses/${courseId}#course-people`,
+    );
 
     await screen.findByRole("heading", { name: "Class learners" });
     await userEvent.click(
@@ -643,16 +695,19 @@ describe("CourseDetailsPage", () => {
       ),
     );
 
-    renderCourseDetails({
-      id: coachId,
-      email: "coach@example.test",
-      displayName: "Test coach",
-      role: "coach",
-      status: "active",
-      mustChangePassword: false,
-      permissions: ["course:edit", "content:generate", "quiz:create"],
-      permsVersion: 1,
-    });
+    renderCourseDetails(
+      {
+        id: coachId,
+        email: "coach@example.test",
+        displayName: "Test coach",
+        role: "coach",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["course:edit", "content:generate", "quiz:create"],
+        permsVersion: 1,
+      },
+      `/courses/${courseId}#course-quizzes`,
+    );
 
     expect(
       await screen.findByRole("heading", { name: "Course quizzes" }),

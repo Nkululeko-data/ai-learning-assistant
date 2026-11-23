@@ -17,6 +17,19 @@ const coach = {
   permsVersion: 1,
 };
 
+const courseCoach = {
+  ...coach,
+  permissions: [
+    "document:upload",
+    "document:delete",
+    "course:edit",
+    "quiz:create",
+    "content:generate",
+    "enrolment:approve",
+    "insights:view",
+  ],
+};
+
 const learner = {
   id: "517d4918-a7f5-4db4-b857-97d8176e305b",
   email: "learner@example.test",
@@ -226,5 +239,52 @@ test("learners see personal-note scope and cannot select course material", async
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   );
   expect(pageFits).toBe(true);
+  await expectNoAxeViolations(page);
+});
+
+test("course sidebar displays one coach section at a time", async ({ page }) => {
+  await mockDocumentSession(page, courseCoach);
+  await page.route(`**/api/v1/courses/${courseId}/lessons`, (route) =>
+    route.fulfill({
+      json: { data: { courseId, version: 1, lessons: [] } },
+    }),
+  );
+  await page.route(`**/api/v1/courses/${courseId}/quizzes**`, (route) =>
+    route.fulfill({ json: { data: [] } }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/courses/${courseId}`);
+
+  const courseNavigation = page.getByRole("navigation", {
+    name: "Course: Database Systems",
+  });
+  await expect(page.getByRole("heading", { name: "Course overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Course lessons" })).toHaveCount(0);
+  await expect(
+    courseNavigation.getByRole("link", { name: "Overview" }),
+  ).toHaveAttribute("aria-current", "page");
+
+  await courseNavigation.getByRole("link", { name: "Lessons" }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/courses/${courseId}#course-lessons-editor$`),
+  );
+  await expect(page.getByRole("heading", { name: "Course lessons" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Course quizzes" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Class learners" })).toHaveCount(0);
+  await expect(courseNavigation.getByRole("link", { name: "Lessons" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+
+  await courseNavigation.getByRole("link", { name: "Quizzes" }).click();
+  await expect(page).toHaveURL(new RegExp(`/courses/${courseId}#course-quizzes$`));
+  await expect(page.getByRole("heading", { name: "Course quizzes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Course lessons" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Class learners" })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileFits = await page.evaluate(
+    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  );
+  expect(mobileFits).toBe(true);
   await expectNoAxeViolations(page);
 });
