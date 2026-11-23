@@ -20,7 +20,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   generateQuiz,
   getCourseQuiz,
@@ -73,10 +78,7 @@ function questionContent(question: CoachQuizQuestion) {
   };
 }
 
-export function CoachQuizzesPanel({
-  courseId,
-  canGenerate,
-}: CoachQuizzesPanelProps) {
+export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelProps) {
   const queryClient = useQueryClient();
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -125,9 +127,7 @@ export function CoachQuizzesPanel({
   const coachQuiz =
     selectedQuiz && isCoachQuiz(selectedQuiz) ? selectedQuiz : undefined;
   const currentDraft =
-    coachQuiz &&
-    draft?.id === coachQuiz.id &&
-    draft.version === coachQuiz.version
+    coachQuiz && draft?.id === coachQuiz.id && draft.version === coachQuiz.version
       ? draft
       : coachQuiz
         ? toEditableQuiz(coachQuiz)
@@ -189,23 +189,23 @@ export function CoachQuizzesPanel({
     Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 50;
   const draftIsDirty = Boolean(
     coachQuiz &&
-      currentDraft &&
-      (currentDraft.title !== coachQuiz.title ||
-        JSON.stringify(currentDraft.questions.map(questionContent)) !==
-          JSON.stringify(coachQuiz.questions.map(questionContent))),
+    currentDraft &&
+    (currentDraft.title !== coachQuiz.title ||
+      JSON.stringify(currentDraft.questions.map(questionContent)) !==
+        JSON.stringify(coachQuiz.questions.map(questionContent))),
   );
   const validDraft = Boolean(
     currentDraft &&
-      currentDraft.title.trim() &&
-      currentDraft.questions.length > 0 &&
-      currentDraft.questions.every(
-        (question) =>
-          question.prompt.trim() &&
-          question.explanation.trim() &&
-          question.options.length >= 2 &&
-          question.options.every((option) => option.text.trim()) &&
-          question.options.some((option) => option.id === question.correctOptionId),
-      ),
+    currentDraft.title.trim() &&
+    currentDraft.questions.length > 0 &&
+    currentDraft.questions.every(
+      (question) =>
+        question.prompt.trim() &&
+        question.explanation.trim() &&
+        question.options.length >= 2 &&
+        question.options.every((option) => option.text.trim()) &&
+        question.options.some((option) => option.id === question.correctOptionId),
+    ),
   );
 
   function toggleDocument(documentId: string, checked: boolean) {
@@ -388,9 +388,7 @@ export function CoachQuizzesPanel({
                 control={
                   <Checkbox
                     checked={types.includes("true_false")}
-                    onChange={(event) =>
-                      toggleType("true_false", event.target.checked)
-                    }
+                    onChange={(event) => toggleType("true_false", event.target.checked)}
                     disabled={!canGenerate}
                   />
                 }
@@ -440,9 +438,7 @@ export function CoachQuizzesPanel({
           ))}
         </Select>
       </FormControl>
-      {quizzesQuery.isLoading && (
-        <LinearProgress aria-label="Loading course quizzes" />
-      )}
+      {quizzesQuery.isLoading && <LinearProgress aria-label="Loading course quizzes" />}
       {quizzesQuery.isError && (
         <Stack spacing={1} alignItems="flex-start">
           <ErrorNotice message={friendlyMessage(quizzesQuery.error)} />
@@ -521,77 +517,85 @@ export function CoachQuizzesPanel({
                 disabled={coachQuiz.status === "superseded"}
               />
               {currentDraft.questions.map((question, index) => (
-                <Card key={question.id} variant="outlined">
-                  <CardContent>
-                    <Stack spacing={1.5}>
-                      <Typography variant="overline">
-                        Question {index + 1} ·{" "}
-                        {question.type === "mcq" ? "Multiple choice" : "True or false"}
-                      </Typography>
-                      <TextField
-                        label={`Question ${index + 1}`}
-                        value={question.prompt}
-                        onChange={(event) =>
-                          updateQuestion(index, { prompt: event.target.value })
-                        }
-                        multiline
-                        inputProps={{ maxLength: 2000 }}
-                        disabled={coachQuiz.status === "superseded"}
-                      />
-                      <RadioGroup
-                        aria-label={`Correct answer for question ${index + 1}`}
-                        value={question.correctOptionId}
-                        onChange={(event) =>
-                          updateQuestion(index, {
-                            correctOptionId: event.target.value,
-                          })
-                        }
-                      >
-                        {question.options.map((option, optionIndex) => (
-                          <Stack
-                            key={option.id}
-                            direction={{ xs: "column", sm: "row" }}
-                            spacing={1}
-                            alignItems={{ xs: "stretch", sm: "center" }}
-                          >
-                            <FormControlLabel
-                              value={option.id}
-                              control={<Radio />}
-                              label={`Correct option ${optionIndex + 1}`}
-                              disabled={coachQuiz.status === "superseded"}
-                            />
-                            <TextField
-                              label={`Option ${optionIndex + 1}`}
-                              value={option.text}
-                              onChange={(event) =>
-                                updateQuestion(index, {
-                                  options: question.options.map((currentOption) =>
-                                    currentOption.id === option.id
-                                      ? { ...currentOption, text: event.target.value }
-                                      : currentOption,
-                                  ),
-                                })
-                              }
-                              inputProps={{ maxLength: 500 }}
-                              fullWidth
-                              disabled={coachQuiz.status === "superseded"}
-                            />
-                          </Stack>
-                        ))}
-                      </RadioGroup>
-                      <TextField
-                        label={`Explanation ${index + 1}`}
-                        value={question.explanation}
-                        onChange={(event) =>
-                          updateQuestion(index, { explanation: event.target.value })
-                        }
-                        multiline
-                        inputProps={{ maxLength: 2000 }}
-                        disabled={coachQuiz.status === "superseded"}
-                      />
-                    </Stack>
-                  </CardContent>
-                </Card>
+                <Box
+                  key={question.id}
+                  component="section"
+                  aria-labelledby={`draft-question-${index}`}
+                  sx={{ pt: 2, borderTop: 1, borderColor: "divider" }}
+                >
+                  <Stack spacing={1.5}>
+                    <Typography
+                      id={`draft-question-${index}`}
+                      component="h4"
+                      variant="subtitle1"
+                      fontWeight={700}
+                    >
+                      Question {index + 1} ·{" "}
+                      {question.type === "mcq" ? "Multiple choice" : "True or false"}
+                    </Typography>
+                    <TextField
+                      label={`Question ${index + 1}`}
+                      value={question.prompt}
+                      onChange={(event) =>
+                        updateQuestion(index, { prompt: event.target.value })
+                      }
+                      multiline
+                      inputProps={{ maxLength: 2000 }}
+                      disabled={coachQuiz.status === "superseded"}
+                    />
+                    <RadioGroup
+                      aria-label={`Correct answer for question ${index + 1}`}
+                      value={question.correctOptionId}
+                      onChange={(event) =>
+                        updateQuestion(index, {
+                          correctOptionId: event.target.value,
+                        })
+                      }
+                    >
+                      {question.options.map((option, optionIndex) => (
+                        <Stack
+                          key={option.id}
+                          direction={{ xs: "column", sm: "row" }}
+                          spacing={1}
+                          alignItems={{ xs: "stretch", sm: "center" }}
+                        >
+                          <FormControlLabel
+                            value={option.id}
+                            control={<Radio />}
+                            label={`Correct option ${optionIndex + 1}`}
+                            disabled={coachQuiz.status === "superseded"}
+                          />
+                          <TextField
+                            label={`Option ${optionIndex + 1}`}
+                            value={option.text}
+                            onChange={(event) =>
+                              updateQuestion(index, {
+                                options: question.options.map((currentOption) =>
+                                  currentOption.id === option.id
+                                    ? { ...currentOption, text: event.target.value }
+                                    : currentOption,
+                                ),
+                              })
+                            }
+                            inputProps={{ maxLength: 500 }}
+                            fullWidth
+                            disabled={coachQuiz.status === "superseded"}
+                          />
+                        </Stack>
+                      ))}
+                    </RadioGroup>
+                    <TextField
+                      label={`Explanation ${index + 1}`}
+                      value={question.explanation}
+                      onChange={(event) =>
+                        updateQuestion(index, { explanation: event.target.value })
+                      }
+                      multiline
+                      inputProps={{ maxLength: 2000 }}
+                      disabled={coachQuiz.status === "superseded"}
+                    />
+                  </Stack>
+                </Box>
               ))}
               <Box>
                 <Button
@@ -610,14 +614,12 @@ export function CoachQuizzesPanel({
                   <Button
                     variant="contained"
                     onClick={() => publishMutation.mutate(coachQuiz)}
-                    disabled={
-                      draftIsDirty ||
-                      !validDraft ||
-                      publishMutation.isPending
-                    }
+                    disabled={draftIsDirty || !validDraft || publishMutation.isPending}
                     sx={{ ml: 1 }}
                   >
-                    {publishMutation.isPending ? "Publishing..." : "Publish for learners"}
+                    {publishMutation.isPending
+                      ? "Publishing..."
+                      : "Publish for learners"}
                   </Button>
                 )}
               </Box>

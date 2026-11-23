@@ -24,6 +24,7 @@ import { CourseCurriculum } from "./CourseCurriculum";
 import { CourseLessonsEditor } from "./CourseLessonsEditor";
 import { CoachQuizzesPanel } from "./CoachQuizzesPanel";
 import { EnrolmentRequestsPanel } from "./EnrolmentRequestsPanel";
+import { CourseLearnersPanel } from "./CourseLearnersPanel";
 
 export function CourseDetailsPage() {
   const { courseId = "" } = useParams();
@@ -72,24 +73,25 @@ export function CourseDetailsPage() {
     isCourseView(course) &&
     course.status === "active" &&
     user?.permissions.includes("course:edit");
-  const canManageQuizzes =
-    canEditLessons && user?.permissions.includes("quiz:create");
+  const canManageQuizzes = canEditLessons && user?.permissions.includes("quiz:create");
 
   if (user?.role === "learner") {
     return (
-      <CourseCurriculum
-        course={course}
-        hasCourseAccess={isCourseView(course)}
-        canUseStudyTools={Boolean(canUseStudyTools)}
-      />
+      <Stack spacing={3}>
+        <CourseCurriculum
+          course={course}
+          hasCourseAccess={isCourseView(course)}
+          canUseStudyTools={Boolean(canUseStudyTools)}
+        />
+        {isCourseView(course) && (
+          <CourseLearnersPanel courseId={course.id} canRemoveLearners={false} />
+        )}
+      </Stack>
     );
   }
 
   return (
     <Stack spacing={3}>
-      <Button component={RouterLink} to="/courses" sx={{ alignSelf: "flex-start" }}>
-        Back to courses
-      </Button>
       <Box>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -158,6 +160,11 @@ export function CourseDetailsPage() {
           canGenerate={Boolean(user?.permissions.includes("content:generate"))}
         />
       )}
+      {ownedCourse &&
+        isCourseView(course) &&
+        user?.permissions.includes("enrolment:approve") && (
+          <CourseLearnersPanel courseId={course.id} canRemoveLearners />
+        )}
       {canViewInsights && isCourseView(course) && (
         <CourseInsightsPanel courseId={course.id} />
       )}
@@ -236,7 +243,12 @@ function CourseInsightsPanel({ courseId }: { courseId: string }) {
   }, [jobActive, pollDeadline]);
 
   return (
-    <Stack component="section" spacing={2} aria-labelledby="course-insights-title">
+    <Stack
+      id="course-insights"
+      component="section"
+      spacing={2}
+      aria-labelledby="course-insights-title"
+    >
       <Typography id="course-insights-title" component="h2" variant="h5">
         Course insights
       </Typography>
@@ -423,15 +435,13 @@ function MetricCard({
   value: string | number | null;
 }) {
   return (
-    <Card variant="outlined" sx={{ height: "100%" }}>
-      <CardContent>
-        <Typography color="text.secondary" variant="body2">
-          {label}
-        </Typography>
-        <Typography variant="h5" fontWeight={700} sx={{ mt: 0.5 }}>
-          {value ?? "—"}
-        </Typography>
-      </CardContent>
-    </Card>
+    <Box component="dl" sx={{ m: 0 }}>
+      <Typography component="dt" color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography component="dd" variant="body1" fontWeight={700} sx={{ m: 0 }}>
+        {value ?? "—"}
+      </Typography>
+    </Box>
   );
 }

@@ -2,8 +2,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   Grid,
   LinearProgress,
@@ -161,12 +159,6 @@ export function DashboardPage() {
         0,
       )
     : "—";
-  if (user?.role === "admin") {
-    return (
-      <AdminDashboard displayName={user.displayName} permissions={user.permissions} />
-    );
-  }
-
   return (
     <Stack spacing={4}>
       <Box>
@@ -296,35 +288,37 @@ export function DashboardPage() {
                   </Alert>
                 )}
               {recentPendingRequests.length > 0 && (
-                <Stack spacing={1.5}>
+                <Stack spacing={0}>
                   {recentPendingRequests.map(({ request, course }) => (
-                    <Card key={request.id} variant="outlined">
-                      <CardContent>
-                        <Stack
-                          direction={{ xs: "column", sm: "row" }}
-                          spacing={1}
-                          justifyContent="space-between"
-                          alignItems={{ xs: "flex-start", sm: "center" }}
+                    <Box
+                      key={request.id}
+                      component="article"
+                      sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
+                    >
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        justifyContent="space-between"
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                      >
+                        <Box>
+                          <Typography fontWeight={650}>
+                            {request.applicant.displayName}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Requested access to {course.name} ·{" "}
+                            {new Date(request.requestedAt).toLocaleDateString()}
+                          </Typography>
+                        </Box>
+                        <Button
+                          component={RouterLink}
+                          to={`/courses/${course.id}#enrolment-requests-title`}
+                          size="small"
                         >
-                          <Box>
-                            <Typography fontWeight={650}>
-                              {request.applicant.displayName}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Requested access to {course.name} ·{" "}
-                              {new Date(request.requestedAt).toLocaleDateString()}
-                            </Typography>
-                          </Box>
-                          <Button
-                            component={RouterLink}
-                            to={`/courses/${course.id}#enrolment-requests-title`}
-                            size="small"
-                          >
-                            Review request
-                          </Button>
-                        </Stack>
-                      </CardContent>
-                    </Card>
+                          Review request
+                        </Button>
+                      </Stack>
+                    </Box>
                   ))}
                   {pendingRequestsHaveMore && (
                     <Typography variant="body2" color="text.secondary">
@@ -414,18 +408,15 @@ export function DashboardPage() {
                 </Grid>
 
                 {learnerCourses.length > 0 && (
-                  <Grid container spacing={2}>
+                  <Stack spacing={0}>
                     {learnerCourses.map((enrolment) => (
-                      <Grid key={enrolment.id} size={{ xs: 12, md: 6 }}>
-                        <LearnerCourseCard
-                          enrolment={enrolment}
-                          canUseStudyTools={user.permissions.includes(
-                            "content:generate",
-                          )}
-                        />
-                      </Grid>
+                      <LearnerCourseCard
+                        key={enrolment.id}
+                        enrolment={enrolment}
+                        canUseStudyTools={user.permissions.includes("content:generate")}
+                      />
                     ))}
-                  </Grid>
+                  </Stack>
                 )}
                 {learnerCourses.length === 0 && pendingEnrolments.length === 0 && (
                   <Alert severity="info" role="status">
@@ -448,39 +439,35 @@ export function DashboardPage() {
               >
                 Waiting for access
               </Typography>
-              <Grid container spacing={1.5}>
+              <Stack spacing={0}>
                 {pendingEnrolments.map((enrolment) => (
-                  <Grid key={enrolment.id} size={{ xs: 12, md: 6 }}>
-                    <Card variant="outlined" sx={{ height: "100%" }}>
-                      <CardContent>
-                        <Stack
-                          direction="row"
-                          justifyContent="space-between"
-                          alignItems="flex-start"
-                          spacing={1}
-                        >
-                          <Box>
-                            <Typography fontWeight={650}>
-                              {enrolment.course.name}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Requested{" "}
-                              {new Date(enrolment.requestedAt).toLocaleDateString()}
-                            </Typography>
-                          </Box>
-                          <Typography
-                            variant="caption"
-                            color="warning.dark"
-                            fontWeight={700}
-                          >
-                            Pending
-                          </Typography>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  </Grid>
+                  <Box
+                    key={enrolment.id}
+                    component="article"
+                    sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
+                  >
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="flex-start"
+                      spacing={1}
+                    >
+                      <Box>
+                        <Typography fontWeight={650}>
+                          {enrolment.course.name}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Requested{" "}
+                          {new Date(enrolment.requestedAt).toLocaleDateString()}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" color="warning.dark" fontWeight={700}>
+                        Pending
+                      </Typography>
+                    </Stack>
+                  </Box>
                 ))}
-              </Grid>
+              </Stack>
             </Box>
           )}
         </Stack>
@@ -497,8 +484,12 @@ export function DashboardPage() {
           <Typography id="dashboard-courses-title" component="h2" variant="h5">
             {user?.role === "coach" ? "My courses" : "Explore courses"}
           </Typography>
-          <Button component={RouterLink} to="/courses" variant="outlined">
-            View all courses
+          <Button
+            component={RouterLink}
+            to={user?.role === "coach" ? "/my-courses" : "/courses"}
+            variant="outlined"
+          >
+            {user?.role === "coach" ? "View my courses" : "View all courses"}
           </Button>
         </Stack>
         {courseListIsLoading && <LinearProgress aria-label="Loading courses" />}
@@ -518,39 +509,38 @@ export function DashboardPage() {
             </Alert>
           )}
         {dashboardCourses.length > 0 && (
-          <Grid container spacing={2}>
+          <Stack spacing={0}>
             {dashboardCourses.map((course) => (
-              <Grid key={course.id} size={{ xs: 12, md: 6 }}>
-                <CourseCard
-                  course={course}
-                  actions={
-                    user?.role === "coach" &&
+              <CourseCard
+                key={course.id}
+                course={course}
+                actions={
+                  user?.role === "coach" &&
+                  isCourseView(course) &&
+                  course.ownerId === user.id ? (
+                    <Button
+                      component={RouterLink}
+                      to={`/courses/${course.id}/documents`}
+                      size="small"
+                    >
+                      Manage materials
+                    </Button>
+                  ) : user?.role === "learner" &&
                     isCourseView(course) &&
-                    course.ownerId === user.id ? (
-                      <Button
-                        component={RouterLink}
-                        to={`/courses/${course.id}/documents`}
-                        size="small"
-                      >
-                        Manage materials
-                      </Button>
-                    ) : user?.role === "learner" &&
-                      isCourseView(course) &&
-                      course.status === "active" &&
-                      user.permissions.includes("content:generate") ? (
-                      <Button
-                        component={RouterLink}
-                        to={`/courses/${course.id}/study`}
-                        size="small"
-                      >
-                        Study tools
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              </Grid>
+                    course.status === "active" &&
+                    user.permissions.includes("content:generate") ? (
+                    <Button
+                      component={RouterLink}
+                      to={`/courses/${course.id}/study`}
+                      size="small"
+                    >
+                      Study tools
+                    </Button>
+                  ) : undefined
+                }
+              />
             ))}
-          </Grid>
+          </Stack>
         )}
         {user?.role === "learner" && coursesQuery.hasNextPage && (
           <Button
@@ -573,23 +563,20 @@ export function DashboardPage() {
           </Stack>
         )}
       </Box>
-
     </Stack>
   );
 }
 
 function OverviewMetric({ label, value }: { label: string; value: string | number }) {
   return (
-    <Card variant="outlined" sx={{ height: "100%" }}>
-      <CardContent>
-        <Typography color="text.secondary" variant="body2">
-          {label}
-        </Typography>
-        <Typography component="p" variant="h4" fontWeight={700} sx={{ mt: 0.5 }}>
-          {value}
-        </Typography>
-      </CardContent>
-    </Card>
+    <Box component="dl" sx={{ m: 0 }}>
+      <Typography component="dt" color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography component="dd" variant="body1" fontWeight={700} sx={{ m: 0 }}>
+        {value}
+      </Typography>
+    </Box>
   );
 }
 
@@ -623,101 +610,5 @@ function LearnerCourseCard({
         </>
       }
     />
-  );
-}
-
-function AdminDashboard({
-  displayName,
-  permissions,
-}: {
-  displayName: string;
-  permissions: string[];
-}) {
-  const actions = [
-    ...(permissions.includes("user:manage")
-      ? [
-          {
-            title: "Coach applications",
-            description: "Review requests and approve or reject applicants.",
-            href: "/admin?section=coach-requests",
-            label: "Review applications",
-          },
-        ]
-      : []),
-    ...(permissions.includes("role:manage")
-      ? [
-          {
-            title: "User accounts",
-            description: "Manage account roles and access status.",
-            href: "/admin?section=users",
-            label: "Manage users",
-          },
-        ]
-      : []),
-    ...(permissions.includes("executions:view") || permissions.includes("audit:view")
-      ? [
-          {
-            title: "Operations",
-            description: "Review jobs, audit events, and AI execution metadata.",
-            href: "/admin?section=operations",
-            label: "Open operations",
-          },
-        ]
-      : []),
-    ...(permissions.includes("config:view")
-      ? [
-          {
-            title: "System settings",
-            description: "Review configuration and update permitted settings.",
-            href: "/admin?section=settings",
-            label: "Manage settings",
-          },
-        ]
-      : []),
-    {
-      title: "Course catalog",
-      description: "Browse course listings; course changes stay with their owners.",
-      href: "/courses",
-      label: "View courses",
-    },
-  ];
-
-  return (
-    <Stack spacing={4}>
-      <Box>
-        <Typography component="h1" variant="h4" fontWeight={700}>
-          Admin dashboard
-        </Typography>
-        <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          Welcome, {displayName}. Manage platform access and review system operations.
-        </Typography>
-      </Box>
-      <Box component="section" aria-labelledby="admin-quick-actions">
-        <Typography id="admin-quick-actions" component="h2" variant="h5" sx={{ mb: 2 }}>
-          Quick actions
-        </Typography>
-        <Grid container spacing={2}>
-          {actions.map((action) => (
-            <Grid key={action.title} size={{ xs: 12, sm: 6, lg: 4 }}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Stack spacing={1.5} alignItems="flex-start">
-                    <Typography component="h3" variant="h6" fontWeight={650}>
-                      {action.title}
-                    </Typography>
-                    <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
-                      {action.description}
-                    </Typography>
-                    <Button component={RouterLink} to={action.href} variant="outlined">
-                      {action.label}
-                    </Button>
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </Box>
-    </Stack>
   );
 }

@@ -3,9 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardActions,
-  CardContent,
   Dialog,
   DialogActions,
   DialogContent,
@@ -147,36 +144,51 @@ export function ConversationHistoryPage() {
             : "No loaded conversations match your search."}
         </Alert>
       )}
-      <Stack spacing={1.5}>
+      <Stack spacing={0}>
         {visibleConversations.map((conversation) => (
-          <Card key={conversation.id} variant="outlined">
-            <CardContent>
-              <Typography component="h2" variant="h6" sx={{ overflowWrap: "anywhere" }}>
-                {conversation.title || "Untitled conversation"}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Updated {new Date(conversation.updatedAt).toLocaleString()}
-              </Typography>
-            </CardContent>
-            <CardActions>
-              <Button
-                component={RouterLink}
-                to={`/chat?conversationId=${encodeURIComponent(conversation.id)}`}
-              >
-                Reopen
-              </Button>
-              <Button onClick={() => openRename(conversation)}>Rename</Button>
-              <Button
-                color="error"
-                onClick={() => {
-                  deleteMutation.reset();
-                  setDeleteTarget(conversation);
-                }}
-              >
-                Delete
-              </Button>
-            </CardActions>
-          </Card>
+          <Box
+            key={conversation.id}
+            component="article"
+            sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
+          >
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", sm: "center" }}
+              spacing={1}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  component="h2"
+                  variant="h6"
+                  sx={{ overflowWrap: "anywhere" }}
+                >
+                  {conversation.title || "Untitled conversation"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Updated {new Date(conversation.updatedAt).toLocaleString()}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  component={RouterLink}
+                  to={`/chat?conversationId=${encodeURIComponent(conversation.id)}`}
+                >
+                  Reopen
+                </Button>
+                <Button onClick={() => openRename(conversation)}>Rename</Button>
+                <Button
+                  color="error"
+                  onClick={() => {
+                    deleteMutation.reset();
+                    setDeleteTarget(conversation);
+                  }}
+                >
+                  Delete
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
         ))}
       </Stack>
       {renameMutation.isError && (

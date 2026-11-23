@@ -11,8 +11,10 @@ import { CourseDetailsPage } from "./CourseDetailsPage";
 
 const courseId = "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7911";
 const coachId = "37c1dbbd-f72a-4508-a662-3992e2506ca4";
+const learnerId = "307d4918-a7f5-4db4-b857-97d8176e305b";
 const documentId = "9a7a7701-a1b1-42a4-890d-1b1e54055d0e";
 const quizId = "3b22cfde-4ac7-498c-84ad-7d4be50b854c";
+const enrolmentId = "407d4918-35a4-4d4a-9c2a-0f4e3a9a7911";
 
 function createAuthContext(user: AuthenticatedUser): AuthContextValue {
   return {
@@ -177,6 +179,56 @@ describe("CourseDetailsPage", () => {
     expect(screen.queryByText("2", { exact: true })).toBeNull();
   });
 
+  it("shows a removed learner the coach's recorded reason", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: { id: courseId, name: "Course one" },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/preview`, () =>
+        HttpResponse.json({ data: { courseId, lessons: [] } }),
+      ),
+      http.get("http://localhost:3000/api/v1/me/enrolments", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: enrolmentId,
+              courseId,
+              userId: learnerId,
+              status: "removed",
+              requestedAt: "2026-01-02T00:00:00.000Z",
+              decidedBy: coachId,
+              decidedAt: "2026-01-03T00:00:00.000Z",
+              decisionNote: "Please follow class guidelines.",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+              course: {
+                id: courseId,
+                name: "Course one",
+                status: "active",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderCourseDetails({
+      id: learnerId,
+      email: "learner@example.test",
+      displayName: "Test learner",
+      role: "learner",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["content:generate"],
+      permsVersion: 1,
+    });
+
+    expect(
+      await screen.findByText(/Coach’s reason: Please follow class guidelines\./),
+    ).toBeVisible();
+  });
+
   it("shows approved learners the ordered course curriculum", async () => {
     server.use(
       http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
@@ -216,9 +268,21 @@ describe("CourseDetailsPage", () => {
       http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
         HttpResponse.json({ data: [] }),
       ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/learners`, () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: enrolmentId,
+              learnerId: "55bf68e2-2767-4ee5-84c3-99359da40ce1",
+              displayName: "A classmate",
+              enrolledAt: "2026-01-02T00:00:00.000Z",
+            },
+          ],
+        }),
+      ),
     );
     renderCourseDetails({
-      id: "307d4918-a7f5-4db4-b857-97d8176e305b",
+      id: learnerId,
       email: "learner@example.test",
       displayName: "Test learner",
       role: "learner",
@@ -229,6 +293,10 @@ describe("CourseDetailsPage", () => {
     });
 
     const lessonRow = await screen.findByRole("button", { name: /Cell structure/ });
+    expect(await screen.findByText("A classmate")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Remove A classmate from course" }),
+    ).toBeNull();
     expect(lessonRow).toBeVisible();
     expect(screen.queryByText("Explore how cell structures work.")).toBeNull();
     await userEvent.click(lessonRow);
@@ -279,6 +347,96 @@ describe("CourseDetailsPage", () => {
     ).toBeVisible();
     await screen.findByText(/No lessons yet/i);
     expect(screen.getByRole("button", { name: "Add lesson" })).toBeEnabled();
+  });
+
+  it("lets a course owner remove a learner with a required reason", async () => {
+    let learnerIsEnrolled = true;
+    let submittedReason: unknown;
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            ownerId: coachId,
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/learners`, () =>
+        HttpResponse.json({
+          data: learnerIsEnrolled
+            ? [
+                {
+                  id: enrolmentId,
+                  learnerId,
+                  displayName: "Test learner",
+                  enrolledAt: "2026-01-02T00:00:00.000Z",
+                },
+              ]
+            : [],
+        }),
+      ),
+      http.get(
+        `http://localhost:3000/api/v1/courses/${courseId}/join-requests`,
+        () => HttpResponse.json({ data: [] }),
+      ),
+      http.post(
+        `http://localhost:3000/api/v1/enrolments/${enrolmentId}/remove`,
+        async ({ request }) => {
+          submittedReason = await request.json();
+          learnerIsEnrolled = false;
+          return HttpResponse.json({
+            data: {
+              id: enrolmentId,
+              courseId,
+              userId: learnerId,
+              status: "removed",
+              requestedAt: "2026-01-02T00:00:00.000Z",
+              decidedBy: coachId,
+              decidedAt: "2026-01-03T00:00:00.000Z",
+              decisionNote: "Please follow class guidelines.",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            },
+          });
+        },
+      ),
+    );
+    renderCourseDetails({
+      id: coachId,
+      email: "coach@example.test",
+      displayName: "Test coach",
+      role: "coach",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["enrolment:approve"],
+      permsVersion: 1,
+    });
+
+    await screen.findByRole("heading", { name: "Class learners" });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove Test learner from course" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove Test learner from course" }),
+    );
+    expect(screen.getByRole("button", { name: "Confirm removal" })).toBeDisabled();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Reason for removal" }),
+      "  Please follow class guidelines.  ",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Confirm removal" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Test learner was removed from this course.",
+    );
+    expect(submittedReason).toEqual({ reason: "Please follow class guidelines." });
   });
 
   it("generates and publishes a coach quiz below the lesson editor", async () => {

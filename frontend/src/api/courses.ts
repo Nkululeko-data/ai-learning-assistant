@@ -18,6 +18,11 @@ export const courseViewSchema = z
     description: z.string().optional(),
     ownerId: idSchema,
     status: z.enum(["active", "archived"]),
+    approvalStatus: z.enum(["pending", "approved", "changes_requested"]).optional(),
+    approvalNote: z.string().nullable().optional(),
+    approvalRequestedAt: z.string().nullable().optional(),
+    reviewedBy: idSchema.nullable().optional(),
+    reviewedAt: z.string().nullable().optional(),
     version: z.number().int().positive(),
     archivedAt: z.string().nullable().optional(),
     archivedBy: idSchema.nullable().optional(),
@@ -87,6 +92,15 @@ export const enrolmentViewSchema = enrolmentSchema.extend({
   }),
 });
 
+export const courseLearnerSchema = z
+  .object({
+    id: idSchema,
+    learnerId: idSchema,
+    displayName: z.string(),
+    enrolledAt: z.string(),
+  })
+  .strict();
+
 export const joinRequestSchema = enrolmentSchema.extend({
   applicant: z
     .object({
@@ -129,6 +143,7 @@ export type CourseListItem = z.infer<typeof courseListItemSchema>;
 export type Enrolment = z.infer<typeof enrolmentSchema>;
 export type EnrolmentView = z.infer<typeof enrolmentViewSchema>;
 export type JoinRequest = z.infer<typeof joinRequestSchema>;
+export type CourseLearner = z.infer<typeof courseLearnerSchema>;
 export type CreateCourseInput = z.infer<typeof createCourseInputSchema>;
 export type UpdateCourseInput = z.infer<typeof updateCourseInputSchema>;
 
@@ -236,6 +251,20 @@ export async function updateCourse(
   });
 }
 
+export async function submitCourseForApproval(
+  courseId: string,
+  version: number,
+): Promise<CourseView> {
+  return apiRequest(
+    `/courses/${encodeURIComponent(courseId)}/submit-for-approval`,
+    courseViewSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ version }),
+    },
+  );
+}
+
 export async function requestCourseJoin(courseId: string): Promise<Enrolment> {
   return apiRequest(`/courses/${encodeURIComponent(courseId)}/join`, enrolmentSchema, {
     method: "POST",
@@ -274,6 +303,32 @@ export async function listCourseJoinRequests(
   return apiRequestPage(
     `/courses/${encodeURIComponent(courseId)}/join-requests?${query.toString()}`,
     joinRequestSchema,
+  );
+}
+
+export async function listCourseLearners(
+  courseId: string,
+  input: { limit?: number; cursor?: string } = {},
+) {
+  const query = new URLSearchParams({ limit: String(input.limit ?? 20) });
+  if (input.cursor) query.set("cursor", input.cursor);
+  return apiRequestPage(
+    `/courses/${encodeURIComponent(courseId)}/learners?${query.toString()}`,
+    courseLearnerSchema,
+  );
+}
+
+export async function removeCourseLearner(
+  enrolmentId: string,
+  reason: string,
+): Promise<Enrolment> {
+  return apiRequest(
+    `/enrolments/${encodeURIComponent(enrolmentId)}/remove`,
+    enrolmentSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
   );
 }
 

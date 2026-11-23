@@ -7,7 +7,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Grid,
   LinearProgress,
   Chip,
   Paper,
@@ -20,15 +19,18 @@ import {
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createCourse,
+  listMyCourses,
   listMyEnrolments,
   listCourses,
   requestCourseJoin,
+  submitCourseForApproval,
   updateCourse,
   type CourseView,
 } from "../../api/courses";
 import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { designTokens } from "../../theme/designTokens";
 import { CourseCard } from "./CourseCard";
 import { CourseFormDialog, type CourseFormValues } from "./CourseFormDialog";
 import { isCourseView } from "./course-utils";
@@ -36,22 +38,36 @@ import { isCourseView } from "./course-utils";
 const coursePageSize = 20;
 type CourseFilter = "all" | "enrolled" | "pending" | "discover" | "owned" | "archived";
 
-export function CourseManagementPage() {
+export function CourseManagementPage({
+  defaultFilter = "all",
+  pageTitle,
+}: {
+  defaultFilter?: CourseFilter;
+  pageTitle?: string;
+} = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<CourseView | null>(null);
   const [statusCourse, setStatusCourse] = useState<CourseView | null>(null);
-  const [courseFilter, setCourseFilter] = useState<CourseFilter>("all");
+  const [courseFilter, setCourseFilter] = useState<CourseFilter>(defaultFilter);
   const [searchText, setSearchText] = useState("");
 
   const coursesQuery = useInfiniteQuery({
-    queryKey: ["courses", coursePageSize],
+    queryKey:
+      defaultFilter === "owned"
+        ? ["courses", "mine", coursePageSize]
+        : ["courses", coursePageSize],
     queryFn: ({ pageParam }) =>
-      listCourses({
-        limit: coursePageSize,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
+      defaultFilter === "owned"
+        ? listMyCourses({
+            limit: coursePageSize,
+            ...(pageParam ? { cursor: pageParam } : {}),
+          })
+        : listCourses({
+            limit: coursePageSize,
+            ...(pageParam ? { cursor: pageParam } : {}),
+          }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
@@ -75,6 +91,11 @@ export function CourseManagementPage() {
   });
   const createMutation = useMutation({
     mutationFn: createCourse,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["courses"] }),
+  });
+  const resubmitMutation = useMutation({
+    mutationFn: (course: CourseView) =>
+      submitCourseForApproval(course.id, course.version),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["courses"] }),
   });
   const updateMutation = useMutation({
@@ -136,11 +157,16 @@ export function CourseManagementPage() {
           { value: "discover", label: "Discover" },
         ]
       : user?.role === "coach"
-        ? [
-            { value: "all", label: "All courses" },
-            { value: "owned", label: "My courses" },
-            { value: "archived", label: "Archived" },
-          ]
+        ? defaultFilter === "owned"
+          ? [
+              { value: "owned", label: "My courses" },
+              { value: "archived", label: "Archived" },
+            ]
+          : [
+              { value: "all", label: "All courses" },
+              { value: "owned", label: "My courses" },
+              { value: "archived", label: "Archived" },
+            ]
         : [{ value: "all", label: "All courses" }];
   const activeCourseFilter = filterOptions.some(
     (option) => option.value === courseFilter,
@@ -169,7 +195,10 @@ export function CourseManagementPage() {
     return matchesFilter && searchableText.includes(normalizedSearch);
   });
   const actionError =
-    createMutation.error ?? updateMutation.error ?? requestJoinMutation.error;
+    createMutation.error ??
+    updateMutation.error ??
+    requestJoinMutation.error ??
+    resubmitMutation.error;
 
   async function saveCourse(values: CourseFormValues) {
     if (editingCourse) {
@@ -203,6 +232,15 @@ export function CourseManagementPage() {
     }
     return (
       <>
+        {canEdit && course.approvalStatus === "changes_requested" && (
+          <Button
+            size="small"
+            disabled={resubmitMutation.isPending}
+            onClick={() => resubmitMutation.mutate(course)}
+          >
+            Resubmit for approval
+          </Button>
+        )}
         {canEdit && course.status === "active" && (
           <Button
             size="small"
@@ -237,8 +275,7 @@ export function CourseManagementPage() {
           overflow: "hidden",
           borderRadius: 3,
           color: "common.white",
-          background: (theme) =>
-            `linear-gradient(120deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main} 70%, ${theme.palette.secondary.dark})`,
+          backgroundColor: "primary.main",
         }}
       >
         <Box sx={{ p: { xs: 2.5, sm: 3.5 } }}>
@@ -249,21 +286,20 @@ export function CourseManagementPage() {
             alignItems={{ xs: "flex-start", sm: "center" }}
           >
             <Box>
-              <Typography
-                variant="overline"
-                sx={{ color: "rgba(255,255,255,0.75)", letterSpacing: 1.2 }}
-              >
-                COURSE WORKSPACE
-              </Typography>
               <Typography component="h1" variant="h3" fontWeight={750}>
-                {user?.role === "learner"
-                  ? "Find your next course"
-                  : user?.role === "coach"
-                    ? "Your courses"
-                    : "Course catalog"}
+                {pageTitle ??
+                  (user?.role === "learner"
+                    ? "Find your next course"
+                    : user?.role === "coach"
+                      ? "Your courses"
+                      : "Course catalog")}
               </Typography>
               <Typography
-                sx={{ mt: 1, maxWidth: 680, color: "rgba(255,255,255,0.82)" }}
+                sx={{
+                  mt: 1,
+                  maxWidth: 680,
+                  color: designTokens.color.onPrimaryMuted,
+                }}
               >
                 {user?.role === "admin"
                   ? "Browse course listings. Course settings and content stay with their owners."
@@ -292,7 +328,10 @@ export function CourseManagementPage() {
           >
             <Chip
               label={courseCountLabel}
-              sx={{ color: "common.white", bgcolor: "rgba(255,255,255,0.14)" }}
+              sx={{
+                color: "common.white",
+                bgcolor: designTokens.color.onPrimarySubtle,
+              }}
             />
             {user?.role === "learner" && (
               <>
@@ -302,7 +341,10 @@ export function CourseManagementPage() {
                       ? "Checking your learning"
                       : `${enrolledCourseCount} in your learning`
                   }
-                  sx={{ color: "common.white", bgcolor: "rgba(255,255,255,0.14)" }}
+                  sx={{
+                    color: "common.white",
+                    bgcolor: designTokens.color.onPrimarySubtle,
+                  }}
                 />
                 <Chip
                   label={
@@ -310,14 +352,20 @@ export function CourseManagementPage() {
                       ? "Checking requests"
                       : `${pendingRequestCount} pending requests`
                   }
-                  sx={{ color: "common.white", bgcolor: "rgba(255,255,255,0.14)" }}
+                  sx={{
+                    color: "common.white",
+                    bgcolor: designTokens.color.onPrimarySubtle,
+                  }}
                 />
               </>
             )}
             {user?.role === "coach" && (
               <Chip
                 label={`${ownedCourses.length} owned by you`}
-                sx={{ color: "common.white", bgcolor: "rgba(255,255,255,0.14)" }}
+                sx={{
+                  color: "common.white",
+                  bgcolor: designTokens.color.onPrimarySubtle,
+                }}
               />
             )}
           </Stack>
@@ -402,7 +450,7 @@ export function CourseManagementPage() {
           </Paper>
 
           {visibleCourses.length > 0 ? (
-            <Grid container spacing={2}>
+            <Stack spacing={0}>
               {visibleCourses.map((course) => {
                 const enrolment = enrolmentByCourse.get(course.id);
                 const learnerActions =
@@ -427,17 +475,16 @@ export function CourseManagementPage() {
                     )
                   ) : undefined;
                 return (
-                  <Grid key={course.id} size={{ xs: 12, sm: 6, lg: 4 }}>
-                    <CourseCard
-                      course={course}
-                      actions={
-                        isCourseView(course) ? courseActions(course) : learnerActions
-                      }
-                    />
-                  </Grid>
+                  <CourseCard
+                    key={course.id}
+                    course={course}
+                    actions={
+                      isCourseView(course) ? courseActions(course) : learnerActions
+                    }
+                  />
                 );
               })}
-            </Grid>
+            </Stack>
           ) : (
             <Alert
               severity="info"

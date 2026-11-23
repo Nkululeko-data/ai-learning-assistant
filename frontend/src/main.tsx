@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
+import "@fontsource-variable/source-sans-3";
+import "@fontsource-variable/source-serif-4";
 import { App } from "./app/App";
 import { AuthProvider } from "./auth/AuthContext";
 

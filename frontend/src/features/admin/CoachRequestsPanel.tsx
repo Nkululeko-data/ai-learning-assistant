@@ -3,9 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardActions,
-  CardContent,
   Dialog,
   DialogActions,
   DialogContent,
@@ -58,24 +55,12 @@ export function CoachRequestsPanel() {
     },
   });
 
-  if (requestsQuery.isLoading) {
-    return <LinearProgress aria-label="Loading coach applications" />;
-  }
-  if (requestsQuery.isError) {
-    return (
-      <Stack spacing={1} alignItems="flex-start">
-        <ErrorNotice message={friendlyMessage(requestsQuery.error)} />
-        <Button onClick={() => void requestsQuery.refetch()}>Retry</Button>
-      </Stack>
-    );
-  }
-
   const requests = requestsQuery.data ?? [];
 
   return (
     <Stack spacing={2}>
       <Box>
-        <Typography component="h2" variant="h5" fontWeight={650}>
+        <Typography component="h1" variant="h4" fontWeight={700}>
           Coach applications
         </Typography>
         <Typography color="text.secondary">
@@ -85,52 +70,80 @@ export function CoachRequestsPanel() {
       {decisionMutation.error && (
         <ErrorNotice message={friendlyMessage(decisionMutation.error)} />
       )}
-      {requests.length === 0 ? (
-        <Alert severity="info">There are no pending coach applications.</Alert>
-      ) : (
-        <Stack spacing={2}>
-          {requests.map((request) => (
-            <Card key={request.id} variant="outlined">
-              <CardContent>
-                <Typography variant="h6">{request.applicant.displayName}</Typography>
-                <Typography color="text.secondary">
-                  {request.applicant.email}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Requested {new Date(request.requestedAt).toLocaleString()}
-                </Typography>
-                {request.message && (
-                  <Typography sx={{ mt: 2, whiteSpace: "pre-wrap" }}>
-                    {request.message}
-                  </Typography>
-                )}
-              </CardContent>
-              <CardActions>
-                <Button
-                  variant="contained"
-                  disabled={decisionMutation.isPending}
-                  onClick={() => {
-                    setSelectedRequest(request);
-                    setDecision("approved");
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  color="error"
-                  disabled={decisionMutation.isPending}
-                  onClick={() => {
-                    setSelectedRequest(request);
-                    setDecision("rejected");
-                  }}
-                >
-                  Reject
-                </Button>
-              </CardActions>
-            </Card>
-          ))}
+      {requestsQuery.isLoading && (
+        <LinearProgress aria-label="Loading coach applications" />
+      )}
+      {requestsQuery.isError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(requestsQuery.error)} />
+          <Button onClick={() => void requestsQuery.refetch()}>Retry</Button>
         </Stack>
       )}
+      {!requestsQuery.isLoading && !requestsQuery.isError && requests.length === 0 ? (
+        <Alert severity="info">There are no pending coach applications.</Alert>
+      ) : !requestsQuery.isLoading && !requestsQuery.isError ? (
+        <Stack spacing={0}>
+          {requests.map((request) => (
+            <Box
+              key={request.id}
+              component="article"
+              sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
+            >
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                justifyContent="space-between"
+                alignItems={{ xs: "flex-start", sm: "center" }}
+                spacing={1}
+              >
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography component="h2" variant="h6">
+                    {request.applicant.displayName}
+                  </Typography>
+                  <Typography color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                    {request.applicant.email}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Requested {new Date(request.requestedAt).toLocaleString()}
+                  </Typography>
+                  {request.message && (
+                    <Typography
+                      sx={{
+                        mt: 2,
+                        whiteSpace: "pre-wrap",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {request.message}
+                    </Typography>
+                  )}
+                </Box>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="contained"
+                    disabled={decisionMutation.isPending}
+                    onClick={() => {
+                      setSelectedRequest(request);
+                      setDecision("approved");
+                    }}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    color="error"
+                    disabled={decisionMutation.isPending}
+                    onClick={() => {
+                      setSelectedRequest(request);
+                      setDecision("rejected");
+                    }}
+                  >
+                    Reject
+                  </Button>
+                </Stack>
+              </Stack>
+            </Box>
+          ))}
+        </Stack>
+      ) : null}
 
       <Dialog
         open={selectedRequest !== null}
@@ -138,11 +151,14 @@ export function CoachRequestsPanel() {
         aria-labelledby="coach-decision-title"
       >
         <DialogTitle id="coach-decision-title">
-          {decision === "approved" ? "Approve coach application?" : "Reject coach application?"}
+          {decision === "approved"
+            ? "Approve coach application?"
+            : "Reject coach application?"}
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 2 }}>
-            {selectedRequest?.applicant.displayName} ({selectedRequest?.applicant.email})
+            {selectedRequest?.applicant.displayName} ({selectedRequest?.applicant.email}
+            )
           </Typography>
           <TextField
             label="Decision note (optional)"

@@ -62,31 +62,6 @@ function renderDashboard(user: AuthenticatedUser, includeCourseRoute = false) {
 }
 
 describe("DashboardPage", () => {
-  it("shows a permission-aware admin overview instead of learner dashboard content", () => {
-    renderDashboard({
-      id: adminId,
-      email: "admin@example.test",
-      displayName: "Test administrator",
-      role: "admin",
-      status: "active",
-      mustChangePassword: false,
-      permissions: ["role:manage", "user:manage", "audit:view", "config:view"],
-      permsVersion: 1,
-    });
-
-    expect(screen.getByRole("heading", { name: "Admin dashboard" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Review applications" })).toHaveAttribute(
-      "href",
-      "/admin?section=coach-requests",
-    );
-    expect(screen.getByRole("link", { name: "Manage users" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open operations" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Manage settings" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "View courses" })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Recent activity" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Study tools" })).toBeNull();
-  });
-
   it("shows coach-owned courses and course-management actions", async () => {
     server.use(
       http.get("http://localhost:3000/api/v1/me/courses", () =>

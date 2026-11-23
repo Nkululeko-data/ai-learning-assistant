@@ -28,6 +28,7 @@ import {
 import { getCoursePdf, getCourseVideo } from "../../api/documents";
 import { friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { designTokens } from "../../theme/designTokens";
 import { QuizPanel } from "../learning/StudyContentPanels";
 
 export function CourseCurriculum({
@@ -74,17 +75,13 @@ export function CourseCurriculum({
 
   if (!hasCourseAccess) {
     return (
-      <Stack spacing={3}>
-        <Button component={RouterLink} to="/courses" sx={{ alignSelf: "flex-start" }}>
-          Back to courses
-        </Button>
+      <Stack id="course-curriculum" spacing={3}>
         <Card
           sx={{
             overflow: "hidden",
             borderRadius: 3,
             color: "common.white",
-            background: (theme) =>
-              `linear-gradient(125deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main})`,
+            backgroundColor: "primary.main",
           }}
         >
           <CardContent sx={{ p: { xs: 2.5, sm: 3.5 } }}>
@@ -92,7 +89,11 @@ export function CourseCurriculum({
               {course.name}
             </Typography>
             <Typography
-              sx={{ mt: 1, color: "rgba(255,255,255,0.82)", whiteSpace: "pre-wrap" }}
+              sx={{
+                mt: 1,
+                color: designTokens.color.onPrimaryMuted,
+                whiteSpace: "pre-wrap",
+              }}
             >
               {course.description || "No course description has been added yet."}
             </Typography>
@@ -102,14 +103,6 @@ export function CourseCurriculum({
         <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3 }}>
           <Stack spacing={1.5}>
             <Box>
-              <Typography
-                variant="overline"
-                color="primary.main"
-                fontWeight={700}
-                letterSpacing={1}
-              >
-                COURSE PREVIEW
-              </Typography>
               <Typography component="h2" variant="h5" fontWeight={700}>
                 Lesson topics
               </Typography>
@@ -152,6 +145,12 @@ export function CourseCurriculum({
         )}
         {joinMutation.isError && (
           <ErrorNotice message={friendlyMessage(joinMutation.error)} />
+        )}
+        {existingEnrolment?.status === "removed" && existingEnrolment.decisionNote && (
+          <Alert severity="warning">
+            You were removed from this course. Coach’s reason:{" "}
+            {existingEnrolment.decisionNote}
+          </Alert>
         )}
         {enrolmentStatus === "pending" ? (
           <Alert severity="info" role="status">
@@ -200,16 +199,12 @@ export function CourseCurriculum({
 
   return (
     <Stack spacing={3}>
-      <Button component={RouterLink} to="/courses" sx={{ alignSelf: "flex-start" }}>
-        Back to courses
-      </Button>
       <Card
         sx={{
           overflow: "hidden",
           borderRadius: 3,
           color: "common.white",
-          background: (theme) =>
-            `linear-gradient(125deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main})`,
+          backgroundColor: "primary.main",
         }}
       >
         <CardContent sx={{ p: { xs: 2.5, sm: 3.5 }, "&:last-child": { pb: 3.5 } }}>
@@ -228,7 +223,7 @@ export function CourseCurriculum({
                   <Chip size="small" label="Archived" color="default" />
                 )}
               </Stack>
-              <Typography sx={{ mt: 1, color: "rgba(255,255,255,0.82)" }}>
+              <Typography sx={{ mt: 1, color: designTokens.color.onPrimaryMuted }}>
                 {course.description ||
                   "Follow the lessons in order, or choose a topic to begin."}
               </Typography>
@@ -298,14 +293,6 @@ export function CourseCurriculum({
                 spacing={1}
               >
                 <Box>
-                  <Typography
-                    variant="overline"
-                    color="primary.main"
-                    fontWeight={700}
-                    letterSpacing={1}
-                  >
-                    COURSE CURRICULUM
-                  </Typography>
                   <Typography component="h2" variant="h5" fontWeight={700}>
                     Lessons
                   </Typography>
@@ -430,11 +417,11 @@ export function CourseCurriculum({
                       <Stack spacing={2}>
                         <Box sx={{ pt: 2 }}>
                           <Typography
-                            variant="overline"
-                            color="primary.main"
+                            variant="body2"
+                            color="text.secondary"
                             fontWeight={700}
                           >
-                            LESSON {index + 1}
+                            Lesson {index + 1}
                           </Typography>
                           <Typography
                             color="text.secondary"
@@ -619,7 +606,7 @@ function LessonVideoPanel({ lesson }: { lesson: CourseLesson }) {
               width: "100%",
               aspectRatio: "16 / 9",
               borderRadius: 4,
-              backgroundColor: "#111",
+              backgroundColor: designTokens.color.videoSurface,
             }}
           />
         )}

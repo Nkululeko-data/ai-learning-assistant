@@ -166,4 +166,58 @@ describe("CourseManagementPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByRole("heading", { name: "Course one" })).toBeVisible();
   });
+
+  it("lets a coach resubmit a course after requested changes", async () => {
+    let approvalStatus: "changes_requested" | "pending" = "changes_requested";
+    let submittedVersion: unknown;
+    const coachId = "37c1dbbd-f72a-4508-a662-3992e2506ca4";
+    const course = () => ({
+      id: courseId,
+      name: "Biology",
+      description: "Course description",
+      ownerId: coachId,
+      status: "active",
+      approvalStatus,
+      approvalNote:
+        approvalStatus === "changes_requested" ? "Add an overview." : null,
+      approvalRequestedAt: "2026-11-20T07:00:00.000Z",
+      reviewedBy: null,
+      reviewedAt: null,
+      version: approvalStatus === "changes_requested" ? 3 : 4,
+      createdAt: "2026-11-20T07:00:00.000Z",
+      updatedAt: "2026-11-20T07:00:00.000Z",
+    });
+    server.use(
+      http.get("http://localhost:3000/api/v1/courses", () =>
+        HttpResponse.json({ data: [course()] }),
+      ),
+      http.post(
+        `http://localhost:3000/api/v1/courses/${courseId}/submit-for-approval`,
+        async ({ request }) => {
+          submittedVersion = await request.json();
+          approvalStatus = "pending";
+          return HttpResponse.json({ data: course() });
+        },
+      ),
+    );
+
+    renderCourseManagement({
+      id: coachId,
+      email: "coach@example.test",
+      displayName: "Test coach",
+      role: "coach",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["course:edit"],
+      permsVersion: 1,
+    });
+
+    await screen.findByRole("heading", { name: "Biology" });
+    expect(await screen.findByText("Admin feedback: Add an overview.")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resubmit for approval" }),
+    );
+    expect(await screen.findByText("Awaiting admin approval")).toBeVisible();
+    expect(submittedVersion).toEqual({ version: 3 });
+  });
 });

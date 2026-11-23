@@ -1,14 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  Box,
-  Button,
-  Card,
-  CardActions,
-  CardContent,
-  Chip,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, Button, Chip, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import type { CourseListItem } from "../../api/courses";
 import { isCourseView } from "./course-utils";
@@ -21,74 +12,96 @@ export function CourseCard({
   actions?: ReactNode;
 }) {
   return (
-    <Card
-      variant="outlined"
+    <Box
+      component="article"
       sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        borderRadius: 3,
-        transition:
-          "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
-        "&:hover": {
-          transform: "translateY(-2px)",
-          borderColor: "primary.main",
-          boxShadow: 2,
-        },
+        py: 2,
+        borderBottom: 1,
+        borderColor: "divider",
       }}
     >
-      <Box
-        aria-hidden="true"
-        sx={{
-          height: 5,
-          background: (theme) =>
-            `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-        }}
-      />
-      <CardContent sx={{ flexGrow: 1, p: 2.5 }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        justifyContent="space-between"
+        alignItems={{ xs: "stretch", sm: "flex-start" }}
+        spacing={2}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "center" }}
+            spacing={1}
+          >
+            <Typography
+              component="h2"
+              variant="h6"
+              fontWeight={650}
+              sx={{ overflowWrap: "anywhere" }}
+            >
+              {course.name}
+            </Typography>
+            {isCourseView(course) && (
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Chip
+                  size="small"
+                  label={course.status === "active" ? "Active" : "Archived"}
+                  color={course.status === "active" ? "success" : "default"}
+                />
+                {course.approvalStatus && course.approvalStatus !== "approved" && (
+                  <Chip
+                    size="small"
+                    label={
+                      course.approvalStatus === "pending"
+                        ? "Awaiting admin approval"
+                        : "Changes requested"
+                    }
+                    color={course.approvalStatus === "pending" ? "warning" : "error"}
+                  />
+                )}
+              </Stack>
+            )}
+          </Stack>
+          <Typography
+            color="text.secondary"
+            sx={{
+              mt: 1,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 3,
+              overflow: "hidden",
+            }}
+          >
+            {course.description || "No description provided."}
+          </Typography>
+          {isCourseView(course) &&
+            course.approvalStatus === "changes_requested" &&
+            course.approvalNote && (
+              <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
+                Admin feedback: {course.approvalNote}
+              </Typography>
+            )}
+        </Box>
         <Stack
           direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
-          spacing={2}
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ flexShrink: 0 }}
         >
-          <Typography component="h2" variant="h6" fontWeight={650}>
-            {course.name}
-          </Typography>
-          {isCourseView(course) && (
-            <Chip
-              size="small"
-              label={course.status === "active" ? "Active" : "Archived"}
-              color={course.status === "active" ? "success" : "default"}
-            />
-          )}
+          <Button
+            component={RouterLink}
+            to={`/courses/${course.id}`}
+            size="small"
+            variant="outlined"
+          >
+            View course
+          </Button>
+          {actions}
         </Stack>
-        <Typography
-          color="text.secondary"
-          sx={{
-            mt: 1,
-            whiteSpace: "pre-wrap",
-            display: "-webkit-box",
-            WebkitBoxOrient: "vertical",
-            WebkitLineClamp: 3,
-            overflow: "hidden",
-          }}
-        >
-          {course.description || "No description provided."}
-        </Typography>
-      </CardContent>
-      <CardActions sx={{ px: 2.5, pb: 2, pt: 0, flexWrap: "wrap", gap: 0.5 }}>
-        <Button
-          component={RouterLink}
-          to={`/courses/${course.id}`}
-          size="small"
-          variant="outlined"
-        >
-          View course
-        </Button>
-        {actions}
-      </CardActions>
-    </Card>
+      </Stack>
+    </Box>
   );
 }

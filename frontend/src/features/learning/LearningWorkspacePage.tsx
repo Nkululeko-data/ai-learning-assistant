@@ -16,25 +16,25 @@ import {
   Typography,
 } from "@mui/material";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import { getCourse } from "../../api/courses";
 import { listCourseDocuments } from "../../api/documents";
 import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { isCourseView } from "../courses/course-utils";
-import {
-  FlashcardsPanel,
-  QuizPanel,
-  SummaryPanel,
-} from "./StudyContentPanels";
+import { FlashcardsPanel, QuizPanel, SummaryPanel } from "./StudyContentPanels";
 
 type StudyTab = "summary" | "flashcards" | "quiz";
+
+function isStudyTab(value: string | null): value is StudyTab {
+  return value === "summary" || value === "flashcards" || value === "quiz";
+}
 
 export function LearningWorkspacePage() {
   const { courseId = "" } = useParams();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<StudyTab>("summary");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [topic, setTopic] = useState("");
 
@@ -43,6 +43,14 @@ export function LearningWorkspacePage() {
     queryFn: () => getCourse(courseId),
     enabled: Boolean(courseId),
   });
+  const course = courseQuery.data;
+  const hasStudyAccess = Boolean(
+    user &&
+    course &&
+    isCourseView(course) &&
+    course.status === "active" &&
+    (user.role === "learner" || (user.role === "coach" && course.ownerId === user.id)),
+  );
   const documentsQuery = useInfiniteQuery({
     queryKey: ["documents", "study", courseId],
     queryFn: ({ pageParam }) =>
@@ -52,13 +60,7 @@ export function LearningWorkspacePage() {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: Boolean(
-      courseId &&
-        user?.role === "learner" &&
-        courseQuery.data &&
-        isCourseView(courseQuery.data) &&
-        courseQuery.data.status === "active",
-    ),
+    enabled: Boolean(courseId && hasStudyAccess),
   });
   const documents = useMemo(
     () => documentsQuery.data?.pages.flatMap((page) => page.items) ?? [],
@@ -68,17 +70,21 @@ export function LearningWorkspacePage() {
     (document) => document.status === "ready" && document.mimeType !== "video/mp4",
   );
   const canGenerate = Boolean(
-    user?.role === "learner" && user.permissions.includes("content:generate"),
+    hasStudyAccess && user?.permissions.includes("content:generate"),
   );
+  const requestedTab = searchParams.get("tab");
+  const activeTab: StudyTab =
+    isStudyTab(requestedTab) && !(user?.role === "coach" && requestedTab === "quiz")
+      ? requestedTab
+      : "summary";
 
   if (!courseId) {
     return <ErrorNotice message="A course ID is required." />;
   }
-  if (user?.role !== "learner") {
+  if (user?.role !== "learner" && user?.role !== "coach") {
     return (
       <Alert severity="info">
-        Study generation is currently available to learners. Coaches can use the
-        document library to manage course material.
+        Study tools are available to learners and course coaches.
       </Alert>
     );
   }
@@ -96,18 +102,14 @@ export function LearningWorkspacePage() {
   if (!courseQuery.data) {
     return <Alert severity="info">Course details are unavailable.</Alert>;
   }
-  if (
-    !isCourseView(courseQuery.data) ||
-    courseQuery.data.status !== "active"
-  ) {
+  if (!hasStudyAccess || !course || !isCourseView(course)) {
     return (
       <Alert severity="info">
-        Study tools are available after you have active access to this course.
+        Study tools are available to learners with active access and the coach who owns
+        this course.
       </Alert>
     );
   }
-
-  const course = courseQuery.data;
 
   function toggleDocument(documentId: string, checked: boolean) {
     setSelectedDocumentIds((current) => {
@@ -121,13 +123,6 @@ export function LearningWorkspacePage() {
 
   return (
     <Stack spacing={3}>
-      <Button
-        component={RouterLink}
-        to={`/courses/${courseId}`}
-        sx={{ alignSelf: "flex-start" }}
-      >
-        Back to course
-      </Button>
       <Box>
         <Typography component="h1" variant="h4" fontWeight={700}>
           Study tools
@@ -144,8 +139,9 @@ export function LearningWorkspacePage() {
               Choose source material
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Select 1–10 ready documents. Only course material you can access and
-              your own personal notes are available.
+              {user.role === "coach"
+                ? "Select 1–10 ready course documents."
+                : "Select 1–10 ready documents. Only course material you can access and your own personal notes are available."}
             </Typography>
           </Box>
           <Stack
@@ -159,11 +155,14 @@ export function LearningWorkspacePage() {
               variant="outlined"
               sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}
             >
-              Upload personal notes
+              {user.role === "coach"
+                ? "Manage course documents"
+                : "Upload personal notes"}
             </Button>
             <Typography variant="body2" color="text.secondary">
-              Upload a PDF, DOCX, or TXT file in the document library. It will be
-              available here after processing.
+              {user.role === "coach"
+                ? "Add course material in the document library. Ready documents become available here."
+                : "Upload a PDF, DOCX, or TXT file in the document library. It will be available here after processing."}
             </Typography>
           </Stack>
           {documentsQuery.isLoading && (
@@ -172,7 +171,9 @@ export function LearningWorkspacePage() {
           {documentsQuery.isError && (
             <Stack spacing={1} alignItems="flex-start">
               <ErrorNotice message={friendlyMessage(documentsQuery.error)} />
-              <Button onClick={() => void documentsQuery.refetch()}>Retry documents</Button>
+              <Button onClick={() => void documentsQuery.refetch()}>
+                Retry documents
+              </Button>
             </Stack>
           )}
           {!documentsQuery.isLoading &&
@@ -263,14 +264,18 @@ export function LearningWorkspacePage() {
 
       <Tabs
         value={activeTab}
-        onChange={(_event, value: StudyTab) => setActiveTab(value)}
+        onChange={(_event, value: StudyTab) => {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set("tab", value);
+          setSearchParams(nextParams, { replace: true });
+        }}
         aria-label="Study tool type"
         variant="scrollable"
         allowScrollButtonsMobile
       >
         <Tab value="summary" label="Summaries" />
         <Tab value="flashcards" label="Flashcards" />
-        <Tab value="quiz" label="Quizzes" />
+        {user.role === "learner" && <Tab value="quiz" label="Quizzes" />}
       </Tabs>
       {activeTab === "summary" && (
         <SummaryPanel
@@ -288,7 +293,7 @@ export function LearningWorkspacePage() {
           canGenerate={canGenerate}
         />
       )}
-      {activeTab === "quiz" && (
+      {activeTab === "quiz" && user.role === "learner" && (
         <QuizPanel
           courseId={courseId}
           selectedDocumentIds={selectedDocumentIds}

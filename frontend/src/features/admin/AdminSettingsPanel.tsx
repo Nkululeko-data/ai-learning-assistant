@@ -32,11 +32,21 @@ export function AdminSettingsPanel({ canManage }: { canManage: boolean }) {
   });
 
   if (configQuery.isLoading) {
-    return <LinearProgress aria-label="Loading admin settings" />;
+    return (
+      <Stack spacing={2}>
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Settings
+        </Typography>
+        <LinearProgress aria-label="Loading admin settings" />
+      </Stack>
+    );
   }
   if (configQuery.isError) {
     return (
-      <Stack spacing={1} alignItems="flex-start">
+      <Stack spacing={2} alignItems="flex-start">
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Settings
+        </Typography>
         <ErrorNotice message={friendlyMessage(configQuery.error)} />
         <Button onClick={() => void configQuery.refetch()}>Retry</Button>
       </Stack>
@@ -82,23 +92,24 @@ export function AdminSettingsPanel({ canManage }: { canManage: boolean }) {
       aria-labelledby="admin-settings-title"
     >
       <div>
-        <Typography id="admin-settings-title" component="h2" variant="h5" fontWeight={650}>
-          Privacy and insight settings
+        <Typography
+          id="admin-settings-title"
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+        >
+          Settings
         </Typography>
         <Typography color="text.secondary">
-          These values affect cohort reporting and generated gap reports.
+          Privacy and insight values affect cohort reporting and generated gap reports.
         </Typography>
       </div>
       {updateMutation.error && (
         <ErrorNotice message={friendlyMessage(updateMutation.error)} />
       )}
-      {updateMutation.isSuccess && (
-        <Alert severity="success">Settings updated.</Alert>
-      )}
+      {updateMutation.isSuccess && <Alert severity="success">Settings updated.</Alert>}
       {!canManage && (
-        <Alert severity="info">
-          You have view-only access to these settings.
-        </Alert>
+        <Alert severity="info">You have view-only access to these settings.</Alert>
       )}
       <TextField
         label="Minimum cohort size"

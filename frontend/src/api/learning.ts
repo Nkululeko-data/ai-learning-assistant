@@ -89,11 +89,7 @@ const learnerQuestionSchema = z
     id: z.string(),
     type: z.enum(["mcq", "true_false"]),
     prompt: z.string(),
-    options: z.array(
-      z
-        .object({ id: z.string(), text: z.string() })
-        .strict(),
-    ),
+    options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
   })
   .strict();
 
@@ -201,12 +197,37 @@ export const quizAttemptResultSchema = z
   })
   .strict();
 
+export const quizAttemptSchema = z
+  .object({
+    id: idSchema,
+    quizId: idSchema,
+    lineageId: idSchema,
+    quizVersion: z.number().int().positive(),
+    courseId: idSchema,
+    userId: idSchema,
+    answers: z.array(
+      z
+        .object({
+          questionId: z.string().min(1).max(100),
+          selectedOptionId: z.string().min(1).max(40),
+          correct: z.boolean(),
+        })
+        .strict(),
+    ),
+    score: z.number().int().nonnegative(),
+    maxScore: z.number().int().positive(),
+    startedAt: z.string(),
+    submittedAt: z.string(),
+  })
+  .strict();
+
 export type LearningSummary = z.infer<typeof summarySchema>;
 export type FlashcardSet = z.infer<typeof flashcardSetSchema>;
 export type LearnerQuiz = z.infer<typeof learnerQuizSchema>;
 export type CoachQuiz = z.infer<typeof coachQuizSchema>;
 export type CourseQuiz = z.infer<typeof courseQuizSchema>;
 export type QuizAttemptResult = z.infer<typeof quizAttemptResultSchema>;
+export type QuizAttempt = z.infer<typeof quizAttemptSchema>;
 
 function listQuery(input: { limit?: number; cursor?: string }): URLSearchParams {
   const query = new URLSearchParams({ limit: String(input.limit ?? 50) });
@@ -335,7 +356,11 @@ export async function generateQuiz(input: {
     courseId: idSchema.parse(input.courseId),
     selection: generationSelection(input.documentIds, input.topic),
     count: z.number().int().min(1).max(50).parse(input.count),
-    types: z.array(z.enum(["mcq", "true_false"])).min(1).max(2).parse(input.types),
+    types: z
+      .array(z.enum(["mcq", "true_false"]))
+      .min(1)
+      .max(2)
+      .parse(input.types),
     difficulty: input.difficulty,
   };
   return apiRequest("/quizzes/generate", courseQuizSchema, {
@@ -368,22 +393,17 @@ export async function updateCoachQuiz(
         }
       : {}),
   });
-  return apiRequest(
-    `/quizzes/${encodeURIComponent(quizId)}`,
-    coachQuizSchema,
-    {
-      method: "PATCH",
-      body: JSON.stringify(parsedInput),
-    },
-  );
+  return apiRequest(`/quizzes/${encodeURIComponent(quizId)}`, coachQuizSchema, {
+    method: "PATCH",
+    body: JSON.stringify(parsedInput),
+  });
 }
 
 export async function publishQuiz(quizId: string, version: number) {
-  return apiRequest(
-    `/quizzes/${encodeURIComponent(quizId)}/publish`,
-    coachQuizSchema,
-    { method: "POST", body: JSON.stringify({ version }) },
-  );
+  return apiRequest(`/quizzes/${encodeURIComponent(quizId)}/publish`, coachQuizSchema, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  });
 }
 
 export async function submitQuizAttempt(
@@ -394,5 +414,14 @@ export async function submitQuizAttempt(
     `/quizzes/${encodeURIComponent(quizId)}/attempts`,
     quizAttemptResultSchema,
     { method: "POST", body: JSON.stringify({ answers }) },
+  );
+}
+
+export async function listMyQuizAttempts(
+  input: { limit?: number; cursor?: string } = {},
+) {
+  return apiRequestPage(
+    `/me/quiz-attempts?${listQuery(input).toString()}`,
+    quizAttemptSchema,
   );
 }

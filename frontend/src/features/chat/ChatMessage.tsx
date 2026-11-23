@@ -67,7 +67,7 @@ export function ChatMessage({
     >
       <CardContent>
         <Stack spacing={1.5}>
-          <Typography variant="overline" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" fontWeight={700}>
             {message.role === "assistant" ? "AI Learning Assistant" : "You"}
           </Typography>
           {message.role === "assistant" &&

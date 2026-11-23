@@ -18,14 +18,18 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
+    "@fontsource-variable/source-sans-3": "^5.3.1",
+    "@fontsource-variable/source-serif-4": "^5.3.1",
     "@mui/material": "^7.3.2",
     "@tanstack/react-query": "^5.90.2",
+    "lucide-react": "^1.78.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.4",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^9.38.0",
     "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -46,5 +50,13 @@
     "typescript-eslint": "^8.46.2",
     "vite": "^7.1.12",
     "vitest": "^5.1.1"
-  }
+  },
+  "description": "React + TypeScript frontend for the existing REST API. The client calls the\r backend only; AI provider credentials and data stores remain server-side.",
+  "main": "eslint.config.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "author": "",
+  "license": "ISC"
 }

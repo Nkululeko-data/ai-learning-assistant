@@ -9,8 +9,10 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  IconButton,
   InputLabel,
   LinearProgress,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -25,6 +27,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { MoreHorizontal } from "lucide-react";
 import { friendlyMessage } from "../../api/client";
 import {
   enqueueUserErasure,
@@ -42,8 +45,11 @@ export function AdminUsersPanel() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState<AdminUser["role"] | "all">("all");
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [action, setAction] = useState<UserAction>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [menuUser, setMenuUser] = useState<AdminUser | null>(null);
   const [nextRole, setNextRole] = useState<AdminUser["role"]>("learner");
   const [erasureJobId, setErasureJobId] = useState<string | null>(null);
 
@@ -85,13 +91,15 @@ export function AdminUsersPanel() {
   const filteredUsers = useMemo(() => {
     const users = usersQuery.data?.pages.flatMap((page) => page.items) ?? [];
     const needle = filter.trim().toLocaleLowerCase();
-    if (!needle) return users;
-    return users.filter((item) =>
-      `${item.displayName} ${item.email} ${item.role} ${item.status}`
-        .toLocaleLowerCase()
-        .includes(needle),
+    return users.filter(
+      (item) =>
+        (roleFilter === "all" || item.role === roleFilter) &&
+        (!needle ||
+          `${item.displayName} ${item.email} ${item.role} ${item.status}`
+            .toLocaleLowerCase()
+            .includes(needle)),
     );
-  }, [filter, usersQuery.data]);
+  }, [filter, roleFilter, usersQuery.data]);
 
   function openAction(target: AdminUser, nextAction: Exclude<UserAction, null>) {
     setSelectedUser(target);
@@ -100,18 +108,27 @@ export function AdminUsersPanel() {
   }
 
   const errors = [
-    usersQuery.error,
     roleMutation.error,
     statusMutation.error,
     erasureMutation.error,
   ].filter(Boolean);
 
   if (usersQuery.isLoading) {
-    return <LinearProgress aria-label="Loading users" />;
+    return (
+      <Stack spacing={2}>
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Users
+        </Typography>
+        <LinearProgress aria-label="Loading users" />
+      </Stack>
+    );
   }
   if (usersQuery.isError) {
     return (
-      <Stack spacing={1} alignItems="flex-start">
+      <Stack spacing={2} alignItems="flex-start">
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Users
+        </Typography>
         <ErrorNotice message={friendlyMessage(usersQuery.error)} />
         <Button onClick={() => void usersQuery.refetch()}>Retry</Button>
       </Stack>
@@ -121,11 +138,11 @@ export function AdminUsersPanel() {
   return (
     <Stack spacing={2}>
       <Box>
-        <Typography component="h2" variant="h5" fontWeight={650}>
-          User accounts
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Users
         </Typography>
         <Typography color="text.secondary">
-          Search the loaded pages, change roles, and manage account access.
+          Search and filter loaded rows. Load more to include additional accounts.
         </Typography>
       </Box>
       {errors.map((error, index) => (
@@ -143,11 +160,29 @@ export function AdminUsersPanel() {
         size="small"
         sx={{ maxWidth: 420 }}
       />
+      <FormControl size="small" sx={{ maxWidth: 240 }}>
+        <InputLabel id="user-role-filter-label">Filter by role</InputLabel>
+        <Select
+          labelId="user-role-filter-label"
+          label="Filter by role"
+          value={roleFilter}
+          onChange={(event) =>
+            setRoleFilter(event.target.value as AdminUser["role"] | "all")
+          }
+        >
+          <MenuItem value="all">All roles</MenuItem>
+          <MenuItem value="admin">Administrators</MenuItem>
+          <MenuItem value="coach">Coaches</MenuItem>
+          <MenuItem value="learner">Learners</MenuItem>
+        </Select>
+      </FormControl>
       {filteredUsers.length === 0 ? (
-        <Alert severity="info">No users match this search on the loaded pages.</Alert>
+        <Alert severity="info">
+          No users match the search and role filter on the loaded pages.
+        </Alert>
       ) : (
         <TableContainer component={Paper} variant="outlined">
-          <Table size="small" aria-label="User accounts">
+          <Table size="small" aria-label="Users">
             <TableHead>
               <TableRow>
                 <TableCell>User</TableCell>
@@ -160,57 +195,42 @@ export function AdminUsersPanel() {
             <TableBody>
               {filteredUsers.map((target) => {
                 const isSelf = target.id === user?.id;
+                const canManageRole =
+                  user?.permissions.includes("role:manage") ?? false;
+                const canManageAccount =
+                  user?.permissions.includes("user:manage") ?? false;
+                const hasActions = canManageRole || canManageAccount;
                 return (
                   <TableRow key={target.id}>
                     <TableCell>
-                      <Typography fontWeight={600}>{target.displayName}</Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography fontWeight={600}>{target.displayName}</Typography>
+                        {isSelf && <Chip label="You" size="small" />}
+                      </Stack>
                       <Typography variant="body2" color="text.secondary">
                         {target.email}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Chip label={target.role} size="small" />
-                    </TableCell>
+                    <TableCell>{roleLabel(target.role)}</TableCell>
                     <TableCell>{target.status}</TableCell>
                     <TableCell>
-                      {target.mustChangePassword ? "Password change required" : "Active credentials"}
+                      {target.mustChangePassword
+                        ? "Password change required"
+                        : "Active credentials"}
                     </TableCell>
                     <TableCell>
-                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                        {user?.permissions.includes("role:manage") && (
-                          <Button
-                            size="small"
-                            disabled={isSelf || roleMutation.isPending}
-                            onClick={() => openAction(target, "role")}
-                          >
-                            Change role
-                          </Button>
-                        )}
-                        {user?.permissions.includes("user:manage") && (
-                          <>
-                            <Button
-                              size="small"
-                              disabled={isSelf || statusMutation.isPending}
-                              onClick={() => openAction(target, "status")}
-                            >
-                              {target.status === "active" ? "Suspend" : "Activate"}
-                            </Button>
-                            <Button
-                              size="small"
-                              color="error"
-                              disabled={isSelf || erasureMutation.isPending}
-                              onClick={() => openAction(target, "erase")}
-                            >
-                              Erase data
-                            </Button>
-                          </>
-                        )}
-                        {isSelf && (
-                          <Typography variant="caption" color="text.secondary">
-                            Your account cannot be changed here.
-                          </Typography>
-                        )}
-                      </Stack>
+                      {!isSelf && hasActions && (
+                        <IconButton
+                          aria-label={`Actions for ${target.displayName}`}
+                          aria-haspopup="menu"
+                          onClick={(event) => {
+                            setMenuAnchor(event.currentTarget);
+                            setMenuUser(target);
+                          }}
+                        >
+                          <MoreHorizontal aria-hidden="true" size={20} />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -219,6 +239,50 @@ export function AdminUsersPanel() {
           </Table>
         </TableContainer>
       )}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => {
+          setMenuAnchor(null);
+          setMenuUser(null);
+        }}
+        aria-label={menuUser ? `Actions for ${menuUser.displayName}` : "User actions"}
+      >
+        {user?.permissions.includes("role:manage") && (
+          <MenuItem
+            onClick={() => {
+              if (menuUser) openAction(menuUser, "role");
+              setMenuAnchor(null);
+              setMenuUser(null);
+            }}
+          >
+            Change role
+          </MenuItem>
+        )}
+        {user?.permissions.includes("user:manage") && (
+          <MenuItem
+            onClick={() => {
+              if (menuUser) openAction(menuUser, "status");
+              setMenuAnchor(null);
+              setMenuUser(null);
+            }}
+          >
+            {menuUser?.status === "active" ? "Suspend" : "Activate"}
+          </MenuItem>
+        )}
+        {user?.permissions.includes("user:manage") && (
+          <MenuItem
+            onClick={() => {
+              if (menuUser) openAction(menuUser, "erase");
+              setMenuAnchor(null);
+              setMenuUser(null);
+            }}
+            sx={{ color: "error.main" }}
+          >
+            Erase data
+          </MenuItem>
+        )}
+      </Menu>
       {usersQuery.hasNextPage && (
         <Button
           variant="outlined"
@@ -237,7 +301,8 @@ export function AdminUsersPanel() {
         <DialogTitle id="change-role-title">Change user role</DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 2 }}>
-            Choose the role for {selectedUser?.displayName}. Admin roles grant broad access.
+            Choose the role for {selectedUser?.displayName}. Admin roles grant broad
+            access.
           </Typography>
           <FormControl fullWidth>
             <InputLabel id="user-role-label">Role</InputLabel>
@@ -258,9 +323,7 @@ export function AdminUsersPanel() {
           <Button
             variant="contained"
             disabled={
-              !selectedUser ||
-              nextRole === selectedUser.role ||
-              roleMutation.isPending
+              !selectedUser || nextRole === selectedUser.role || roleMutation.isPending
             }
             onClick={() => {
               if (selectedUser) {
@@ -310,8 +373,9 @@ export function AdminUsersPanel() {
         <DialogTitle id="erase-user-title">Queue privacy erasure?</DialogTitle>
         <DialogContent>
           <Typography>
-            This permanently removes {selectedUser?.displayName}&apos;s personal learning
-            data and pseudonymizes retained analytics. This cannot be undone.
+            Privacy erasure permanently anonymises {selectedUser?.displayName}&apos;s
+            account, removes personal learning data, and pseudonymizes retained
+            analytics. This cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -328,7 +392,14 @@ export function AdminUsersPanel() {
           </Button>
         </DialogActions>
       </Dialog>
-
     </Stack>
   );
+}
+
+function roleLabel(role: AdminUser["role"]): string {
+  return {
+    admin: "Administrator",
+    coach: "Coach",
+    learner: "Learner",
+  }[role];
 }

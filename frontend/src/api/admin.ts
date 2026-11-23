@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiRequest, apiRequestPage } from "./client";
+import { courseViewSchema, type CourseView } from "./courses";
 
 const idSchema = z.string().uuid();
 
@@ -34,6 +35,33 @@ export const coachRequestSchema = z
   })
   .strict();
 
+export const courseApprovalSchema = z
+  .object({
+    id: idSchema,
+    name: z.string(),
+    description: z.string().optional(),
+    ownerId: idSchema,
+    status: z.enum(["active", "archived"]),
+    approvalStatus: z.enum(["pending", "approved", "changes_requested"]),
+    approvalNote: z.string().nullable(),
+    approvalRequestedAt: z.string().nullable(),
+    reviewedBy: idSchema.nullable(),
+    reviewedAt: z.string().nullable(),
+    version: z.number().int().positive(),
+    archivedAt: z.string().nullable().optional(),
+    archivedBy: idSchema.nullable().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    owner: z
+      .object({
+        id: idSchema,
+        displayName: z.string(),
+        email: z.string().email(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const adminJobSchema = z
   .object({
     id: idSchema,
@@ -52,10 +80,7 @@ export const adminJobSchema = z
     attempts: z.number().int().nonnegative(),
     maxAttempts: z.number().int().positive(),
     runAfter: z.string(),
-    error: z
-      .object({ code: z.string(), message: z.string() })
-      .strict()
-      .nullable(),
+    error: z.object({ code: z.string(), message: z.string() }).strict().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
     finishedAt: z.string().nullable(),
@@ -115,10 +140,9 @@ export const adminConfigSchema = z
   })
   .strict();
 
-const configPatchSchema = adminConfigSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  "At least one setting is required",
-);
+const configPatchSchema = adminConfigSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one setting is required");
 
 const safeUserResponseSchema = z.object({ user: safeUserSchema }).strict();
 const erasureResponseSchema = z
@@ -131,6 +155,7 @@ const erasureResponseSchema = z
 export type AdminUser = z.infer<typeof adminUserSchema>;
 export type SafeAdminUser = z.infer<typeof safeUserSchema>;
 export type CoachRequest = z.infer<typeof coachRequestSchema>;
+export type CourseApproval = z.infer<typeof courseApprovalSchema>;
 export type AdminJob = z.infer<typeof adminJobSchema>;
 export type AdminConfig = z.infer<typeof adminConfigSchema>;
 export type AdminJobStatus = AdminJob["status"];
@@ -141,20 +166,77 @@ function pageQuery(input: { limit?: number; cursor?: string }): URLSearchParams 
   return query;
 }
 
-export async function listAdminUsers(input: {
-  limit?: number;
-  cursor?: string;
-} = {}) {
-  return apiRequestPage(
-    `/admin/users?${pageQuery(input).toString()}`,
-    adminUserSchema,
-  );
+export async function listAdminUsers(
+  input: {
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
+  return apiRequestPage(`/admin/users?${pageQuery(input).toString()}`, adminUserSchema);
 }
 
 export async function listCoachRequests(status = "pending") {
   return apiRequest(
     `/admin/coach-requests?${new URLSearchParams({ status }).toString()}`,
     z.array(coachRequestSchema),
+  );
+}
+
+export async function listCourseApprovalQueue(
+  input: {
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
+  return apiRequestPage(
+    `/admin/courses/approval-queue?${pageQuery(input).toString()}`,
+    courseApprovalSchema,
+  );
+}
+
+export async function listAdminCourses(
+  input: {
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
+  return apiRequestPage(`/courses?${pageQuery(input).toString()}`, courseViewSchema);
+}
+
+export async function reassignAdminCourseOwner(
+  courseId: string,
+  input: { ownerId: string; version: number },
+): Promise<CourseView> {
+  return apiRequest(
+    `/admin/courses/${encodeURIComponent(courseId)}/owner`,
+    courseViewSchema,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
+export async function updateAdminCourseStatus(
+  courseId: string,
+  input: { status: "active" | "archived"; version: number },
+): Promise<CourseView> {
+  return apiRequest(
+    `/admin/courses/${encodeURIComponent(courseId)}`,
+    courseViewSchema,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
+export async function decideCourseApproval(
+  courseId: string,
+  input: {
+    decision: "approved" | "changes_requested";
+    note?: string | null;
+    version: number;
+  },
+) {
+  return apiRequest(
+    `/admin/courses/${encodeURIComponent(courseId)}/approval`,
+    courseApprovalSchema,
+    { method: "PATCH", body: JSON.stringify(input) },
   );
 }
 
@@ -201,41 +283,42 @@ export async function enqueueUserErasure(userId: string) {
   );
 }
 
-export async function listAdminJobs(input: {
-  limit?: number;
-  cursor?: string;
-  status?: AdminJobStatus;
-} = {}) {
+export async function listAdminJobs(
+  input: {
+    limit?: number;
+    cursor?: string;
+    status?: AdminJobStatus;
+  } = {},
+) {
   const query = pageQuery(input);
   if (input.status) query.set("status", input.status);
-  return apiRequestPage(
-    `/admin/jobs?${query.toString()}`,
-    adminJobSchema,
-  );
+  return apiRequestPage(`/admin/jobs?${query.toString()}`, adminJobSchema);
 }
 
 export async function retryAdminJob(jobId: string) {
-  return apiRequest(
-    `/admin/jobs/${encodeURIComponent(jobId)}/retry`,
-    adminJobSchema,
-    { method: "POST" },
-  );
+  return apiRequest(`/admin/jobs/${encodeURIComponent(jobId)}/retry`, adminJobSchema, {
+    method: "POST",
+  });
 }
 
-export async function listAuditLogs(input: {
-  limit?: number;
-  cursor?: string;
-} = {}) {
+export async function listAuditLogs(
+  input: {
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
   return apiRequestPage(
     `/admin/audit-logs?${pageQuery(input).toString()}`,
     auditLogSchema,
   );
 }
 
-export async function listExecutions(input: {
-  limit?: number;
-  cursor?: string;
-} = {}) {
+export async function listExecutions(
+  input: {
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
   return apiRequestPage(
     `/admin/executions?${pageQuery(input).toString()}`,
     executionSchema,

@@ -103,8 +103,7 @@ export function SummaryPanel({
       ]);
     },
   });
-  const summaries =
-    summariesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const summaries = summariesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const summary: LearningSummary | undefined = selectedSummaryQuery.data;
 
   return (
@@ -114,7 +113,9 @@ export function SummaryPanel({
       </Typography>
       <Button
         variant="contained"
-        disabled={!canGenerate || selectedDocumentIds.length === 0 || generateMutation.isPending}
+        disabled={
+          !canGenerate || selectedDocumentIds.length === 0 || generateMutation.isPending
+        }
         onClick={() => generateMutation.mutate()}
         sx={{ alignSelf: "flex-start" }}
       >
@@ -186,7 +187,11 @@ export function SummaryPanel({
                 </Box>
               ))}
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 2 }}
+            >
               Generated {new Date(summary.createdAt).toLocaleString()}
             </Typography>
             {canPublish && summary.status === "draft" && (
@@ -370,7 +375,9 @@ export function FlashcardsPanel({
             return (
               <Card key={card.id} variant="outlined">
                 <CardContent>
-                  <Typography variant="overline">Card {index + 1}</Typography>
+                  <Typography variant="body2" color="text.secondary" fontWeight={700}>
+                    Card {index + 1}
+                  </Typography>
                   <Typography fontWeight={650}>{card.front}</Typography>
                   {isRevealed && (
                     <Typography sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
@@ -467,9 +474,7 @@ export function QuizPanel({
     }) => submitQuizAttempt(input.quizId, input.answers),
     onSuccess: (result, input) =>
       setQuizState((current) =>
-        current?.quizId === input.quizId
-          ? { ...current, result }
-          : current,
+        current?.quizId === input.quizId ? { ...current, result } : current,
       ),
   });
   const quizzes = quizzesQuery.data?.pages.flatMap((page) => page.items) ?? [];
@@ -488,16 +493,13 @@ export function QuizPanel({
       : { quizId: quiz?.id ?? "", answers: {}, result: null };
   const canSubmit = Boolean(
     quiz &&
-      quiz.status === "published" &&
-      quiz.questions.length > 0 &&
-      quiz.questions.every((question) => currentState.answers[question.id]) &&
-      !attemptMutation.isPending,
+    quiz.status === "published" &&
+    quiz.questions.length > 0 &&
+    quiz.questions.every((question) => currentState.answers[question.id]) &&
+    !attemptMutation.isPending,
   );
   const resultsByQuestion = new Map(
-    (currentState.result?.results ?? []).map((result) => [
-      result.questionId,
-      result,
-    ]),
+    (currentState.result?.results ?? []).map((result) => [result.questionId, result]),
   );
 
   function toggleType(type: "mcq" | "true_false", checked: boolean) {
@@ -559,9 +561,7 @@ export function QuizPanel({
                 control={
                   <Checkbox
                     checked={types.includes("true_false")}
-                    onChange={(event) =>
-                      toggleType("true_false", event.target.checked)
-                    }
+                    onChange={(event) => toggleType("true_false", event.target.checked)}
                   />
                 }
                 label="True or false"
@@ -654,62 +654,71 @@ export function QuizPanel({
           {quiz.questions.map((question, index) => {
             const result = resultsByQuestion.get(question.id);
             return (
-              <Card key={question.id} variant="outlined">
-                <CardContent>
-                  <Typography variant="overline">
-                    Question {index + 1} ·{" "}
-                    {question.type === "mcq" ? "Multiple choice" : "True or false"}
-                  </Typography>
-                  <Typography fontWeight={650} sx={{ mb: 1 }}>
-                    {question.prompt}
-                  </Typography>
-                  <RadioGroup
-                    aria-label={`Answer for question ${index + 1}`}
-                    value={currentState.answers[question.id] ?? ""}
-                    onChange={(event) =>
-                      setQuizState({
-                        quizId: quiz.id,
-                        answers: {
-                          ...currentState.answers,
-                          [question.id]: event.target.value,
-                        },
-                        result: null,
-                      })
-                    }
-                  >
-                    {question.options.map((option) => (
-                      <FormControlLabel
-                        key={option.id}
-                        value={option.id}
-                        control={<Radio />}
-                        disabled={
-                          Boolean(currentState.result) || quiz.status !== "published"
-                        }
-                        label={option.text}
-                      />
-                    ))}
-                  </RadioGroup>
-                  {result && (
-                    <Stack spacing={0.5} sx={{ mt: 1 }}>
-                      <Chip
-                        label={result.correct ? "Correct" : "Incorrect"}
-                        color={result.correct ? "success" : "error"}
-                        size="small"
-                        sx={{ alignSelf: "flex-start" }}
-                      />
-                      {!result.correct && (
-                        <Typography variant="body2">
-                          Correct answer:{" "}
-                          {question.options.find(
-                            (option) => option.id === result.correctOptionId,
-                          )?.text ?? "Unavailable"}
-                        </Typography>
-                      )}
-                      <Typography variant="body2">{result.explanation}</Typography>
-                    </Stack>
-                  )}
-                </CardContent>
-              </Card>
+              <Box
+                key={question.id}
+                component="section"
+                aria-labelledby={`quiz-question-${index}`}
+                sx={{ pt: 2, borderTop: 1, borderColor: "divider" }}
+              >
+                <Typography
+                  id={`quiz-question-${index}`}
+                  component="h4"
+                  variant="subtitle1"
+                  fontWeight={700}
+                  sx={{ mb: 1 }}
+                >
+                  Question {index + 1} ·{" "}
+                  {question.type === "mcq" ? "Multiple choice" : "True or false"}
+                </Typography>
+                <Typography fontWeight={650} sx={{ mb: 1 }}>
+                  {question.prompt}
+                </Typography>
+                <RadioGroup
+                  aria-label={`Answer for question ${index + 1}`}
+                  value={currentState.answers[question.id] ?? ""}
+                  onChange={(event) =>
+                    setQuizState({
+                      quizId: quiz.id,
+                      answers: {
+                        ...currentState.answers,
+                        [question.id]: event.target.value,
+                      },
+                      result: null,
+                    })
+                  }
+                >
+                  {question.options.map((option) => (
+                    <FormControlLabel
+                      key={option.id}
+                      value={option.id}
+                      control={<Radio />}
+                      disabled={
+                        Boolean(currentState.result) || quiz.status !== "published"
+                      }
+                      label={option.text}
+                    />
+                  ))}
+                </RadioGroup>
+                {result && (
+                  <Stack spacing={0.5} sx={{ mt: 1 }}>
+                    <Chip
+                      label={result.correct ? "Correct" : "Incorrect"}
+                      color={result.correct ? "success" : "error"}
+                      size="small"
+                      sx={{ alignSelf: "flex-start" }}
+                    />
+                    {!result.correct && (
+                      <Typography variant="body2">
+                        Correct answer:{" "}
+                        {question.options.find(
+                          (option) => option.id === result.correctOptionId,
+                        )?.text ?? "Unavailable"}
+                      </Typography>
+                    )}
+                    <Typography variant="body2">{result.explanation}</Typography>
+                  </Stack>
+                )}
+              </Box>
             );
           })}
           {currentState.result ? (
@@ -769,7 +778,8 @@ function SavedContentSelect({
   emptyMessage?: string;
 }) {
   const labelId = `saved-content-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  if (isLoading) return <LinearProgress aria-label={`Loading ${label.toLowerCase()}`} />;
+  if (isLoading)
+    return <LinearProgress aria-label={`Loading ${label.toLowerCase()}`} />;
   if (isError) {
     return (
       <Stack spacing={1} alignItems="flex-start">

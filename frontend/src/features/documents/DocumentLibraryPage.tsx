@@ -1,24 +1,41 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   Alert,
   Box,
   Button,
   Card,
-  CardActions,
   CardContent,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
-  Grid,
+  FormControlLabel,
+  FormHelperText,
+  FormLabel,
+  IconButton,
   InputLabel,
   LinearProgress,
   MenuItem,
+  Radio,
+  RadioGroup,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -27,7 +44,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import {
+  CircleCheck,
+  CircleX,
+  Clock3,
+  Info,
+  LoaderCircle,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { ApiError, friendlyMessage } from "../../api/client";
 import {
   deleteDocument,
@@ -61,10 +87,12 @@ const statusLabels: Record<DocumentStatus, string> = {
   deleting: "Deleting",
 };
 
+/** Returns whether a document is still being processed or removed. */
 function isActiveStatus(status: DocumentStatus): boolean {
   return activeStatuses.includes(status);
 }
 
+/** Formats a document size with a readable binary unit. */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} bytes`;
   const units = ["KB", "MB", "GB"];
@@ -77,6 +105,7 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+/** Returns the document actions allowed for this user and course. */
 function canManageDocument(
   document: DocumentView,
   user: AuthenticatedUser,
@@ -88,6 +117,35 @@ function canManageDocument(
   return user.role === "learner";
 }
 
+/** Renders each document status with both a text label and a matching icon. */
+function DocumentStatusIndicator({ status }: { status: DocumentStatus }) {
+  const StatusIcon = {
+    uploaded: Clock3,
+    processing: LoaderCircle,
+    ready: CircleCheck,
+    failed: CircleX,
+    deleting: Trash2,
+  }[status];
+  const color =
+    status === "ready"
+      ? "success.main"
+      : status === "failed"
+        ? "error.main"
+        : status === "deleting"
+          ? "text.secondary"
+          : "info.main";
+
+  return (
+    <Stack direction="row" alignItems="center" spacing={0.75} sx={{ color }}>
+      <StatusIcon size={16} aria-hidden="true" />
+      <Typography component="span" variant="body2" fontWeight={600}>
+        {statusLabels[status]}
+      </Typography>
+    </Stack>
+  );
+}
+
+/** Loads course documents and provides upload, retry, and delete workflows. */
 export function DocumentLibraryPage() {
   const { courseId = "" } = useParams();
   const { user } = useAuth();
@@ -98,6 +156,7 @@ export function DocumentLibraryPage() {
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentView | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const courseQuery = useQuery({
     queryKey: ["courses", "detail", courseId],
     queryFn: () => getCourse(courseId),
@@ -167,6 +226,7 @@ export function DocumentLibraryPage() {
     [courseId, queryClient],
   );
 
+  /** Validates and starts an upload for the current course scope. */
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUploadError(null);
@@ -206,13 +266,6 @@ export function DocumentLibraryPage() {
 
   return (
     <Stack spacing={3}>
-      <Button
-        component={RouterLink}
-        to={`/courses/${courseId}`}
-        sx={{ alignSelf: "flex-start" }}
-      >
-        Back to course
-      </Button>
       <Box>
         <Typography component="h1" variant="h4" fontWeight={700}>
           Document library
@@ -231,9 +284,38 @@ export function DocumentLibraryPage() {
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
               {uploadScope === "course"
                 ? "This file will be shared as course material."
-                : "This file will be stored as your personal course note."}{" "}
-              Maximum upload size: {maxUploadSizeMb} MB. The server verifies file
-              contents and DOCX expanded size.
+                : "Your personal note is visible only to you."}
+            </Typography>
+            {uploadScope === "personal" && (
+              <FormControl component="fieldset" sx={{ mt: 1 }}>
+                <FormLabel id="document-upload-scope-label">Upload as</FormLabel>
+                <RadioGroup
+                  aria-labelledby="document-upload-scope-label"
+                  defaultValue="personal"
+                  name="document-upload-scope"
+                >
+                  <FormControlLabel
+                    value="personal"
+                    control={<Radio />}
+                    label="Personal note"
+                  />
+                  <FormControlLabel
+                    value="course"
+                    control={<Radio />}
+                    label="Course material"
+                    disabled
+                  />
+                </RadioGroup>
+                <FormHelperText>
+                  Only the course coach can publish shared course material.
+                </FormHelperText>
+              </FormControl>
+            )}
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+              Accepted: PDF, DOCX, TXT. Maximum size: {maxUploadSizeMb} MB.
+            </Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+              Document text is sent to Mistral to create searchable content.
             </Typography>
             <Box component="form" onSubmit={(event) => void handleUpload(event)}>
               <Stack
@@ -242,20 +324,24 @@ export function DocumentLibraryPage() {
                 spacing={1.5}
                 sx={{ mt: 2 }}
               >
-                <Button component="label" variant="outlined">
+                <Button
+                  variant="outlined"
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   Choose file
-                  <input
-                    key={fileInputKey}
-                    hidden
-                    type="file"
-                    accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                    aria-label="Choose a PDF, DOCX, or TXT file"
-                    onChange={(event) => {
-                      setSelectedFile(event.currentTarget.files?.[0] ?? null);
-                      setUploadError(null);
-                    }}
-                  />
                 </Button>
+                <input
+                  ref={fileInputRef}
+                  key={fileInputKey}
+                  hidden
+                  type="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  aria-label="Choose a PDF, DOCX, or TXT file"
+                  onChange={(event) => {
+                    setSelectedFile(event.currentTarget.files?.[0] ?? null);
+                    setUploadError(null);
+                  }}
+                />
                 <Typography aria-live="polite" color="text.secondary">
                   {selectedFile ? selectedFile.name : "No file selected"}
                 </Typography>
@@ -266,6 +352,11 @@ export function DocumentLibraryPage() {
                 >
                   {uploadMutation.isPending ? "Uploading..." : "Upload"}
                 </Button>
+                {!selectedFile && !uploadMutation.isPending && (
+                  <Typography color="text.secondary" variant="body2">
+                    Choose a file to enable Upload.
+                  </Typography>
+                )}
               </Stack>
             </Box>
             {uploadError && (
@@ -335,7 +426,7 @@ export function DocumentLibraryPage() {
           </Stack>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Filters apply to loaded pages. Load more to include older documents.
+          Filtering loaded documents.
         </Typography>
         {documentsQuery.isLoading && <LinearProgress aria-label="Loading documents" />}
         {documentsQuery.isError && (
@@ -363,37 +454,59 @@ export function DocumentLibraryPage() {
               : "No loaded documents match these filters."}
           </Alert>
         )}
-        <Grid container spacing={2}>
-          {visibleDocuments.map((document) => {
-            const canManage = user
-              ? canManageDocument(document, user, fullCourse.ownerId)
-              : false;
-            return (
-              <Grid key={document.id} size={{ xs: 12, md: 6 }}>
-                <DocumentCard
-                  document={document}
-                  canRetry={
-                    canManage &&
-                    document.status === "failed" &&
-                    fullCourse.status === "active" &&
-                    Boolean(user?.permissions.includes("document:upload"))
-                  }
-                  canDelete={
-                    canManage &&
-                    document.status !== "deleting" &&
-                    Boolean(user?.permissions.includes("document:delete"))
-                  }
-                  retryPending={
-                    retryMutation.isPending && retryMutation.variables === document.id
-                  }
-                  onRetry={() => retryMutation.mutate(document.id)}
-                  onDelete={() => setDocumentToDelete(document)}
-                  onDocumentsChanged={invalidateDocuments}
-                />
-              </Grid>
-            );
-          })}
-        </Grid>
+        <TableContainer
+          sx={{
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+          }}
+        >
+          <Table size="small" aria-label="Course documents">
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
+                  Size
+                </TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
+                  Uploaded
+                </TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {visibleDocuments.map((document) => {
+                const canManage = user
+                  ? canManageDocument(document, user, fullCourse.ownerId)
+                  : false;
+                return (
+                  <DocumentTableRow
+                    key={document.id}
+                    document={document}
+                    canRetry={
+                      canManage &&
+                      document.status === "failed" &&
+                      fullCourse.status === "active" &&
+                      Boolean(user?.permissions.includes("document:upload"))
+                    }
+                    canDelete={
+                      canManage &&
+                      document.status !== "deleting" &&
+                      Boolean(user?.permissions.includes("document:delete"))
+                    }
+                    retryPending={
+                      retryMutation.isPending && retryMutation.variables === document.id
+                    }
+                    onRetry={() => retryMutation.mutate(document.id)}
+                    onDelete={() => setDocumentToDelete(document)}
+                    onDocumentsChanged={invalidateDocuments}
+                  />
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
         {documentsQuery.hasNextPage && (
           <Button
             onClick={() => void documentsQuery.fetchNextPage()}
@@ -416,7 +529,7 @@ export function DocumentLibraryPage() {
         <DialogContent>
           <Typography>
             {documentToDelete
-              ? `${documentToDelete.filename} will be removed asynchronously.`
+              ? `${documentToDelete.filename} and its extracted content will be permanently deleted. This cannot be undone.`
               : ""}
           </Typography>
         </DialogContent>
@@ -435,7 +548,7 @@ export function DocumentLibraryPage() {
               if (documentToDelete) deleteMutation.mutate(documentToDelete.id);
             }}
           >
-            {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            {deleteMutation.isPending ? "Deleting..." : "Delete permanently"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -443,7 +556,8 @@ export function DocumentLibraryPage() {
   );
 }
 
-function DocumentCard({
+/** Displays one document row, refreshing active and failed status details. */
+function DocumentTableRow({
   document,
   canRetry,
   canDelete,
@@ -465,7 +579,7 @@ function DocumentCard({
   const statusQuery = useQuery({
     queryKey: ["documents", "status", document.id],
     queryFn: () => getDocumentStatus(document.id),
-    enabled: isActiveStatus(document.status),
+    enabled: isActiveStatus(document.status) || document.status === "failed",
     retry: 1,
     refetchInterval: (query) => {
       const currentStatus = query.state.data?.status ?? document.status;
@@ -498,70 +612,29 @@ function DocumentCard({
     }
   }, [currentDocument.status, onDocumentsChanged, statusQuery.error]);
 
-  const statusColor: "success" | "error" | "default" | "info" =
-    currentDocument.status === "ready"
-      ? "success"
-      : currentDocument.status === "failed"
-        ? "error"
-        : currentDocument.status === "deleting"
-          ? "default"
-          : "info";
+  const isMissingDeletedDocument =
+    currentDocument.status === "deleting" &&
+    statusQuery.error instanceof ApiError &&
+    statusQuery.error.status === 404;
 
   return (
-    <Card variant="outlined" sx={{ height: "100%" }}>
-      <CardContent>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
-          spacing={1}
-        >
-          <Typography component="h3" variant="h6" sx={{ overflowWrap: "anywhere" }}>
+    <>
+      <TableRow>
+        <TableCell component="th" scope="row" sx={{ verticalAlign: "top" }}>
+          <Typography fontWeight={600} sx={{ overflowWrap: "anywhere" }}>
             {currentDocument.filename}
           </Typography>
-          <Chip
-            label={statusLabels[currentDocument.status]}
-            color={statusColor}
-            size="small"
-            aria-label={`Document status: ${statusLabels[currentDocument.status]}`}
-          />
-        </Stack>
-        <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-          {currentDocument.scope === "course" ? "Course material" : "Personal note"} ·{" "}
-          {formatBytes(currentDocument.sizeBytes)} · Updated{" "}
-          {new Date(currentDocument.updatedAt).toLocaleString()}
-        </Typography>
-        {active && (
-          <LinearProgress
-            aria-label={`${statusLabels[currentDocument.status]} status`}
-            sx={{ mt: 1.5 }}
-          />
-        )}
-        {currentDocument.status === "failed" && (
-          <Alert severity="error" role="alert" sx={{ mt: 1.5 }}>
-            {currentDocument.errorDetail ||
-              currentDocument.errorCode ||
-              "Document processing failed without additional diagnostics."}
-          </Alert>
-        )}
-        {currentDocument.status === "failed" &&
-          currentDocument.extractionDiagnostics?.warnings.map((warning, index) => (
-            <Typography
-              key={`${index}-${warning}`}
-              color="text.secondary"
-              variant="body2"
+          <Typography color="text.secondary" variant="body2">
+            {currentDocument.scope === "course" ? "Course material" : "Personal note"}
+          </Typography>
+          {active && (
+            <LinearProgress
+              aria-label={`${statusLabels[currentDocument.status]} status`}
               sx={{ mt: 1 }}
-            >
-              {warning}
-            </Typography>
-          ))}
-        {statusQuery.isError &&
-          !(
-            currentDocument.status === "deleting" &&
-            statusQuery.error instanceof ApiError &&
-            statusQuery.error.status === 404
-          ) && (
-            <Stack spacing={1} alignItems="flex-start" sx={{ mt: 1.5 }}>
+            />
+          )}
+          {statusQuery.isError && !isMissingDeletedDocument && (
+            <Stack spacing={1} alignItems="flex-start" sx={{ mt: 1 }}>
               <ErrorNotice message={friendlyMessage(statusQuery.error)} />
               <Button
                 onClick={() => void statusQuery.refetch()}
@@ -571,42 +644,105 @@ function DocumentCard({
               </Button>
             </Stack>
           )}
-        {pollingTimedOut && active && (
-          <Alert severity="info" role="status" aria-live="polite" sx={{ mt: 1.5 }}>
-            Automatic status checks paused after two minutes.
-            <Button
-              size="small"
-              onClick={() => void statusQuery.refetch()}
-              disabled={statusQuery.isFetching}
-              sx={{ ml: 1 }}
-            >
-              Check status
-            </Button>
-          </Alert>
-        )}
-      </CardContent>
-      <CardActions>
-        <Button onClick={() => setDetailsOpen(true)}>Details</Button>
-        {canRetry && (
-          <Button onClick={onRetry} disabled={retryPending}>
-            {retryPending ? "Retrying..." : "Retry"}
-          </Button>
-        )}
-        {canDelete && (
-          <Button color="error" onClick={onDelete}>
-            Delete
-          </Button>
-        )}
-      </CardActions>
+          {pollingTimedOut && active && (
+            <Alert severity="info" role="status" aria-live="polite" sx={{ mt: 1 }}>
+              Automatic status checks paused after two minutes.
+              <Button
+                size="small"
+                onClick={() => void statusQuery.refetch()}
+                disabled={statusQuery.isFetching}
+                sx={{ ml: 1 }}
+              >
+                Check status
+              </Button>
+            </Alert>
+          )}
+        </TableCell>
+        <TableCell sx={{ verticalAlign: "top" }}>
+          <DocumentStatusIndicator status={currentDocument.status} />
+        </TableCell>
+        <TableCell
+          sx={{ display: { xs: "none", sm: "table-cell" }, verticalAlign: "top" }}
+        >
+          {formatBytes(currentDocument.sizeBytes)}
+        </TableCell>
+        <TableCell
+          sx={{ display: { xs: "none", sm: "table-cell" }, verticalAlign: "top" }}
+        >
+          {new Date(currentDocument.createdAt).toLocaleDateString()}
+        </TableCell>
+        <TableCell sx={{ verticalAlign: "top" }}>
+          <Stack direction="row" spacing={0.25}>
+            <Tooltip title={`View details for ${currentDocument.filename}`}>
+              <IconButton
+                aria-label={`View details for ${currentDocument.filename}`}
+                onClick={() => setDetailsOpen(true)}
+              >
+                <Info size={18} aria-hidden="true" />
+              </IconButton>
+            </Tooltip>
+            {canRetry && (
+              <Tooltip title={`Retry ${currentDocument.filename}`}>
+                <span>
+                  <IconButton
+                    aria-label={`Retry ${currentDocument.filename}`}
+                    onClick={onRetry}
+                    disabled={retryPending}
+                  >
+                    {retryPending ? (
+                      <LoaderCircle size={18} aria-hidden="true" />
+                    ) : (
+                      <RotateCcw size={18} aria-hidden="true" />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+            {canDelete && (
+              <Tooltip title={`Delete ${currentDocument.filename}`}>
+                <IconButton
+                  aria-label={`Delete ${currentDocument.filename}`}
+                  color="error"
+                  onClick={onDelete}
+                >
+                  <Trash2 size={18} aria-hidden="true" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
+        </TableCell>
+      </TableRow>
+      {currentDocument.status === "failed" && (
+        <TableRow>
+          <TableCell colSpan={5} sx={{ pt: 0 }}>
+            <Stack spacing={1}>
+              <Alert severity="error">
+                {currentDocument.errorDetail?.trim() ||
+                  "Document processing failed. Retry the upload or choose another file."}
+              </Alert>
+              {currentDocument.extractionDiagnostics?.warnings.map((warning, index) => (
+                <Typography
+                  key={`${index}-${warning}`}
+                  color="text.secondary"
+                  variant="body2"
+                >
+                  {warning}
+                </Typography>
+              ))}
+            </Stack>
+          </TableCell>
+        </TableRow>
+      )}
       <DocumentDetailsDialog
         document={currentDocument}
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
       />
-    </Card>
+    </>
   );
 }
 
+/** Shows the metadata and safe processing diagnostics for one document. */
 function DocumentDetailsDialog({
   document,
   open,
