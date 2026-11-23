@@ -113,6 +113,13 @@ export const courseSchema = z
       .max(100)
       .optional(),
     status: z.enum(["active", "archived"]),
+    approvalStatus: z
+      .enum(["pending", "approved", "changes_requested"])
+      .optional(),
+    approvalNote: z.string().max(1000).nullable().optional(),
+    approvalRequestedAt: timestampSchema.optional(),
+    reviewedBy: idSchema.nullable().optional(),
+    reviewedAt: timestampSchema.nullable().optional(),
     archivedAt: timestampSchema.nullable().optional(),
     archivedBy: idSchema.nullable().optional(),
     version: z.number().int().positive(),

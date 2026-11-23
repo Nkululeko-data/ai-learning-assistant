@@ -42,6 +42,34 @@ npm run dev
 
 The API listens on `http://localhost:3000` by default. Change `PORT` in
 `.env` to use another port.
+Development logs are formatted for readability in the terminal; `LOG_LEVEL`
+controls their verbosity. Production logs remain structured JSON. Set
+`INCEPTION_MODEL` and `GROQ_MODEL` in `.env` to choose the LLM models.
+
+## Store deployment secrets in GitHub
+
+This backend reads credentials from environment variables; it does not load a
+`credentials.json` file. Do not commit provider keys, JWT secrets, or service
+account JSON files. The repository `.gitignore` excludes local `.env` files
+and common credentials JSON filenames. `backend/.env.example` contains blank
+placeholders and is safe to commit; put real values only in your local
+`backend/.env`.
+
+For GitHub Actions, add secrets under **Settings > Secrets and variables >
+Actions > New repository secret**. Use these names when a workflow needs them:
+
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `MISTRAL_API_KEY`
+- At least one of `INCEPTION_API_KEY` or `GROQ_API_KEY`
+- `BOOTSTRAP_ADMIN_PASSWORD` only for a job that runs the initial bootstrap
+
+Map secrets into the specific workflow job's environment using
+`${{ secrets.SECRET_NAME }}`; never place secret values in workflow YAML,
+README examples, or committed JSON. This repository does not currently include
+a GitHub Actions workflow, so adding repository secrets alone will not run or
+deploy the backend. Configure the same values in your deployment platform's
+secret manager for production.
 
 ## Verify the server
 
@@ -76,9 +104,10 @@ verification and operating artefacts:
 - **B3 — Accounts and access control:** registration and login, access and
   refresh tokens, permissions, coach approval, and protected operations. Test
   successful and rejected authentication/authorization flows.
-- **B4 — Courses and enrolments:** course management and discovery, learner
-  join requests, coach decisions, ownership checks, and archive rules. Test
-  both allowed and denied course/member actions.
+- **B4 — Courses and enrolments:** coach course creation and preparation,
+  administrator approval before learner discovery, learner join requests,
+  coach decisions, ownership checks, and archive rules. Test both allowed and
+  denied course/member actions.
 - **B5 — Background jobs:** persistent jobs, retries and recovery, status
   handling, and graceful shutdown. Test job completion, failure/retry, and
   recovery behavior.
@@ -173,11 +202,12 @@ verification and operating artefacts:
     "comment": "The explanation was clear"
   }
   ```
-- **B11 — Administration and privacy erasure:** admins can list safe user
-  metadata, change roles and coach permission overrides, suspend or restore
-  accounts, issue one-time password reset tokens, and review redacted audit
-  and AI execution metadata. Effective non-secret insight settings can be read
-  and changed by authorized admins. Privacy erasure is queued as a persistent
+- **B11 — Administration and privacy erasure:** admins can review submitted
+  courses, group safe user metadata by role, change roles and coach permission
+  overrides, suspend or restore accounts, issue one-time password reset
+  tokens, and review redacted audit and AI execution metadata. Effective
+  non-secret insight settings can be read and changed by authorized admins.
+  Privacy erasure is queued as a persistent
   job and deletes conversations, personal documents/chunks/uploads, private
   learning content, quiz attempts, and refresh tokens. It then tombstones the
   user and pseudonymizes retained feedback/activity records. Admin APIs never

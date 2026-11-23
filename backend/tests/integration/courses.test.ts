@@ -215,20 +215,30 @@ async function registerCoach(context: CourseTestContext, email: string): Promise
  * Creates a course as the supplied coach.
  */
 async function createCourse(
-  app: CourseTestContext["app"],
+  context: CourseTestContext,
   token: string,
   name = "Biology",
 ): Promise<{ id: string; version: number }> {
-  const response = await request(app)
+  const response = await request(context.app)
     .post("/api/v1/courses")
     .set("Authorization", `Bearer ${token}`)
     .send({ name, description: "Introductory biology" });
   if (response.status !== 201) {
     throw new Error(`Course creation failed with ${response.status}`);
   }
+  const approval = await request(context.app)
+    .patch(`/api/v1/admin/courses/${response.body.data.id}/approval`)
+    .set("Authorization", `Bearer ${context.adminToken}`)
+    .send({
+      decision: "approved",
+      version: response.body.data.version as number,
+    });
+  if (approval.status !== 200) {
+    throw new Error(`Course approval failed with ${approval.status}`);
+  }
   return {
     id: response.body.data.id as string,
-    version: response.body.data.version as number,
+    version: approval.body.data.version as number,
   };
 }
 
@@ -238,17 +248,17 @@ async function verifiesCoachOwnedCourseListing(): Promise<void> {
   const otherCoach = await registerCoach(context, "course-list-other@example.test");
   const learner = await registerLearner(context.app, "course-list-learner@example.test");
   const firstOwnedCourse = await createCourse(
-    context.app,
+    context,
     owner.token,
     "Owned course one",
   );
   const secondOwnedCourse = await createCourse(
-    context.app,
+    context,
     owner.token,
     "Owned course two",
   );
   const otherCourse = await createCourse(
-    context.app,
+    context,
     otherCoach.token,
     "Other coach course",
   );
@@ -281,12 +291,110 @@ async function verifiesCoachOwnedCourseListing(): Promise<void> {
   expect(learnerAccess.status).toBe(403);
 }
 
+async function verifiesCourseApprovalAndResubmission(): Promise<void> {
+  const context = await createCourseTestContext();
+  const coach = await registerCoach(context, "approval-coach@example.test");
+  const learner = await registerLearner(
+    context.app,
+    "approval-learner@example.test",
+  );
+  const created = await request(context.app)
+    .post("/api/v1/courses")
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ name: "Pending Biology", description: "Course awaiting review" });
+  expect(created.status).toBe(201);
+  expect(created.body.data.approvalStatus).toBe("pending");
+
+  const learnerCatalog = await request(context.app)
+    .get("/api/v1/courses")
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerCatalog.body.data).toHaveLength(0);
+  const learnerPreview = await request(context.app)
+    .get(`/api/v1/courses/${created.body.data.id}/preview`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerPreview.status).toBe(404);
+  const learnerDetails = await request(context.app)
+    .get(`/api/v1/courses/${created.body.data.id}`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerDetails.status).toBe(404);
+  const learnerJoin = await request(context.app)
+    .post(`/api/v1/courses/${created.body.data.id}/join`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerJoin.status).toBe(409);
+
+  const queue = await request(context.app)
+    .get("/api/v1/admin/courses/approval-queue")
+    .set("Authorization", `Bearer ${context.adminToken}`);
+  expect(queue.status).toBe(200);
+  expect(queue.body.data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: created.body.data.id,
+        approvalStatus: "pending",
+        owner: expect.objectContaining({ displayName: "Test Coach" }),
+      }),
+    ]),
+  );
+
+  const changesRequested = await request(context.app)
+    .patch(`/api/v1/admin/courses/${created.body.data.id}/approval`)
+    .set("Authorization", `Bearer ${context.adminToken}`)
+    .send({
+      decision: "changes_requested",
+      note: "Please add an overview.",
+      version: created.body.data.version as number,
+    });
+  expect(changesRequested.status).toBe(200);
+  expect(changesRequested.body.data.approvalStatus).toBe("changes_requested");
+
+  const coachCourses = await request(context.app)
+    .get("/api/v1/me/courses")
+    .set("Authorization", `Bearer ${coach.token}`);
+  expect(coachCourses.body.data[0]).toMatchObject({
+    approvalStatus: "changes_requested",
+    approvalNote: "Please add an overview.",
+  });
+  const edited = await request(context.app)
+    .patch(`/api/v1/courses/${created.body.data.id}`)
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({
+      name: "Reviewed Biology",
+      version: changesRequested.body.data.version as number,
+    });
+  expect(edited.status).toBe(200);
+  const resubmitted = await request(context.app)
+    .post(`/api/v1/courses/${created.body.data.id}/submit-for-approval`)
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ version: edited.body.data.version as number });
+  expect(resubmitted.status).toBe(200);
+  expect(resubmitted.body.data.approvalStatus).toBe("pending");
+
+  const approval = await request(context.app)
+    .patch(`/api/v1/admin/courses/${created.body.data.id}/approval`)
+    .set("Authorization", `Bearer ${context.adminToken}`)
+    .send({
+      decision: "approved",
+      version: resubmitted.body.data.version as number,
+    });
+  expect(approval.status).toBe(200);
+  expect(approval.body.data.approvalStatus).toBe("approved");
+
+  const availableCourses = await request(context.app)
+    .get("/api/v1/courses")
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(availableCourses.body.data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: created.body.data.id, name: "Reviewed Biology" }),
+    ]),
+  );
+}
+
 async function verifiesCourseLessonsAccessAndVersioning(): Promise<void> {
   const context = await createCourseTestContext();
   const owner = await registerCoach(context, "lesson-owner@example.test");
   const otherCoach = await registerCoach(context, "lesson-other@example.test");
   const learner = await registerLearner(context.app, "lesson-learner@example.test");
-  const course = await createCourse(context.app, owner.token, "Human Biology");
+  const course = await createCourse(context, owner.token, "Human Biology");
   const lesson = {
     id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7912",
     title: "Cells and their functions",
@@ -415,8 +523,8 @@ async function verifiesCourseOwnershipAndDiscovery(): Promise<void> {
   const owner = await registerCoach(context, "owner@example.test");
   const otherCoach = await registerCoach(context, "other@example.test");
   const learner = await registerLearner(context.app, "learner@example.test");
-  const course = await createCourse(context.app, owner.token);
-  const secondCourse = await createCourse(context.app, owner.token, "Chemistry");
+  const course = await createCourse(context, owner.token);
+  const secondCourse = await createCourse(context, owner.token, "Chemistry");
 
   const discovery = await request(context.app).get("/api/v1/courses").set("Authorization", `Bearer ${learner.token}`);
   expect(discovery.status).toBe(200);
@@ -473,7 +581,7 @@ async function verifiesJoinApprovalAndAccess(): Promise<void> {
   const context = await createCourseTestContext();
   const coach = await registerCoach(context, "coach@example.test");
   const learner = await registerLearner(context.app, "joiner@example.test");
-  const course = await createCourse(context.app, coach.token);
+  const course = await createCourse(context, coach.token);
 
   const firstRequest = await request(context.app)
     .post(`/api/v1/courses/${course.id}/join`)
@@ -525,6 +633,81 @@ async function verifiesJoinApprovalAndAccess(): Promise<void> {
   expect(myEnrolments.body.data[0].status).toBe("removed");
 }
 
+async function verifiesCourseRosterAndCoachRemoval(): Promise<void> {
+  const context = await createCourseTestContext();
+  const coach = await registerCoach(context, "roster-coach@example.test");
+  const learner = await registerLearner(context.app, "roster-learner@example.test");
+  const pendingLearner = await registerLearner(context.app, "roster-pending@example.test");
+  const course = await createCourse(context, coach.token);
+
+  const learnerRequest = await request(context.app)
+    .post(`/api/v1/courses/${course.id}/join`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  const pendingRequest = await request(context.app)
+    .post(`/api/v1/courses/${course.id}/join`)
+    .set("Authorization", `Bearer ${pendingLearner.token}`);
+  const pendingRoster = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/learners`)
+    .set("Authorization", `Bearer ${pendingLearner.token}`);
+  expect(pendingRoster.status).toBe(404);
+
+  const approval = await request(context.app)
+    .patch(`/api/v1/enrolments/${learnerRequest.body.data.id}`)
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ status: "approved" });
+  expect(approval.status).toBe(200);
+
+  const coachRoster = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/learners`)
+    .set("Authorization", `Bearer ${coach.token}`);
+  expect(coachRoster.status).toBe(200);
+  expect(coachRoster.body.data).toEqual([
+    expect.objectContaining({
+      id: learnerRequest.body.data.id,
+      learnerId: learner.id,
+      displayName: "Test Learner",
+    }),
+  ]);
+  expect(coachRoster.body.data[0].email).toBeUndefined();
+
+  const learnerRoster = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/learners`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(learnerRoster.status).toBe(200);
+  expect(learnerRoster.body.data[0].displayName).toBe("Test Learner");
+
+  const missingReason = await request(context.app)
+    .post(`/api/v1/enrolments/${learnerRequest.body.data.id}/remove`)
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ reason: "   " });
+  expect(missingReason.status).toBe(422);
+
+  const removalReason = "Repeated disruption during class discussions.";
+  const removed = await request(context.app)
+    .post(`/api/v1/enrolments/${learnerRequest.body.data.id}/remove`)
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ reason: removalReason });
+  expect(removed.status).toBe(200);
+  expect(removed.body.data.status).toBe("removed");
+  expect(removed.body.data.decisionNote).toBe(removalReason);
+
+  const ownEnrolments = await request(context.app)
+    .get("/api/v1/me/enrolments")
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(ownEnrolments.body.data[0].decisionNote).toBe(removalReason);
+
+  const removedLearnerLessons = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/lessons`)
+    .set("Authorization", `Bearer ${learner.token}`);
+  expect(removedLearnerLessons.status).toBe(404);
+
+  const updatedRoster = await request(context.app)
+    .get(`/api/v1/courses/${course.id}/learners`)
+    .set("Authorization", `Bearer ${coach.token}`);
+  expect(updatedRoster.body.data).toEqual([]);
+  expect(pendingRequest.body.data.status).toBe("pending");
+}
+
 /**
  * Verifies enrolment decisions serialize and conflicting decisions are rejected.
  */
@@ -532,7 +715,7 @@ async function verifiesConflictingEnrolmentDecisions(): Promise<void> {
   const context = await createCourseTestContext();
   const coach = await registerCoach(context, "decision-coach@example.test");
   const learner = await registerLearner(context.app, "decision-learner@example.test");
-  const course = await createCourse(context.app, coach.token);
+  const course = await createCourse(context, coach.token);
   const join = await request(context.app)
     .post(`/api/v1/courses/${course.id}/join`)
     .set("Authorization", `Bearer ${learner.token}`);
@@ -558,7 +741,7 @@ async function verifiesReRequestCooldown(): Promise<void> {
   const context = await createCourseTestContext();
   const coach = await registerCoach(context, "cooldown-coach@example.test");
   const learner = await registerLearner(context.app, "cooldown-learner@example.test");
-  const course = await createCourse(context.app, coach.token);
+  const course = await createCourse(context, coach.token);
   const join = await request(context.app)
     .post(`/api/v1/courses/${course.id}/join`)
     .set("Authorization", `Bearer ${learner.token}`);
@@ -594,25 +777,25 @@ async function verifiesCourseVersioningAndArchiveRules(): Promise<void> {
   const context = await createCourseTestContext();
   const coach = await registerCoach(context, "archive-coach@example.test");
   const learner = await registerLearner(context.app, "archive-learner@example.test");
-  const course = await createCourse(context.app, coach.token);
+  const course = await createCourse(context, coach.token);
 
   const updated = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${coach.token}`)
-    .send({ name: "Updated Biology", version: 1 });
+    .send({ name: "Updated Biology", version: course.version });
   expect(updated.status).toBe(200);
-  expect(updated.body.data.version).toBe(2);
+  expect(updated.body.data.version).toBe(course.version + 1);
 
   const stale = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${coach.token}`)
-    .send({ name: "Stale", version: 1 });
+    .send({ name: "Stale", version: course.version });
   expect(stale.status).toBe(409);
 
   const archived = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${coach.token}`)
-    .send({ status: "archived", version: 2 });
+    .send({ status: "archived", version: updated.body.data.version as number });
   expect(archived.body.data.status).toBe("archived");
 
   const archivedPreview = await request(context.app)
@@ -629,7 +812,7 @@ async function verifiesCourseVersioningAndArchiveRules(): Promise<void> {
   const archivedEdit = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${coach.token}`)
-    .send({ name: "Archived edit", version: 3 });
+    .send({ name: "Archived edit", version: archived.body.data.version as number });
   expect(archivedEdit.status).toBe(409);
   expect(archivedEdit.body.error.code).toBe("COURSE_ARCHIVED");
 
@@ -641,9 +824,11 @@ async function verifiesCourseVersioningAndArchiveRules(): Promise<void> {
   const reactivated = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${coach.token}`)
-    .send({ status: "active", version: 3 });
+    .send({ status: "active", version: archived.body.data.version as number });
   expect(reactivated.body.data.status).toBe("active");
-  expect(reactivated.body.data.version).toBe(4);
+  expect(reactivated.body.data.version).toBe(
+    (archived.body.data.version as number) + 1,
+  );
 }
 
 /**
@@ -654,26 +839,26 @@ async function verifiesAdminOwnerReassignmentAndArchive(): Promise<void> {
   const formerOwner = await registerCoach(context, "former-owner@example.test");
   const newOwner = await registerCoach(context, "new-owner@example.test");
   const learner = await registerLearner(context.app, "target-learner@example.test");
-  const course = await createCourse(context.app, formerOwner.token);
+  const course = await createCourse(context, formerOwner.token);
 
   const reassigned = await request(context.app)
     .patch(`/api/v1/admin/courses/${course.id}/owner`)
     .set("Authorization", `Bearer ${context.adminToken}`)
-    .send({ ownerId: newOwner.id, version: 1 });
+    .send({ ownerId: newOwner.id, version: course.version });
   expect(reassigned.status).toBe(200);
   expect(reassigned.body.data.ownerId).toBe(newOwner.id);
-  expect(reassigned.body.data.version).toBe(2);
+  expect(reassigned.body.data.version).toBe(course.version + 1);
 
   const oldOwnerCannotEdit = await request(context.app)
     .patch(`/api/v1/courses/${course.id}`)
     .set("Authorization", `Bearer ${formerOwner.token}`)
-    .send({ name: "No longer owned", version: 2 });
+    .send({ name: "No longer owned", version: reassigned.body.data.version as number });
   expect(oldOwnerCannotEdit.status).toBe(404);
 
   const archived = await request(context.app)
     .patch(`/api/v1/admin/courses/${course.id}`)
     .set("Authorization", `Bearer ${context.adminToken}`)
-    .send({ status: "archived", version: 2 });
+    .send({ status: "archived", version: reassigned.body.data.version as number });
   expect(archived.status).toBe(200);
   expect(archived.body.data.status).toBe("archived");
 
@@ -689,30 +874,82 @@ async function verifiesAdminOwnerReassignmentAndArchive(): Promise<void> {
   const blockedReactivation = await request(context.app)
     .patch(`/api/v1/admin/courses/${course.id}`)
     .set("Authorization", `Bearer ${context.adminToken}`)
-    .send({ status: "active", version: 3 });
+    .send({ status: "active", version: archived.body.data.version as number });
   expect(blockedReactivation.status).toBe(409);
 
   const reassignedAgain = await request(context.app)
     .patch(`/api/v1/admin/courses/${course.id}/owner`)
     .set("Authorization", `Bearer ${context.adminToken}`)
-    .send({ ownerId: formerOwner.id, version: 3 });
+    .send({ ownerId: formerOwner.id, version: archived.body.data.version as number });
   expect(reassignedAgain.status).toBe(200);
-  expect(reassignedAgain.body.data.version).toBe(4);
+  expect(reassignedAgain.body.data.version).toBe(
+    (archived.body.data.version as number) + 1,
+  );
   const reactivated = await request(context.app)
     .patch(`/api/v1/admin/courses/${course.id}`)
     .set("Authorization", `Bearer ${context.adminToken}`)
-    .send({ status: "active", version: 4 });
+    .send({ status: "active", version: reassignedAgain.body.data.version as number });
   expect(reactivated.status).toBe(200);
   expect(reactivated.body.data.status).toBe("active");
 }
 
+/**
+ * Verifies administrators with course-management permission can list every course
+ * as metadata without changing public discovery visibility.
+ */
+async function verifiesAdminCourseCatalogIncludesPendingAndArchived(): Promise<void> {
+  const context = await createCourseTestContext();
+  const coach = await registerCoach(context, "catalog-coach@example.test");
+  const pendingCourse = await request(context.app)
+    .post("/api/v1/courses")
+    .set("Authorization", `Bearer ${coach.token}`)
+    .send({ name: "Pending course", description: "Introductory biology" });
+  expect(pendingCourse.status).toBe(201);
+  const archivedCourse = await createCourse(context, coach.token, "Archived course");
+  const archived = await request(context.app)
+    .patch(`/api/v1/admin/courses/${archivedCourse.id}`)
+    .set("Authorization", `Bearer ${context.adminToken}`)
+    .send({ status: "archived", version: archivedCourse.version });
+  expect(archived.status).toBe(200);
+
+  const adminCatalog = await request(context.app)
+    .get("/api/v1/courses?limit=100")
+    .set("Authorization", `Bearer ${context.adminToken}`);
+
+  expect(adminCatalog.status).toBe(200);
+  expect(adminCatalog.body.data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: pendingCourse.body.data.id,
+        ownerId: coach.id,
+        approvalStatus: "pending",
+      }),
+      expect.objectContaining({
+        id: archivedCourse.id,
+        ownerId: coach.id,
+        status: "archived",
+        approvalStatus: "approved",
+      }),
+    ]),
+  );
+}
+
 describe("courses and enrolments", () => {
+  test(
+    "keeps new courses hidden until admin approval and supports coach resubmission",
+    verifiesCourseApprovalAndResubmission,
+  );
   test("lists only the authenticated coach's courses", verifiesCoachOwnedCourseListing);
   test("stores ordered lessons and restricts them to course members", verifiesCourseLessonsAccessAndVersioning);
   test("enforces course ownership and safe discovery", verifiesCourseOwnershipAndDiscovery);
   test("keeps pending learners on course-card access until approval", verifiesJoinApprovalAndAccess);
+  test("shows course members to classmates and lets owners remove learners with a reason", verifiesCourseRosterAndCoachRemoval);
   test("rejects conflicting concurrent enrolment decisions", verifiesConflictingEnrolmentDecisions);
   test("enforces the configured enrolment re-request cooldown", verifiesReRequestCooldown);
   test("enforces optimistic versions and archive rules", verifiesCourseVersioningAndArchiveRules);
   test("allows admin course reassignment and archive fallback", verifiesAdminOwnerReassignmentAndArchive);
+  test(
+    "lists pending and archived courses in the admin catalog",
+    verifiesAdminCourseCatalogIncludesPendingAndArchived,
+  );
 });

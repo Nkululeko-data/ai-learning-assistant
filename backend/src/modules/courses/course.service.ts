@@ -3,8 +3,10 @@ import { z } from "zod";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { CourseRecord, EnrolmentRecord } from "../../infra/jsonstore/system-collections";
 import type {
+  CourseApprovalDecisionRequest,
   CreateCourseRequest,
   EnrolmentDecisionRequest,
+  RemoveEnrolledLearnerRequest,
   UpdateCourseLessonsRequest,
   UpdateCourseRequest,
 } from "./course.schemas";
@@ -19,11 +21,24 @@ export interface CourseCard {
 export interface CourseView extends CourseCard {
   ownerId: string;
   status: CourseRecord["status"];
+  approvalStatus: NonNullable<CourseRecord["approvalStatus"]>;
+  approvalNote: string | null;
+  approvalRequestedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
   version: number;
   archivedAt?: string | null;
   archivedBy?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CourseApprovalView extends CourseView {
+  owner: {
+    id: string;
+    displayName: string;
+    email: string;
+  };
 }
 
 export interface CoursePreviewView {
@@ -64,6 +79,13 @@ export interface JoinRequestView extends EnrolmentRecord {
   };
 }
 
+export interface CourseLearnerView {
+  id: string;
+  learnerId: string;
+  displayName: string;
+  enrolledAt: string;
+}
+
 export interface PageOptions {
   limit: number;
   cursor?: string | undefined;
@@ -87,7 +109,7 @@ export class CourseService {
   ) {}
 
   /**
-   * Creates a course for an active coach with the course:create permission.
+   * Creates a course for an active coach and queues it for administrator review.
    */
   public async createCourse(
     actor: AuthenticatedUser,
@@ -104,6 +126,11 @@ export class CourseService {
         ...(input.description === undefined ? {} : { description: input.description }),
         lessons: [],
         status: "active",
+        approvalStatus: "pending",
+        approvalNote: null,
+        approvalRequestedAt: now,
+        reviewedBy: null,
+        reviewedAt: null,
         archivedAt: null,
         archivedBy: null,
         version: 1,
@@ -131,8 +158,18 @@ export class CourseService {
    * Lists active course cards and archived courses accessible to the caller.
    */
   public listCourses(actor: AuthenticatedUser, pageOptions: PageOptions): PageResult<CourseCard | CourseView> {
+    if (actor.role === "admin" && actor.permissions.includes("user:manage")) {
+      const page = paginate(this.repository.listCourses(), pageOptions);
+      return {
+        items: page.items.map(toCourseView),
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    }
+
     const accessible = this.repository.listCourses().filter((course) => {
-      if (course.status === "active" || course.ownerId === actor.id) return true;
+      if (course.ownerId === actor.id) return true;
+      if (courseApprovalStatus(course) !== "approved") return false;
+      if (course.status === "active") return true;
       return this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
     });
     const page = paginate(accessible, pageOptions);
@@ -165,6 +202,32 @@ export class CourseService {
     };
   }
 
+  public listCourseApprovalQueue(
+    actor: AuthenticatedUser,
+    pageOptions: PageOptions,
+  ): PageResult<CourseApprovalView> {
+    assertAdmin(actor);
+    requirePermission(actor, "user:manage");
+    const pending = this.repository
+      .listCourses()
+      .filter((course) => courseApprovalStatus(course) === "pending")
+      .map((course) => {
+        const owner = this.repository.findUserById(course.ownerId);
+        if (!owner) {
+          throw new Error(`Course "${course.id}" references a missing owner`);
+        }
+        return {
+          ...toCourseView(course),
+          owner: {
+            id: owner.id,
+            displayName: owner.displayName,
+            email: owner.email,
+          },
+        };
+      });
+    return paginate(pending, pageOptions);
+  }
+
   /**
    * Returns full details only to the owner or an approved learner.
    */
@@ -172,7 +235,11 @@ export class CourseService {
     const course = this.requireCourse(courseId);
     const enrolment = this.repository.findEnrolment(course.id, actor.id);
     const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
-    if (course.status === "archived" && !hasCourseAccess) {
+    if (
+      (course.status === "archived" ||
+        courseApprovalStatus(course) !== "approved") &&
+      !hasCourseAccess
+    ) {
       throw new NotFoundError();
     }
     return hasCourseAccess ? toCourseView(course) : toCourseCard(course);
@@ -185,7 +252,11 @@ export class CourseService {
     const course = this.requireCourse(courseId);
     const enrolment = this.repository.findEnrolment(course.id, actor.id);
     const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
-    if (course.status === "archived" && !hasCourseAccess) {
+    if (
+      (course.status === "archived" ||
+        courseApprovalStatus(course) !== "approved") &&
+      !hasCourseAccess
+    ) {
       throw new NotFoundError();
     }
     return {
@@ -436,6 +507,102 @@ export class CourseService {
     });
   }
 
+  public async decideCourseApproval(
+    actor: AuthenticatedUser,
+    courseId: string,
+    input: CourseApprovalDecisionRequest,
+    requestId: string,
+  ): Promise<CourseView> {
+    assertAdmin(actor);
+    requirePermission(actor, "user:manage");
+    return this.repository.withMutationLock(async () => {
+      const current = this.requireCourse(courseId);
+      assertExpectedVersion(current, input.version);
+      if (courseApprovalStatus(current) !== "pending") {
+        throw new ConflictError("Only courses awaiting review can be decided");
+      }
+      if (input.decision === "approved") {
+        const owner = this.repository.findUserById(current.ownerId);
+        const role = owner ? this.repository.findRoleById(owner.roleId) : null;
+        if (!owner || owner.status !== "active" || role?.name !== "coach") {
+          throw new ConflictError(
+            "The course owner must be an active coach before approval",
+          );
+        }
+      }
+
+      const now = new Date().toISOString();
+      const updated = await this.repository.updateCourse(
+        courseId,
+        (course) => ({
+          ...course,
+          approvalStatus: input.decision,
+          approvalNote:
+            input.decision === "changes_requested"
+              ? input.note?.trim() || null
+              : null,
+          reviewedBy: actor.id,
+          reviewedAt: now,
+          updatedAt: now,
+        }),
+        input.version,
+      );
+      await this.audit(
+        actor,
+        input.decision === "approved"
+          ? "course.approval_granted"
+          : "course.changes_requested",
+        updated.id,
+        courseAuditState(current),
+        courseAuditState(updated),
+        requestId,
+      );
+      return toCourseView(updated);
+    });
+  }
+
+  public async submitCourseForApproval(
+    actor: AuthenticatedUser,
+    courseId: string,
+    version: number,
+    requestId: string,
+  ): Promise<CourseView> {
+    assertCoach(actor);
+    requirePermission(actor, "course:edit");
+    return this.repository.withMutationLock(async () => {
+      const current = this.requireOwnedCourse(actor, courseId);
+      assertExpectedVersion(current, version);
+      if (courseApprovalStatus(current) !== "changes_requested") {
+        throw new ConflictError(
+          "Only courses returned for changes can be resubmitted",
+        );
+      }
+      const now = new Date().toISOString();
+      const updated = await this.repository.updateCourse(
+        courseId,
+        (course) => ({
+          ...course,
+          approvalStatus: "pending",
+          approvalNote: null,
+          approvalRequestedAt: now,
+          reviewedBy: null,
+          reviewedAt: null,
+          updatedAt: now,
+        }),
+        version,
+      );
+      await this.audit(
+        actor,
+        "course.resubmitted",
+        updated.id,
+        courseAuditState(current),
+        courseAuditState(updated),
+        requestId,
+      );
+      return toCourseView(updated);
+    });
+  }
+
   /**
    * Creates or reopens the caller's single enrolment request for an active course.
    */
@@ -449,6 +616,13 @@ export class CourseService {
       const course = this.requireCourse(courseId);
       if (course.status !== "active") {
         throw new AppError("COURSE_ARCHIVED", 409, "Archived courses do not accept new enrolment requests");
+      }
+      if (courseApprovalStatus(course) !== "approved") {
+        throw new AppError(
+          "COURSE_NOT_AVAILABLE",
+          409,
+          "This course is not available for enrolment",
+        );
       }
       if (course.ownerId === actor.id) {
         throw new ConflictError("Course owners cannot request enrolment in their course");
@@ -549,6 +723,81 @@ export class CourseService {
         };
       });
     return paginate(requests, pageOptions);
+  }
+
+  /**
+   * Lists active learners who can access a course to its owner and members.
+   */
+  public listCourseLearners(
+    actor: AuthenticatedUser,
+    courseId: string,
+    pageOptions: PageOptions,
+  ): PageResult<CourseLearnerView> {
+    const course = this.requireCourseAccess(actor, courseId);
+    const learners = this.repository
+      .listEnrolmentsByCourse(course.id)
+      .filter((enrolment) => enrolment.status === "approved")
+      .flatMap((enrolment) => {
+        const learner = this.repository.findUserById(enrolment.userId);
+        if (!learner) {
+          throw new Error(`Enrolment "${enrolment.id}" references a missing user`);
+        }
+        const role = this.repository.findRoleById(learner.roleId);
+        if (!role) {
+          throw new Error(`User "${learner.id}" references a missing role`);
+        }
+        if (learner.status !== "active" || role.name !== "learner") return [];
+        return [
+          {
+            id: enrolment.id,
+            learnerId: learner.id,
+            displayName: learner.displayName,
+            enrolledAt: enrolment.decidedAt ?? enrolment.requestedAt,
+          },
+        ];
+      });
+    return paginate(learners, pageOptions);
+  }
+
+  /**
+   * Removes an approved learner from a course and records the reason for them.
+   */
+  public async removeEnrolledLearner(
+    actor: AuthenticatedUser,
+    enrolmentId: string,
+    input: RemoveEnrolledLearnerRequest,
+    requestId: string,
+  ): Promise<EnrolmentRecord> {
+    assertCoach(actor);
+    requirePermission(actor, "enrolment:approve");
+    return this.repository.withMutationLock(async () => {
+      const current = this.repository.findEnrolmentById(enrolmentId);
+      if (!current) throw new NotFoundError();
+      const course = this.requireOwnedCourse(actor, current.courseId);
+      if (current.status === "removed") return current;
+      if (current.status !== "approved") {
+        throw new ConflictError("Only an approved learner can be removed");
+      }
+
+      const now = new Date().toISOString();
+      const updated = await this.repository.updateEnrolment(current.id, (enrolment) => ({
+        ...enrolment,
+        status: "removed",
+        decidedBy: actor.id,
+        decidedAt: now,
+        decisionNote: input.reason,
+        updatedAt: now,
+      }));
+      await this.audit(
+        actor,
+        "enrolment.removed_by_coach",
+        updated.id,
+        { courseId: course.id, status: current.status },
+        { courseId: course.id, status: updated.status },
+        requestId,
+      );
+      return updated;
+    });
   }
 
   /**
@@ -675,7 +924,9 @@ export class CourseService {
     const course = this.requireCourse(courseId);
     const isOwner = actor.role === "coach" && course.ownerId === actor.id;
     const isApprovedLearner =
-      actor.role === "learner" && this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
+      actor.role === "learner" &&
+      courseApprovalStatus(course) === "approved" &&
+      this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
     if (actor.status !== "active" || (!isOwner && !isApprovedLearner)) {
       throw new NotFoundError();
     }
@@ -787,6 +1038,11 @@ function toCourseView(course: CourseRecord): CourseView {
     ...toCourseCard(course),
     ownerId: course.ownerId,
     status: course.status,
+    approvalStatus: courseApprovalStatus(course),
+    approvalNote: course.approvalNote ?? null,
+    approvalRequestedAt: course.approvalRequestedAt ?? null,
+    reviewedBy: course.reviewedBy ?? null,
+    reviewedAt: course.reviewedAt ?? null,
     version: course.version,
     ...(course.archivedAt === undefined ? {} : { archivedAt: course.archivedAt }),
     ...(course.archivedBy === undefined ? {} : { archivedBy: course.archivedBy }),
@@ -836,8 +1092,15 @@ function courseAuditState(course: CourseRecord): Record<string, unknown> {
   return {
     ownerId: course.ownerId,
     status: course.status,
+    approvalStatus: courseApprovalStatus(course),
     version: course.version,
   };
+}
+
+function courseApprovalStatus(
+  course: CourseRecord,
+): NonNullable<CourseRecord["approvalStatus"]> {
+  return course.approvalStatus ?? "approved";
 }
 
 /**

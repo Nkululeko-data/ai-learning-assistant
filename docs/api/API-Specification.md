@@ -26,6 +26,7 @@
 | `NOT_FOUND`                                |  404 | Resource absent or intentionally hidden                            |
 | `CONFLICT`                                 |  409 | Duplicate, stale version or conflicting decision                   |
 | `COURSE_ARCHIVED`                          |  409 | Operation not allowed for archived course                          |
+| `COURSE_NOT_AVAILABLE`                     |  409 | Course is awaiting administrator approval                          |
 | `FILE_TYPE_NOT_ALLOWED`                    |  415 | Upload type mismatch                                               |
 | `FILE_TOO_LARGE`                           |  413 | Upload exceeds configured limit                                    |
 | `INSUFFICIENT_MATERIAL`                    |  422 | Selected sources cannot support generation                         |
@@ -49,6 +50,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Auth          | `POST /auth/change-password`                                   | Change password, including forced initial change                                        |
 | Auth          | `GET /me`                                                      | Get current user's safe profile and effective permissions                               |
 | Courses       | `POST /courses`                                                | Create course                                                                           |
+| Courses       | `POST /courses/{id}/submit-for-approval`                       | Resubmit a course returned for changes                                                  |
 | Courses       | `GET /courses`                                                 | List active course cards and accessible courses                                         |
 | Courses       | `GET /me/courses`                                              | List paginated courses owned by the authenticated coach                                 |
 | Courses       | `GET /courses/{id}`                                            | Get course details allowed to the caller                                                |
@@ -59,11 +61,15 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Courses       | `PATCH /courses/{id}`                                          | Update or archive an owned course using optimistic version                              |
 | Enrolments    | `POST /courses/{id}/join`                                      | Request to join course                                                                  |
 | Enrolments    | `GET /me/enrolments`                                           | List current user's enrolments                                                          |
+| Enrolments    | `GET /courses/{id}/learners`                                   | List active learners visible to the course owner and approved class members               |
 | Enrolments    | `GET /courses/{id}/join-requests`                              | List join requests for owned course                                                     |
 | Enrolments    | `PATCH /enrolments/{id}`                                       | Approve/reject request                                                                  |
+| Enrolments    | `POST /enrolments/{id}/remove`                                  | Remove an enrolled learner with a required reason                                       |
 | Enrolments    | `DELETE /courses/{id}/enrolment`                               | Remove learner enrolment                                                                |
 | Admin         | `PATCH /admin/courses/{id}/owner`                              | Reassign a course to an active coach                                                    |
 | Admin         | `PATCH /admin/courses/{id}`                                    | Archive a course when its owner cannot be retained                                      |
+| Admin         | `GET /admin/courses/approval-queue`                            | List courses awaiting review                                                            |
+| Admin         | `PATCH /admin/courses/{id}/approval`                           | Approve a course or request changes                                                     |
 | Documents     | `POST /documents/upload`                                       | Validate/store upload and enqueue ingestion; returns 202                                |
 | Documents     | `GET /documents/{id}/status`                                   | Get processing status and safe diagnostics                                              |
 | Documents     | `GET /documents/{id}/file`                                     | Stream a ready course PDF or lesson MP4 to an authorized course member                  |
@@ -119,7 +125,16 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   { "name": "Biology 101", "description": "Introductory biology" }
   ```
 
-- `GET /courses` returns active course cards to signed-in users. Cards expose
+- Newly created courses enter `pending` approval and remain visible to their
+  owner, but not learners. Admins with `user:manage` review them through
+  `GET /admin/courses/approval-queue`. `PATCH /admin/courses/{id}/approval`
+  accepts `{ "decision": "approved", "version": 1 }` or
+  `{ "decision": "changes_requested", "note": "Add an overview", "version": 1 }`.
+  A course returned for changes stays editable by its coach; the coach can
+  resubmit it with `POST /courses/{id}/submit-for-approval` and
+  `{ "version": 2 }`. Only approved courses appear in learner discovery or
+  accept enrolment requests.
+- `GET /courses` returns active, approved course cards to signed-in users. Cards expose
   only `id`, `name` and `description`; owners and approved learners also receive
   full details for their accessible courses. `GET /courses/{id}` follows the
   same visibility rule. Archived courses are visible only to their owner and
@@ -151,6 +166,13 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 /enrolments/{id}` with `{ "status": "approved" }` or
   `{ "status": "rejected", "decisionNote": "..." }`. Repeating the same
   decision is idempotent; a conflicting decision returns `409`.
+- `GET /courses/{id}/learners` returns active learners' display names and
+  enrolment dates to the course owner or an approved class member. It does not
+  expose learner email addresses.
+- Course owners with `enrolment:approve` may remove an approved learner with
+  `POST /enrolments/{id}/remove` and `{ "reason": "..." }`. The reason is
+  required, stored on the learner's enrolment, and visible to that learner
+  after removal. The enrolment is retained with status `removed`.
 - `DELETE /courses/{id}/enrolment` removes the caller's approved enrolment;
   the record is stashed as `removed`.
 - Admin course-owner reassignment requires `user:manage`; the target must be

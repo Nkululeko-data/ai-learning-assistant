@@ -312,6 +312,8 @@ export class RetrievalService {
     if (actor.role === "coach" && course.ownerId === actor.id) return course;
     if (
       actor.role === "learner" &&
+      course.approvalStatus !== "pending" &&
+      course.approvalStatus !== "changes_requested" &&
       this.repository.findEnrolment(course.id, actor.id)?.status === "approved"
     ) {
       return course;

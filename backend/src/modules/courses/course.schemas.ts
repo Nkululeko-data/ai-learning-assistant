@@ -109,6 +109,12 @@ export const enrolmentDecisionRequestSchema = z
   })
   .strict();
 
+export const removeEnrolledLearnerRequestSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+
 export const reassignCourseOwnerRequestSchema = z
   .object({
     ownerId: z.string().uuid(),
@@ -123,7 +129,23 @@ export const adminCourseStatusRequestSchema = z
   })
   .strict();
 
+export const courseApprovalDecisionRequestSchema = z
+  .object({
+    decision: z.enum(["approved", "changes_requested"]),
+    note: z.string().trim().max(1000).nullable().optional(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+export const submitCourseForApprovalRequestSchema = z
+  .object({ version: z.number().int().positive() })
+  .strict();
+
 export type CreateCourseRequest = z.infer<typeof createCourseRequestSchema>;
 export type UpdateCourseRequest = z.infer<typeof updateCourseRequestSchema>;
 export type UpdateCourseLessonsRequest = z.infer<typeof updateCourseLessonsRequestSchema>;
 export type EnrolmentDecisionRequest = z.infer<typeof enrolmentDecisionRequestSchema>;
+export type RemoveEnrolledLearnerRequest = z.infer<typeof removeEnrolledLearnerRequestSchema>;
+export type CourseApprovalDecisionRequest = z.infer<
+  typeof courseApprovalDecisionRequestSchema
+>;

@@ -405,7 +405,12 @@ export class DocumentService {
       }
       return;
     }
-    if (actor.role !== "learner" || this.repository.findEnrolment(course.id, actor.id)?.status !== "approved") {
+    if (
+      actor.role !== "learner" ||
+      course.approvalStatus === "pending" ||
+      course.approvalStatus === "changes_requested" ||
+      this.repository.findEnrolment(course.id, actor.id)?.status !== "approved"
+    ) {
       throw new NotFoundError("Course not found");
     }
   }
@@ -419,7 +424,12 @@ export class DocumentService {
     }
     const course = this.requireCourse(courseId);
     if (course.ownerId === actor.id && actor.role === "coach") return;
-    if (actor.role === "learner" && this.repository.findEnrolment(course.id, actor.id)?.status === "approved") {
+    if (
+      actor.role === "learner" &&
+      course.approvalStatus !== "pending" &&
+      course.approvalStatus !== "changes_requested" &&
+      this.repository.findEnrolment(course.id, actor.id)?.status === "approved"
+    ) {
       return;
     }
     throw new NotFoundError("Course not found");

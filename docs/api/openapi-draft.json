@@ -123,6 +123,16 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
+    "/courses/{courseId}/submit-for-approval": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "post": {
+        "tags": ["Courses"],
+        "operationId": "submitCourseForApproval",
+        "summary": "Resubmit a course returned for changes",
+        "requestBody": { "$ref": "#/components/requestBodies/SubmitCourseForApprovalRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
     "/courses/{courseId}/preview": {
       "parameters": [{ "$ref": "#/components/parameters/courseId" }],
       "get": {
@@ -182,6 +192,19 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
+    "/courses/{courseId}/learners": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "get": {
+        "tags": ["Enrolments"],
+        "operationId": "listCourseLearners",
+        "summary": "List active learners visible to the course owner and approved members",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
     "/enrolments/{enrolmentId}": {
       "parameters": [{ "$ref": "#/components/parameters/enrolmentId" }],
       "patch": {
@@ -192,6 +215,16 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
+    "/enrolments/{enrolmentId}/remove": {
+      "parameters": [{ "$ref": "#/components/parameters/enrolmentId" }],
+      "post": {
+        "tags": ["Enrolments"],
+        "operationId": "removeEnrolledLearner",
+        "summary": "Remove an enrolled learner with a required reason",
+        "requestBody": { "$ref": "#/components/requestBodies/RemoveEnrolledLearnerRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
     "/courses/{courseId}/enrolment": {
       "parameters": [{ "$ref": "#/components/parameters/courseId" }],
       "delete": {
@@ -199,6 +232,28 @@
         "operationId": "removeEnrolment",
         "summary": "Remove a learner enrolment",
         "responses": { "204": { "description": "Enrolment removed" }, "401": { "$ref": "#/components/responses/ApiError" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/admin/courses/approval-queue": {
+      "get": {
+        "tags": ["Admin"],
+        "operationId": "listCourseApprovalQueue",
+        "summary": "List courses awaiting administrator review",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/admin/courses/{courseId}/approval": {
+      "parameters": [{ "$ref": "#/components/parameters/courseId" }],
+      "patch": {
+        "tags": ["Admin"],
+        "operationId": "decideCourseApproval",
+        "summary": "Approve a course or request changes",
+        "requestBody": { "$ref": "#/components/requestBodies/CourseApprovalDecisionRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/ApiError" }, "404": { "$ref": "#/components/responses/ApiError" }, "409": { "$ref": "#/components/responses/ApiError" }, "422": { "$ref": "#/components/responses/ValidationError" } }
       }
     },
     "/admin/courses/{courseId}/owner": {
@@ -811,6 +866,14 @@
           }
         }
       },
+      "RemoveEnrolledLearnerRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/RemoveEnrolledLearnerRequest" }
+          }
+        }
+      },
       "ReassignCourseOwnerRequest": {
         "required": true,
         "content": {
@@ -824,6 +887,22 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/AdminCourseStatusRequest" }
+          }
+        }
+      },
+      "CourseApprovalDecisionRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CourseApprovalDecisionRequest" }
+          }
+        }
+      },
+      "SubmitCourseForApprovalRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SubmitCourseForApprovalRequest" }
           }
         }
       },
@@ -1313,6 +1392,14 @@
           "decisionNote": { "type": ["string", "null"], "maxLength": 1000 }
         }
       },
+      "RemoveEnrolledLearnerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1000 }
+        }
+      },
       "ReassignCourseOwnerRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -1328,6 +1415,24 @@
         "required": ["status", "version"],
         "properties": {
           "status": { "type": "string", "enum": ["active", "archived"] },
+          "version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "CourseApprovalDecisionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision", "version"],
+        "properties": {
+          "decision": { "type": "string", "enum": ["approved", "changes_requested"] },
+          "note": { "type": ["string", "null"], "maxLength": 1000 },
+          "version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "SubmitCourseForApprovalRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "properties": {
           "version": { "type": "integer", "minimum": 1 }
         }
       },

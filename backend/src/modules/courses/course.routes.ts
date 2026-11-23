@@ -6,10 +6,13 @@ import type { AuthService } from "../auth/auth.service";
 import {
   adminCourseStatusRequestSchema,
   createCourseRequestSchema,
+  courseApprovalDecisionRequestSchema,
   enrolmentDecisionRequestSchema,
   enrolmentListQuerySchema,
   paginationQuerySchema,
+  removeEnrolledLearnerRequestSchema,
   reassignCourseOwnerRequestSchema,
+  submitCourseForApprovalRequestSchema,
   updateCourseLessonsRequestSchema,
   updateCourseRequestSchema,
 } from "./course.schemas";
@@ -26,6 +29,41 @@ export interface CourseRouteDependencies {
 export function createCourseRouter(dependencies: CourseRouteDependencies): Router {
   const router = Router();
   const authenticate = requireAuthentication(dependencies.authService);
+
+  router.get(
+    "/admin/courses/approval-queue",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("user:manage"),
+    (request, response) => {
+      const query = paginationQuerySchema.parse(request.query);
+      const page = dependencies.courseService.listCourseApprovalQueue(
+        requireAuthContext(request),
+        query,
+      );
+      response.status(200).json({
+        data: page.items,
+        ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
+      });
+    },
+  );
+
+  router.patch(
+    "/admin/courses/:courseId/approval",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("user:manage"),
+    async (request, response) => {
+      const body = courseApprovalDecisionRequestSchema.parse(request.body);
+      const course = await dependencies.courseService.decideCourseApproval(
+        requireAuthContext(request),
+        requireRouteParam(request, "courseId"),
+        body,
+        request.requestId,
+      );
+      response.status(200).json({ data: course });
+    },
+  );
 
   router.get("/courses", authenticate, (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
@@ -116,6 +154,23 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     response.status(200).json({ data: course });
   });
 
+  router.post(
+    "/courses/:courseId/submit-for-approval",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("course:edit"),
+    async (request, response) => {
+      const body = submitCourseForApprovalRequestSchema.parse(request.body);
+      const course = await dependencies.courseService.submitCourseForApproval(
+        requireAuthContext(request),
+        requireRouteParam(request, "courseId"),
+        body.version,
+        request.requestId,
+      );
+      response.status(200).json({ data: course });
+    },
+  );
+
   router.post("/courses/:courseId/join", authenticate, async (request, response) => {
     const result = await dependencies.courseService.requestJoin(
       requireAuthContext(request),
@@ -156,6 +211,24 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     },
   );
 
+  router.get(
+    "/courses/:courseId/learners",
+    authenticate,
+    requirePasswordChangeComplete,
+    (request, response) => {
+      const query = paginationQuerySchema.parse(request.query);
+      const page = dependencies.courseService.listCourseLearners(
+        requireAuthContext(request),
+        requireRouteParam(request, "courseId"),
+        query,
+      );
+      response.status(200).json({
+        data: page.items,
+        ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
+      });
+    },
+  );
+
   router.patch(
     "/enrolments/:enrolmentId",
     authenticate,
@@ -164,6 +237,23 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     async (request, response) => {
       const body = enrolmentDecisionRequestSchema.parse(request.body);
       const enrolment = await dependencies.courseService.decideEnrolment(
+        requireAuthContext(request),
+        requireRouteParam(request, "enrolmentId"),
+        body,
+        request.requestId,
+      );
+      response.status(200).json({ data: enrolment });
+    },
+  );
+
+  router.post(
+    "/enrolments/:enrolmentId/remove",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("enrolment:approve"),
+    async (request, response) => {
+      const body = removeEnrolledLearnerRequestSchema.parse(request.body);
+      const enrolment = await dependencies.courseService.removeEnrolledLearner(
         requireAuthContext(request),
         requireRouteParam(request, "enrolmentId"),
         body,

@@ -1,9 +1,13 @@
 backend/node_modules/
 backend/dist/
 backend/coverage/
-backend/.env
 backend/data/
 backend/.cache/
 .DS_Store
-backend/.env
+
+# Local environment and provider credential files; keep example templates tracked.
 .env
+.env.*
+!.env.example
+**/credentials*.json
+**/*service-account*.json

@@ -248,6 +248,21 @@ async function approveCoach(context: DocumentTestContext, email: string): Promis
   return { ...coach, token: login.body.data.accessToken as string };
 }
 
+async function approveCourse(
+  context: DocumentTestContext,
+  courseId: string,
+  version: number,
+): Promise<number> {
+  const approval = await request(context.app)
+    .patch(`/api/v1/admin/courses/${courseId}/approval`)
+    .set("Authorization", `Bearer ${context.adminToken}`)
+    .send({ decision: "approved", version });
+  if (approval.status !== 200) {
+    throw new Error(`Course approval failed with ${approval.status}`);
+  }
+  return approval.body.data.version as number;
+}
+
 async function waitForStatus(
   app: DocumentTestContext["app"],
   token: string,
@@ -289,7 +304,11 @@ describe("Document ingestion API", () => {
       .send({ name: "PDF lesson course" });
     expect(courseResponse.status).toBe(201);
     const courseId = courseResponse.body.data.id as string;
-    const courseVersion = courseResponse.body.data.version as number;
+    const courseVersion = await approveCourse(
+      context,
+      courseId,
+      courseResponse.body.data.version as number,
+    );
 
     const pdfBytes = Buffer.from("%PDF-1.7\nLesson PDF content");
     const storage = new PrivateFileStorage(context.dataDirectory);
@@ -374,7 +393,11 @@ describe("Document ingestion API", () => {
       .send({ name: "Video lesson course" });
     expect(courseResponse.status).toBe(201);
     const courseId = courseResponse.body.data.id as string;
-    const courseVersion = courseResponse.body.data.version as number;
+    const courseVersion = await approveCourse(
+      context,
+      courseId,
+      courseResponse.body.data.version as number,
+    );
     const videoBytes = Buffer.from([
       0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
       0x00, 0x00, 0x00, 0x00, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32,
@@ -465,6 +488,11 @@ describe("Document ingestion API", () => {
       .send({ name: "Course", description: "Test course" });
     expect(courseResponse.status).toBe(201);
     const courseId = courseResponse.body.data.id as string;
+    await approveCourse(
+      context,
+      courseId,
+      courseResponse.body.data.version as number,
+    );
     const joinRequest = await request(context.app)
       .post(`/api/v1/courses/${courseId}/join`)
       .set("Authorization", `Bearer ${learner.token}`);

@@ -22,7 +22,7 @@ const redactionPaths = [
 /**
  * Creates a structured logger with sensitive fields redacted.
  */
-export function createLogger(level: string): Logger {
+export function createLogger(level: string, pretty = false): Logger {
   const options: LoggerOptions = {
     level,
     redact: {
@@ -38,6 +38,18 @@ export function createLogger(level: string): Logger {
         };
       },
     },
+    ...(pretty
+      ? {
+          transport: {
+            target: "pino-pretty",
+            options: {
+              colorize: process.stdout.isTTY,
+              translateTime: "SYS:standard",
+              ignore: "pid,hostname",
+            },
+          },
+        }
+      : {}),
   };
   return pino(options);
 }

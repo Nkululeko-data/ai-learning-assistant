@@ -54,7 +54,10 @@ import { AdminService } from "./modules/admin/admin.service";
 export async function startServer(): Promise<Server> {
   const config = loadConfig();
   configureTracing(config.environment);
-  const logger = createLogger(config.logLevel);
+  const logger = createLogger(
+    config.logLevel,
+    config.environment === "development",
+  );
   const store = new JsonStore(config.dataDir);
   const collections = registerSystemCollections(store);
   await store.initialize();
