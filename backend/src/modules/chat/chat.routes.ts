@@ -54,7 +54,7 @@ export function createChatRouter(dependencies: ChatRouteDependencies): Router {
         response.status(200);
         response.set({
           "content-type": "text/event-stream; charset=utf-8",
-          "cache-control": "no-cache, no-transform",
+          "cache-control": "private, no-store, no-transform",
           connection: "keep-alive",
         });
         response.flushHeaders();

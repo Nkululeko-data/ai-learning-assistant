@@ -231,6 +231,7 @@ async function requestResponse(
     );
     response = await fetch(requestUrl, {
       ...init,
+      cache: init.cache ?? "no-store",
       headers,
       credentials: "include",
       signal,

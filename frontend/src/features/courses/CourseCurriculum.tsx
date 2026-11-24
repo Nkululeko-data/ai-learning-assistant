@@ -53,7 +53,7 @@ export function CourseCurriculum({
     enabled: !hasCourseAccess,
   });
   const enrolmentsQuery = useQuery({
-    queryKey: ["enrolments", "mine"],
+    queryKey: ["enrolments", "mine", "all"],
     queryFn: listAllMyEnrolments,
     enabled: !hasCourseAccess,
   });

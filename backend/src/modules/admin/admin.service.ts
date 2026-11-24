@@ -16,6 +16,37 @@ export class AdminService {
     private readonly config: AppConfig,
   ) {}
 
+  public getSummary() {
+    const users = this.collections.users.list();
+    const courses = this.collections.courses.list();
+    const enrolments = this.collections.enrolments.list();
+    const coachRequests = this.collections.coachRequests.list();
+    const jobs = this.collections.jobs.list();
+
+    return {
+      activeUsers: users.filter(
+        (user) => user.status === "active" && !user.erasedAt,
+      ).length,
+      activeCourses: courses.filter(
+        (course) =>
+          course.status === "active" &&
+          (course.approvalStatus ?? "approved") === "approved",
+      ).length,
+      approvedEnrolments: enrolments.filter(
+        (enrolment) => enrolment.status === "approved",
+      ).length,
+      pendingCoachRequests: coachRequests.filter(
+        (request) => request.status === "pending",
+      ).length,
+      pendingCourseApprovals: courses.filter(
+        (course) => (course.approvalStatus ?? "approved") === "pending",
+      ).length,
+      queuedOrRunningJobs: jobs.filter(
+        (job) => job.status === "queued" || job.status === "running",
+      ).length,
+    };
+  }
+
   public listAuditLogs(limit: number, cursor?: string): {
     items: unknown[];
     nextCursor?: string;

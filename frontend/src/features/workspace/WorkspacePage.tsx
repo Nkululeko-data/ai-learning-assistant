@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { Component, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import {
+  Alert,
   AppBar,
   Avatar,
   Badge,
   Box,
   Breadcrumbs,
+  Button,
   Collapse,
   Divider,
   Drawer,
@@ -755,9 +758,56 @@ export function WorkspaceLayout() {
             },
           }}
         >
-          <Outlet />
+          <PageErrorBoundary
+            resetKey={`${location.pathname}${location.search}${location.hash}`}
+          >
+            <Outlet />
+          </PageErrorBoundary>
         </Box>
       </Box>
     </Box>
   );
+}
+
+class PageErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { hasError: boolean }
+> {
+  public state = { hasError: false };
+
+  public static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  public componentDidUpdate(previousProps: Readonly<{ resetKey: string }>): void {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  public componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("Workspace page failed to render.", error, info);
+  }
+
+  private retry = (): void => {
+    this.setState({ hasError: false });
+  };
+
+  public render(): ReactNode {
+    if (this.state.hasError) {
+      return (
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" onClick={this.retry}>
+              Try again
+            </Button>
+          }
+        >
+          This page could not be displayed. Try again or choose another page.
+        </Alert>
+      );
+    }
+    return this.props.children;
+  }
 }

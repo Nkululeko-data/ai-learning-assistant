@@ -20,6 +20,18 @@ export function createAdminRouter(dependencies: AdminRouteDependencies): Router 
   const authenticate = requireAuthentication(dependencies.authService);
 
   router.get(
+    "/admin/summary",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("user:manage"),
+    (_request, response) => {
+      response
+        .status(200)
+        .json({ data: dependencies.adminService.getSummary() });
+    },
+  );
+
+  router.get(
     "/admin/audit-logs",
     authenticate,
     requirePasswordChangeComplete,

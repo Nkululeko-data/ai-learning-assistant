@@ -75,6 +75,7 @@ export interface AppDependencies {
 export function createApp(dependencies: AppDependencies): express.Express {
   const app = express();
   app.disable("x-powered-by");
+  app.set("etag", false);
   app.use(helmet());
   app.use(requestIdMiddleware);
   app.use(
@@ -97,6 +98,10 @@ export function createApp(dependencies: AppDependencies): express.Express {
     }),
   );
   app.use(express.json({ limit: "1mb" }));
+  app.use("/api/v1", (_request, response, next) => {
+    response.setHeader("Cache-Control", "private, no-store");
+    next();
+  });
 
   app.get("/health", healthHandler);
   app.get("/ready", createReadinessHandler(dependencies.getReadiness));

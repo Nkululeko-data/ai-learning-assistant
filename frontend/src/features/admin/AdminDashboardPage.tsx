@@ -2,6 +2,7 @@ import { Alert, Box, Button, LinearProgress, Stack, Typography } from "@mui/mate
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import {
+  getAdminSummary,
   listAdminJobs,
   listCoachRequests,
   listCourseApprovalQueue,
@@ -17,6 +18,12 @@ export function AdminDashboardPage() {
   const { user } = useAuth();
   const canReviewApplications = user?.permissions.includes("user:manage") ?? false;
   const canReviewJobs = user?.permissions.includes("executions:view") ?? false;
+  const summaryQuery = useQuery({
+    queryKey: ["admin", "summary"],
+    queryFn: getAdminSummary,
+    enabled: canReviewApplications,
+    refetchInterval: refreshInterval,
+  });
   const coachRequestsQuery = useQuery({
     queryKey: ["admin", "coach-requests", "pending"],
     queryFn: () => listCoachRequests("pending"),
@@ -105,6 +112,62 @@ export function AdminDashboardPage() {
       <Typography component="h1" variant="h4" fontWeight={700}>
         Admin dashboard
       </Typography>
+      {canReviewApplications && (
+        <Box component="section" aria-labelledby="system-summary-title">
+          <Typography
+            id="system-summary-title"
+            component="h2"
+            variant="h5"
+            fontWeight={650}
+            sx={{ mb: 1.5 }}
+          >
+            System summary
+          </Typography>
+          {summaryQuery.isPending && (
+            <LinearProgress aria-label="Loading system summary" />
+          )}
+          {summaryQuery.isError && (
+            <Stack spacing={1} alignItems="flex-start">
+              <ErrorNotice message={friendlyMessage(summaryQuery.error)} />
+              <Button onClick={() => void summaryQuery.refetch()}>Retry summary</Button>
+            </Stack>
+          )}
+          {summaryQuery.data && (
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: 2,
+              }}
+            >
+              <SummaryMetric
+                label="Active users"
+                value={summaryQuery.data.activeUsers}
+              />
+              <SummaryMetric
+                label="Active courses"
+                value={summaryQuery.data.activeCourses}
+              />
+              <SummaryMetric
+                label="Approved enrolments"
+                value={summaryQuery.data.approvedEnrolments}
+              />
+              <SummaryMetric
+                label="Coach applications pending"
+                value={summaryQuery.data.pendingCoachRequests}
+              />
+              <SummaryMetric
+                label="Course approvals pending"
+                value={summaryQuery.data.pendingCourseApprovals}
+              />
+              <SummaryMetric
+                label="Jobs queued or running"
+                value={summaryQuery.data.queuedOrRunningJobs}
+              />
+            </Box>
+          )}
+        </Box>
+      )}
       <Box component="section" aria-labelledby="needs-attention-title">
         <Typography
           id="needs-attention-title"
@@ -176,6 +239,27 @@ export function AdminDashboardPage() {
         )}
       </Box>
     </Stack>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        border: 1,
+        borderColor: "divider",
+        borderRadius: 2,
+        bgcolor: "background.paper",
+      }}
+    >
+      <Typography color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography variant="h5" fontWeight={700} sx={{ mt: 0.5 }}>
+        {value}
+      </Typography>
+    </Box>
   );
 }
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -13,6 +13,46 @@ const quizId = "9a7a7701-a1b1-42a4-890d-1b1e54055d0e";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("CourseCurriculum", () => {
+  it("does not reuse the paginated enrolment cache when opening a course preview", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/preview`, () =>
+        HttpResponse.json({ data: { courseId, lessons: [] } }),
+      ),
+      http.get("http://localhost:3000/api/v1/me/enrolments", () =>
+        HttpResponse.json({ data: [] }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(["enrolments", "mine"], {
+      pages: [{ items: [] }],
+      pageParams: [undefined],
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <CourseCurriculum
+            course={{
+              id: courseId,
+              name: "Biology",
+              description: "An introduction to living systems.",
+            }}
+            hasCourseAccess={false}
+            canUseStudyTools={false}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const requestButton = await screen.findByRole("button", { name: "Request to join" });
+    await waitFor(() => expect(requestButton).toBeEnabled());
+  });
+
   it("navigates ordered topics and only displays media configured for a lesson", async () => {
     server.use(
       http.get(`http://localhost:3000/api/v1/courses/${courseId}/lessons`, () =>

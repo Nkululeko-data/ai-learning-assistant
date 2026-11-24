@@ -61,6 +61,18 @@ function renderDashboard() {
 describe("AdminDashboardPage", () => {
   it("shows compact review rows with counts and route links", async () => {
     server.use(
+      http.get("http://localhost:3000/api/v1/admin/summary", () =>
+        HttpResponse.json({
+          data: {
+            activeUsers: 24,
+            activeCourses: 8,
+            approvedEnrolments: 31,
+            pendingCoachRequests: 2,
+            pendingCourseApprovals: 1,
+            queuedOrRunningJobs: 3,
+          },
+        }),
+      ),
       http.get("http://localhost:3000/api/v1/admin/coach-requests", () =>
         HttpResponse.json({
           data: [
@@ -136,6 +148,14 @@ describe("AdminDashboardPage", () => {
 
     renderDashboard();
 
+    expect(
+      await screen.findByRole("heading", { name: "System summary" }),
+    ).toBeVisible();
+    expect(await screen.findByText("Active users")).toBeVisible();
+    expect(screen.getByText("24")).toBeVisible();
+    expect(screen.getByText("Approved enrolments")).toBeVisible();
+    expect(screen.getByText("31")).toBeVisible();
+
     const coachRow = await screen.findByRole("listitem", {
       name: /coach applications/i,
     });
@@ -168,6 +188,18 @@ describe("AdminDashboardPage", () => {
 
   it("uses the specified plain empty state when all queues are clear", async () => {
     server.use(
+      http.get("http://localhost:3000/api/v1/admin/summary", () =>
+        HttpResponse.json({
+          data: {
+            activeUsers: 0,
+            activeCourses: 0,
+            approvedEnrolments: 0,
+            pendingCoachRequests: 0,
+            pendingCourseApprovals: 0,
+            queuedOrRunningJobs: 0,
+          },
+        }),
+      ),
       http.get("http://localhost:3000/api/v1/admin/coach-requests", () =>
         HttpResponse.json({ data: [] }),
       ),

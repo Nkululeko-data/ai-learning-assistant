@@ -49,6 +49,20 @@ describe("API client", () => {
     expect(refreshCalls).toBe(1);
   });
 
+  it("does not use the browser cache for API requests", async () => {
+    let cacheMode: RequestCache | undefined;
+    server.use(
+      http.get(`${apiOrigin}/api/v1/private`, ({ request }) => {
+        cacheMode = request.cache;
+        return HttpResponse.json({ data: { value: "private result" } });
+      }),
+    );
+
+    await apiRequest("/private", z.object({ value: z.string() }));
+
+    expect(cacheMode).toBe("no-store");
+  });
+
   it("refreshes and retries authenticated PDF responses", async () => {
     let refreshCalls = 0;
     server.use(

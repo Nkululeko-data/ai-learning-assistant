@@ -140,6 +140,17 @@ export const adminConfigSchema = z
   })
   .strict();
 
+export const adminSummarySchema = z
+  .object({
+    activeUsers: z.number().int().nonnegative(),
+    activeCourses: z.number().int().nonnegative(),
+    approvedEnrolments: z.number().int().nonnegative(),
+    pendingCoachRequests: z.number().int().nonnegative(),
+    pendingCourseApprovals: z.number().int().nonnegative(),
+    queuedOrRunningJobs: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const configPatchSchema = adminConfigSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, "At least one setting is required");
@@ -159,6 +170,10 @@ export type CourseApproval = z.infer<typeof courseApprovalSchema>;
 export type AdminJob = z.infer<typeof adminJobSchema>;
 export type AdminConfig = z.infer<typeof adminConfigSchema>;
 export type AdminJobStatus = AdminJob["status"];
+
+export async function getAdminSummary() {
+  return apiRequest("/admin/summary", adminSummarySchema);
+}
 
 function pageQuery(input: { limit?: number; cursor?: string }): URLSearchParams {
   const query = new URLSearchParams({ limit: String(input.limit ?? 20) });

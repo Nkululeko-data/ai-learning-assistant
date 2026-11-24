@@ -54,6 +54,9 @@ function makeAuthContext(user: AuthenticatedUser): AuthContextValue {
 
 function LocationOutput() {
   const location = useLocation();
+  if (location.pathname === "/courses/crash") {
+    throw new Error("Course page rendering failed");
+  }
   return (
     <div>{location.pathname === "/courses" ? "Courses route" : "Current route"}</div>
   );
@@ -159,6 +162,18 @@ afterEach(() => {
 });
 
 describe("WorkspaceLayout", () => {
+  it("shows a recoverable error instead of a blank page after a route render failure", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderWorkspace(makeUser("learner", ["content:generate"]), "/courses/crash");
+
+    expect(
+      screen.getByText(
+        "This page could not be displayed. Try again or choose another page.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+  });
+
   it("provides skip navigation, active route state, breadcrumbs, and account details", async () => {
     const user = userEvent.setup();
     renderWorkspace(makeUser("learner", ["content:generate"]), "/courses");

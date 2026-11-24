@@ -67,7 +67,18 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
   expect(missing.body.error.code).toBe("NOT_FOUND");
 }
 
+async function verifiesApiResponsesCannotBeCached(): Promise<void> {
+  const response = await request(createReadyTestApp())
+    .get("/api/v1/not-found")
+    .set("If-None-Match", "*");
+
+  expect(response.status).toBe(404);
+  expect(response.headers["cache-control"]).toBe("private, no-store");
+  expect(response.headers.etag).toBeUndefined();
+}
+
 describe("HTTP foundation", () => {
   test("provides health and request metadata", verifiesHealthAndRequestMetadata);
   test("reports readiness and not-found failures", verifiesReadinessAndNotFoundErrors);
+  test("prevents API responses from being cached", verifiesApiResponsesCannotBeCached);
 });

@@ -104,3 +104,120 @@ test("privacy erasure tombstones identity and removes personal content", async (
   });
   expect(user?.email).not.toBe("learner@example.test");
 });
+
+test("admin summary aggregates active system records without exposing user details", async () => {
+  temporaryRoot = await mkdtemp(join(tmpdir(), "admin-summary-"));
+  const dataDir = join(temporaryRoot, "data");
+  const { store, collections } = createSystemStore(dataDir);
+  await store.initialize();
+
+  const activeUser = await collections.users.insert({
+    email: "active@example.test",
+    passwordHash: "a".repeat(64),
+    displayName: "Active user",
+    roleId: "00000000-0000-4000-8000-000000000010",
+    status: "active",
+    mustChangePassword: false,
+    failedLoginCount: 0,
+    permsVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await collections.users.insert({
+    email: "suspended@example.test",
+    passwordHash: "b".repeat(64),
+    displayName: "Suspended user",
+    roleId: "00000000-0000-4000-8000-000000000010",
+    status: "suspended",
+    mustChangePassword: false,
+    failedLoginCount: 0,
+    permsVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const approvedCourse = await collections.courses.insert({
+    ownerId: activeUser.id,
+    name: "Published course",
+    status: "active",
+    approvalStatus: "approved",
+    approvalNote: null,
+    approvalRequestedAt: now,
+    reviewedBy: null,
+    reviewedAt: null,
+    archivedAt: null,
+    archivedBy: null,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await collections.courses.insert({
+    ownerId: activeUser.id,
+    name: "Waiting course",
+    status: "active",
+    approvalStatus: "pending",
+    approvalNote: null,
+    approvalRequestedAt: now,
+    reviewedBy: null,
+    reviewedAt: null,
+    archivedAt: null,
+    archivedBy: null,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await collections.enrolments.insert({
+    courseId: approvedCourse.id,
+    userId: activeUser.id,
+    status: "approved",
+    requestedAt: now,
+    decidedBy: activeUser.id,
+    decidedAt: now,
+    decisionNote: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await collections.coachRequests.insert({
+    userId: activeUser.id,
+    status: "pending",
+    requestedAt: now,
+  });
+  await collections.jobs.insert({
+    type: "generate",
+    status: "running",
+    attempts: 1,
+    maxAttempts: 3,
+    runAfter: now,
+    lockedUntil: null,
+    leaseToken: null,
+    payload: {},
+    result: null,
+    error: null,
+    createdBy: activeUser.id,
+    requestId: null,
+    createdAt: now,
+    updatedAt: now,
+    finishedAt: null,
+  });
+
+  database = openConversationDatabase(dataDir);
+  const storage = new PrivateFileStorage(dataDir);
+  await storage.initialize();
+  const admin = new AdminService(
+    collections,
+    new ConversationRepository(database),
+    storage,
+    new JobService(
+      new JsonJobRepository(collections.jobs, collections.schedulerState),
+    ),
+    loadConfig({ requireJwtSecrets: false }),
+  );
+
+  expect(admin.getSummary()).toEqual({
+    activeUsers: 1,
+    activeCourses: 1,
+    approvedEnrolments: 1,
+    pendingCoachRequests: 1,
+    pendingCourseApprovals: 1,
+    queuedOrRunningJobs: 1,
+  });
+});
