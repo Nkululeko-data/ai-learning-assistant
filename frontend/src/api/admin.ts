@@ -247,10 +247,10 @@ export async function decideCourseApproval(
     note?: string | null;
     version: number;
   },
-) {
+): Promise<CourseView> {
   return apiRequest(
     `/admin/courses/${encodeURIComponent(courseId)}/approval`,
-    courseApprovalSchema,
+    courseViewSchema,
     { method: "PATCH", body: JSON.stringify(input) },
   );
 }

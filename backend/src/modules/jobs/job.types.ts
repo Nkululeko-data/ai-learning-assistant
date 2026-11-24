@@ -32,7 +32,52 @@ export interface JobPage {
   nextCursor: string | null;
 }
 
-export class JsonJobRepository {
+export type JobAwaitable<T> = T | Promise<T>;
+
+export interface JobRepository {
+  enqueue(input: EnqueueJobInput, now?: Date): Promise<JobRecord>;
+  claimNext(now?: Date, leaseMilliseconds?: number): Promise<JobClaim | null>;
+  renewLease(
+    claim: JobClaim,
+    now?: Date,
+    leaseMilliseconds?: number,
+  ): Promise<boolean>;
+  complete(
+    claim: JobClaim,
+    result: JobRecord["result"],
+    now?: Date,
+  ): Promise<boolean>;
+  fail(
+    claim: JobClaim,
+    error: { code: string; retryable: boolean },
+    now?: Date,
+    backoffBaseMilliseconds?: number,
+    backoffMaximumMilliseconds?: number,
+  ): Promise<boolean>;
+  retry(id: string, now?: Date): Promise<JobRecord>;
+  getById(id: string): JobAwaitable<JobRecord | null>;
+  list(
+    limit: number,
+    cursor?: string,
+    status?: JobStatus,
+  ): JobAwaitable<JobPage>;
+  countByStatuses(statuses: JobStatus[]): Promise<number>;
+  getOrCreateSchedulerState(
+    taskName: string,
+    firstRunAt: string,
+  ): Promise<SchedulerStateRecord>;
+  recordScheduledRun(
+    taskName: string,
+    occurrenceAt: string,
+    intervalMilliseconds: number,
+  ): Promise<void>;
+  recordSchedulerError(taskName: string, failedAt: string): Promise<void>;
+}
+
+/**
+ * Adapts the jobs and scheduler JSON collections to the persistent job port.
+ */
+export class JsonJobRepository implements JobRepository {
   private readonly mutex = new AsyncMutex();
 
   /**
@@ -263,6 +308,11 @@ export class JsonJobRepository {
       items,
       nextCursor: hasMore ? items[items.length - 1]?.id ?? null : null,
     };
+  }
+
+  public async countByStatuses(statuses: JobStatus[]): Promise<number> {
+    const included = new Set(statuses);
+    return this.jobs.list((job) => included.has(job.status)).length;
   }
 
   /**

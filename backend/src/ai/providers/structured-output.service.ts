@@ -23,9 +23,15 @@ export interface StructuredGeneration<T> {
   calls: ProviderCallMetadata[];
 }
 
+export interface StructuredProviderFailure {
+  provider: LlmProviderError["provider"];
+  code: string;
+}
+
 export class StructuredOutputError extends Error {
   public constructor(
     public readonly code: "GENERATION_FAILED" | "PROVIDER_UNAVAILABLE",
+    public readonly providerFailures: StructuredProviderFailure[] = [],
   ) {
     super("Structured generation failed");
     this.name = "StructuredOutputError";
@@ -62,7 +68,7 @@ export class StructuredOutputService {
       calls.push(firstResponse);
     } catch (error) {
       if (!(error instanceof LlmProviderError)) throw error;
-      const fallbackResponse = await this.callFallback(input, calls);
+      const fallbackResponse = await this.callFallback(input, calls, [error]);
       return this.parseFinal(schema, fallbackResponse, calls);
     }
 
@@ -78,11 +84,13 @@ export class StructuredOutputService {
     );
     let repairResponse: LlmResult | null = null;
     let repairValidationError: z.ZodError | [] = [];
+    let repairProviderFailure: LlmProviderError | null = null;
     try {
       repairResponse = await this.primary.generate(repairInput);
       calls.push(repairResponse);
     } catch (error) {
       if (!(error instanceof LlmProviderError)) throw error;
+      repairProviderFailure = error;
     }
     if (repairResponse) {
       const repaired = parseStructured(schema, repairResponse.content);
@@ -99,13 +107,18 @@ export class StructuredOutputService {
           repairValidationError,
         )
       : repairInput;
-    const fallbackResponse = await this.callFallback(fallbackInput, calls);
+    const fallbackResponse = await this.callFallback(
+      fallbackInput,
+      calls,
+      repairProviderFailure ? [repairProviderFailure] : [],
+    );
     return this.parseFinal(schema, fallbackResponse, calls);
   }
 
   private async callFallback(
     input: LlmInput,
     calls: LlmResult[],
+    previousFailures: LlmProviderError[] = [],
   ): Promise<LlmResult> {
     try {
       const response = await this.fallback.generate(input);
@@ -113,7 +126,10 @@ export class StructuredOutputService {
       return response;
     } catch (error) {
       if (!(error instanceof LlmProviderError)) throw error;
-      throw new StructuredOutputError("PROVIDER_UNAVAILABLE");
+      throw new StructuredOutputError("PROVIDER_UNAVAILABLE", [
+        ...previousFailures.map(({ provider, code }) => ({ provider, code })),
+        { provider: error.provider, code: error.code },
+      ]);
     }
   }
 

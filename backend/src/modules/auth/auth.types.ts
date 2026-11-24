@@ -5,6 +5,7 @@ import type {
   SystemCollections,
   UserRecord,
 } from "../../infra/jsonstore/system-collections";
+import { AsyncMutex } from "../../infra/jsonstore/async-mutex";
 
 export type SafeUser = Pick<
   UserRecord,
@@ -48,42 +49,56 @@ export interface CoachRequestView {
   };
 }
 
+export interface RefreshTokenRotation {
+  previousToken: RefreshTokenRecord;
+  replacementToken: RefreshTokenRecord;
+}
+
 export interface AuthRepository {
-  findUserByEmail(email: string): UserRecord | null;
-  findUserById(id: string): UserRecord | null;
-  listUsers(): UserRecord[];
+  findUserByEmail(email: string): Promise<UserRecord | null>;
+  findUserById(id: string): Promise<UserRecord | null>;
+  listUsers(): Promise<UserRecord[]>;
   createUser(input: Omit<UserRecord, "id">): Promise<UserRecord>;
-  removeUser(id: string): Promise<void>;
+  createUserAndCoachRequest(
+    input: Omit<UserRecord, "id">,
+    coachRequest?: { message?: string; requestedAt: string },
+  ): Promise<UserRecord>;
   updateUser(
     id: string,
     update: (user: UserRecord) => UserRecord,
   ): Promise<UserRecord>;
-  findRoleById(id: string): RoleRecord | null;
-  findRoleByName(name: RoleRecord["name"]): RoleRecord | null;
-  getRolePermissionKeys(roleId: string): string[];
-  getUserOverrides(userId: string): Array<{
+  findRoleById(id: string): Promise<RoleRecord | null>;
+  findRoleByName(name: RoleRecord["name"]): Promise<RoleRecord | null>;
+  getRolePermissionKeys(roleId: string): Promise<string[]>;
+  getUserOverrides(userId: string): Promise<Array<{
     permissionKey: string;
     effect: "grant" | "revoke";
-  }>;
-  findRefreshTokenByHash(hash: string): RefreshTokenRecord | null;
+  }>>;
+  findRefreshTokenByHash(hash: string): Promise<RefreshTokenRecord | null>;
   createRefreshToken(
     input: Omit<RefreshTokenRecord, "id">,
   ): Promise<RefreshTokenRecord>;
+  rotateRefreshToken(
+    id: string,
+    replacement: Omit<RefreshTokenRecord, "id">,
+  ): Promise<RefreshTokenRotation | null>;
   updateRefreshToken(
     id: string,
     update: (token: RefreshTokenRecord) => RefreshTokenRecord,
   ): Promise<RefreshTokenRecord>;
-  findRefreshTokensByFamily(familyId: string): RefreshTokenRecord[];
-  findRefreshTokensByUser(userId: string): RefreshTokenRecord[];
+  findRefreshTokensByFamily(familyId: string): Promise<RefreshTokenRecord[]>;
+  findRefreshTokensByUser(userId: string): Promise<RefreshTokenRecord[]>;
   createCoachRequest(input: {
     userId: string;
     status: "pending";
     message?: string;
     requestedAt: string;
   }): Promise<CoachRequestRecord>;
-  findPendingCoachRequestByUser(userId: string): CoachRequestRecord | null;
-  findCoachRequestById(id: string): CoachRequestRecord | null;
-  listCoachRequests(status?: CoachRequestRecord["status"]): CoachRequestRecord[];
+  findPendingCoachRequestByUser(userId: string): Promise<CoachRequestRecord | null>;
+  findCoachRequestById(id: string): Promise<CoachRequestRecord | null>;
+  listCoachRequests(
+    status?: CoachRequestRecord["status"],
+  ): Promise<CoachRequestRecord[]>;
   updateCoachRequest(
     id: string,
     update: (request: CoachRequestRecord) => CoachRequestRecord,
@@ -94,7 +109,7 @@ export interface AuthRepository {
     effect: "grant" | "revoke";
     changedBy: string;
   }): Promise<void>;
-  findPermissionIdByKey(key: string): string | null;
+  findPermissionIdByKey(key: string): Promise<string | null>;
   createAudit(input: AuditInput): Promise<void>;
 }
 
@@ -102,6 +117,8 @@ export interface AuthRepository {
  * Adapts the registered JSON collections to the authentication repository port.
  */
 export class JsonAuthRepository implements AuthRepository {
+  private readonly refreshRotationMutex = new AsyncMutex();
+
   /**
    * Creates the JSON-backed repository for identity and access records.
    */
@@ -110,18 +127,18 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a user by normalized email.
    */
-  public findUserByEmail(email: string): UserRecord | null {
+  public async findUserByEmail(email: string): Promise<UserRecord | null> {
     return this.collections.users.findUnique("email", email);
   }
 
   /**
    * Finds a user by ID.
    */
-  public findUserById(id: string): UserRecord | null {
+  public async findUserById(id: string): Promise<UserRecord | null> {
     return this.collections.users.getById(id);
   }
 
-  public listUsers(): UserRecord[] {
+  public async listUsers(): Promise<UserRecord[]> {
     return this.collections.users.list();
   }
 
@@ -133,10 +150,25 @@ export class JsonAuthRepository implements AuthRepository {
   }
 
   /**
-   * Removes a just-created account when its dependent registration step fails.
+   * Creates the user and optional coach request while preserving JSON-store compensation.
    */
-  public removeUser(id: string): Promise<void> {
-    return this.collections.users.remove(id);
+  public async createUserAndCoachRequest(
+    input: Omit<UserRecord, "id">,
+    coachRequest?: { message?: string; requestedAt: string },
+  ): Promise<UserRecord> {
+    const user = await this.createUser(input);
+    if (!coachRequest) return user;
+    try {
+      await this.createCoachRequest({
+        ...coachRequest,
+        userId: user.id,
+        status: "pending",
+      });
+    } catch (error) {
+      await this.collections.users.remove(user.id);
+      throw error;
+    }
+    return user;
   }
 
   /**
@@ -152,21 +184,23 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a role by ID.
    */
-  public findRoleById(id: string): RoleRecord | null {
+  public async findRoleById(id: string): Promise<RoleRecord | null> {
     return this.collections.roles.getById(id);
   }
 
   /**
    * Finds a role by its stable role name.
    */
-  public findRoleByName(name: RoleRecord["name"]): RoleRecord | null {
+  public async findRoleByName(
+    name: RoleRecord["name"],
+  ): Promise<RoleRecord | null> {
     return this.collections.roles.findUnique("name", name);
   }
 
   /**
    * Returns permission keys granted by the role's baseline set.
    */
-  public getRolePermissionKeys(roleId: string): string[] {
+  public async getRolePermissionKeys(roleId: string): Promise<string[]> {
     return this.collections.rolePermissions
       .findByIndex("roleId", roleId)
       .map((rolePermission) =>
@@ -179,9 +213,9 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Returns permission override effects for one user.
    */
-  public getUserOverrides(
+  public async getUserOverrides(
     userId: string,
-  ): Array<{ permissionKey: string; effect: "grant" | "revoke" }> {
+  ): Promise<Array<{ permissionKey: string; effect: "grant" | "revoke" }>> {
     return this.collections.userPermissionOverrides
       .findByIndex("userId", userId)
       .map((override) => ({
@@ -195,9 +229,9 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a refresh token by its one-way hash.
    */
-  public findRefreshTokenByHash(
+  public async findRefreshTokenByHash(
     hash: string,
-  ): RefreshTokenRecord | null {
+  ): Promise<RefreshTokenRecord | null> {
     return this.collections.refreshTokens.findUnique("tokenHash", hash);
   }
 
@@ -208,6 +242,46 @@ export class JsonAuthRepository implements AuthRepository {
     input: Omit<RefreshTokenRecord, "id">,
   ): Promise<RefreshTokenRecord> {
     return this.collections.refreshTokens.insert(input);
+  }
+
+  /**
+   * Atomically rotates one refresh token within this process for the JSON-backed test adapter.
+   */
+  public async rotateRefreshToken(
+    id: string,
+    replacement: Omit<RefreshTokenRecord, "id">,
+  ): Promise<RefreshTokenRotation | null> {
+    return this.refreshRotationMutex.runExclusive(async () => {
+      const current = this.collections.refreshTokens.getById(id);
+      if (!current || !isRefreshTokenActive(current)) return null;
+      const replacementToken =
+        await this.collections.refreshTokens.insert(replacement);
+      let rejected = false;
+      try {
+        const previousToken = await this.collections.refreshTokens.update(
+          id,
+          (record) => {
+            if (!isRefreshTokenActive(record)) {
+              rejected = true;
+              return record;
+            }
+            return {
+              ...record,
+              usedAt: replacement.createdAt,
+              replacedByTokenId: replacementToken.id,
+            };
+          },
+        );
+        if (rejected) {
+          await this.collections.refreshTokens.remove(replacementToken.id);
+          return null;
+        }
+        return { previousToken, replacementToken };
+      } catch (error) {
+        await this.collections.refreshTokens.remove(replacementToken.id);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -223,18 +297,18 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Lists tokens belonging to one refresh-token family.
    */
-  public findRefreshTokensByFamily(
+  public async findRefreshTokensByFamily(
     familyId: string,
-  ): RefreshTokenRecord[] {
+  ): Promise<RefreshTokenRecord[]> {
     return this.collections.refreshTokens.findByIndex("familyId", familyId);
   }
 
   /**
    * Lists refresh tokens issued to one user.
    */
-  public findRefreshTokensByUser(
+  public async findRefreshTokensByUser(
     userId: string,
-  ): RefreshTokenRecord[] {
+  ): Promise<RefreshTokenRecord[]> {
     return this.collections.refreshTokens.findByIndex("userId", userId);
   }
 
@@ -253,23 +327,27 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a user's pending coach application.
    */
-  public findPendingCoachRequestByUser(userId: string): CoachRequestRecord | null {
+  public async findPendingCoachRequestByUser(
+    userId: string,
+  ): Promise<CoachRequestRecord | null> {
     return this.collections.coachRequests.findUnique("pendingUserId", userId);
   }
 
   /**
    * Finds a coach application by ID.
    */
-  public findCoachRequestById(id: string): CoachRequestRecord | null {
+  public async findCoachRequestById(
+    id: string,
+  ): Promise<CoachRequestRecord | null> {
     return this.collections.coachRequests.getById(id);
   }
 
   /**
    * Lists coach applications, optionally restricted to one status.
    */
-  public listCoachRequests(
+  public async listCoachRequests(
     status?: CoachRequestRecord["status"],
-  ): CoachRequestRecord[] {
+  ): Promise<CoachRequestRecord[]> {
     return status
       ? this.collections.coachRequests.findByIndex("status", status)
       : this.collections.coachRequests.list();
@@ -317,7 +395,7 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds the stable permission ID for a permission key.
    */
-  public findPermissionIdByKey(key: string): string | null {
+  public async findPermissionIdByKey(key: string): Promise<string | null> {
     return this.collections.permissions.findUnique("key", key)?.id ?? null;
   }
 
@@ -337,4 +415,15 @@ export class JsonAuthRepository implements AuthRepository {
       createdAt: new Date().toISOString(),
     });
   }
+}
+
+/**
+ * Checks the lifecycle state used by both refresh-token rotation adapters.
+ */
+function isRefreshTokenActive(token: RefreshTokenRecord): boolean {
+  return (
+    !token.usedAt &&
+    !token.revokedAt &&
+    Date.parse(token.expiresAt) > Date.now()
+  );
 }

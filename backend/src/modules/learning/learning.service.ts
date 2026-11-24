@@ -8,8 +8,8 @@ import { EmbeddingProviderError } from "../documents/mistral-embedding.provider"
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { RetrievedChunk, RetrievalService } from "../retrieval/retrieval.service";
 import {
+  createQuizGenerationOutputSchema,
   flashcardGenerationOutputSchema,
-  quizGenerationOutputSchema,
   quizQuestionContentSchema,
   summaryGenerationOutputSchema,
   type GenerateFlashcardsRequest,
@@ -101,7 +101,7 @@ export class LearningService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<LearningSummaryRecord> {
-    this.retrievalService.assertCourseAccess(actor, input.courseId);
+    await this.retrievalService.assertCourseAccess(actor, input.courseId);
     const generationParams = {
       selection: input.selection,
       scope: input.scope,
@@ -197,7 +197,7 @@ export class LearningService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<FlashcardRecord> {
-    this.retrievalService.assertCourseAccess(actor, input.courseId);
+    await this.retrievalService.assertCourseAccess(actor, input.courseId);
     const generationParams = {
       selection: input.selection,
       count: input.count,
@@ -297,7 +297,7 @@ export class LearningService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<QuizRecord | QuizLearnerView> {
-    this.retrievalService.assertCourseAccess(actor, input.courseId);
+    await this.retrievalService.assertCourseAccess(actor, input.courseId);
     const generationParams = {
       selection: input.selection,
       count: input.count,
@@ -312,6 +312,10 @@ export class LearningService {
       generationParams,
       signal,
     );
+    const outputSchema = createQuizGenerationOutputSchema(
+      input.count,
+      input.types,
+    );
     const visibility = visibilityFor(actor);
     const ownerId = ownerFor(actor);
 
@@ -321,7 +325,7 @@ export class LearningService {
       requestId,
       signal,
       "quiz",
-      quizGenerationOutputSchema,
+      outputSchema,
       prepared,
       JSON.stringify({
         task: "Create a source-grounded quiz.",
@@ -331,20 +335,12 @@ export class LearningService {
         topic: input.selection.topic ?? null,
       }),
       (output) => {
-        if (output.questions.length !== input.count) {
-          throw invalidGeneratedContent(
-            `Exactly ${input.count} questions are required`,
-          );
-        }
         const parsed = output.questions.map((question) =>
           quizQuestionContentSchema.safeParse(question),
         );
-        if (
-          parsed.some((question) => !question.success) ||
-          output.questions.some((question) => !input.types.includes(question.type))
-        ) {
+        if (parsed.some((question) => !question.success)) {
           throw invalidGeneratedContent(
-            "Generated quiz questions do not satisfy the requested question types",
+            "Generated quiz questions do not satisfy the required answer format",
           );
         }
       },
@@ -389,7 +385,7 @@ export class LearningService {
     },
     requestId: string,
   ): Promise<QuizRecord> {
-    this.requireCourseOwner(actor, input.courseId);
+    await this.requireCourseOwner(actor, input.courseId);
     const chunks = await this.retrievalService.getSelectedChunks(
       actor,
       input.courseId,
@@ -441,9 +437,9 @@ export class LearningService {
     },
     requestId: string,
   ): Promise<QuizRecord> {
-    const initial = this.requireQuizOwner(actor, quizId);
+    const initial = await this.requireQuizOwner(actor, quizId);
     return this.repository.withMutationLock(async () => {
-      const quiz = this.requireQuizOwner(actor, quizId);
+      const quiz = await this.requireQuizOwner(actor, quizId);
       if (quiz.version !== input.version) {
         throw new ConflictError("Quiz version is stale");
       }
@@ -517,7 +513,7 @@ export class LearningService {
     requestId: string,
   ): Promise<QuizRecord> {
     return this.repository.withMutationLock(async () => {
-      const quiz = this.requireQuizOwner(actor, quizId);
+      const quiz = await this.requireQuizOwner(actor, quizId);
       if (quiz.version !== version) {
         throw new ConflictError("Quiz version is stale");
       }
@@ -544,13 +540,16 @@ export class LearningService {
     });
   }
 
-  public listQuizzes(
+  public async listQuizzes(
     actor: AuthenticatedUser,
     courseId: string,
     limit: number,
     cursor?: string,
-  ): { items: Array<QuizRecord | QuizLearnerView>; nextCursor?: string } {
-    this.retrievalService.assertCourseAccess(actor, courseId);
+  ): Promise<{
+    items: Array<QuizRecord | QuizLearnerView>;
+    nextCursor?: string;
+  }> {
+    await this.retrievalService.assertCourseAccess(actor, courseId);
     const records = this.repository
       .listQuizzes(courseId)
       .filter((quiz) => this.canViewQuiz(actor, quiz))
@@ -562,14 +561,15 @@ export class LearningService {
     };
   }
 
-  public getQuiz(
+  public async getQuiz(
     actor: AuthenticatedUser,
     quizId: string,
-  ): QuizRecord | QuizLearnerView {
+  ): Promise<QuizRecord | QuizLearnerView> {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
-    this.retrievalService.assertCourseAccess(actor, quiz.courseId);
-    if (!this.canViewQuiz(actor, quiz)) throw new NotFoundError("Quiz not found");
+    await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
+    if (!this.canViewQuiz(actor, quiz))
+      throw new NotFoundError("Quiz not found");
     return this.quizView(actor, quiz);
   }
 
@@ -580,7 +580,7 @@ export class LearningService {
   ): Promise<QuizAttemptResult> {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
-    this.retrievalService.assertCourseAccess(actor, quiz.courseId);
+    await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
     if (
       actor.role !== "learner" ||
       !this.canViewQuiz(actor, quiz) ||
@@ -666,7 +666,7 @@ export class LearningService {
     return this.repository.withMutationLock(async () => {
       const summary = this.repository.getSummary(summaryId);
       if (!summary) throw new NotFoundError("Summary not found");
-      this.requireCourseOwner(actor, summary.courseId);
+      await this.requireCourseOwner(actor, summary.courseId);
       if (summary.version !== version) {
         throw new ConflictError("Summary version is stale");
       }
@@ -700,7 +700,7 @@ export class LearningService {
     return this.repository.withMutationLock(async () => {
       const flashcards = this.repository.getFlashcardSet(flashcardId);
       if (!flashcards) throw new NotFoundError("Flashcard set not found");
-      this.requireCourseOwner(actor, flashcards.courseId);
+      await this.requireCourseOwner(actor, flashcards.courseId);
       if (flashcards.version !== version) {
         throw new ConflictError("Flashcard version is stale");
       }
@@ -725,13 +725,13 @@ export class LearningService {
     });
   }
 
-  public listSummaries(
+  public async listSummaries(
     actor: AuthenticatedUser,
     courseId: string,
     limit: number,
     cursor?: string,
-  ): { items: LearningSummaryRecord[]; nextCursor?: string } {
-    this.retrievalService.assertCourseAccess(actor, courseId);
+  ): Promise<{ items: LearningSummaryRecord[]; nextCursor?: string }> {
+    await this.retrievalService.assertCourseAccess(actor, courseId);
     const records = this.repository
       .listSummaries(courseId)
       .filter((summary) => canViewLearning(actor, summary))
@@ -739,26 +739,26 @@ export class LearningService {
     return paginate(records, limit, cursor);
   }
 
-  public getSummary(
+  public async getSummary(
     actor: AuthenticatedUser,
     summaryId: string,
-  ): LearningSummaryRecord {
+  ): Promise<LearningSummaryRecord> {
     const summary = this.repository.getSummary(summaryId);
     if (!summary) throw new NotFoundError("Summary not found");
-    this.retrievalService.assertCourseAccess(actor, summary.courseId);
+    await this.retrievalService.assertCourseAccess(actor, summary.courseId);
     if (!canViewLearning(actor, summary)) {
       throw new NotFoundError("Summary not found");
     }
     return summary;
   }
 
-  public listFlashcards(
+  public async listFlashcards(
     actor: AuthenticatedUser,
     courseId: string,
     limit: number,
     cursor?: string,
-  ): { items: FlashcardRecord[]; nextCursor?: string } {
-    this.retrievalService.assertCourseAccess(actor, courseId);
+  ): Promise<{ items: FlashcardRecord[]; nextCursor?: string }> {
+    await this.retrievalService.assertCourseAccess(actor, courseId);
     const records = this.repository
       .listFlashcardSets(courseId)
       .filter((flashcards) => canViewLearning(actor, flashcards))
@@ -766,13 +766,13 @@ export class LearningService {
     return paginate(records, limit, cursor);
   }
 
-  public getFlashcards(
+  public async getFlashcards(
     actor: AuthenticatedUser,
     flashcardId: string,
-  ): FlashcardRecord {
+  ): Promise<FlashcardRecord> {
     const flashcards = this.repository.getFlashcardSet(flashcardId);
     if (!flashcards) throw new NotFoundError("Flashcard set not found");
-    this.retrievalService.assertCourseAccess(actor, flashcards.courseId);
+    await this.retrievalService.assertCourseAccess(actor, flashcards.courseId);
     if (!canViewLearning(actor, flashcards)) {
       throw new NotFoundError("Flashcard set not found");
     }
@@ -800,6 +800,7 @@ export class LearningService {
           "PROVIDER_UNAVAILABLE",
           503,
           "The embedding provider is unavailable",
+          { provider: "mistral", providerErrorCode: error.code },
         );
       }
       throw error;
@@ -810,6 +811,7 @@ export class LearningService {
         "PROVIDER_UNAVAILABLE",
         503,
         "The embedding provider returned no vector",
+        { provider: "mistral", providerErrorCode: "EMBEDDING_PROVIDER_RESPONSE_INVALID" },
       );
     }
     const retrieved = await this.retrievalService.search(
@@ -1008,15 +1010,21 @@ export class LearningService {
     }));
   }
 
-  private requireCourseOwner(actor: AuthenticatedUser, courseId: string): void {
-    this.retrievalService.assertCourseAccess(actor, courseId);
+  private async requireCourseOwner(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<void> {
+    await this.retrievalService.assertCourseAccess(actor, courseId);
     if (actor.role !== "coach") throw new NotFoundError("Course not found");
   }
 
-  private requireQuizOwner(actor: AuthenticatedUser, quizId: string): QuizRecord {
+  private async requireQuizOwner(
+    actor: AuthenticatedUser,
+    quizId: string,
+  ): Promise<QuizRecord> {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
-    this.requireCourseOwner(actor, quiz.courseId);
+    await this.requireCourseOwner(actor, quiz.courseId);
     if (quiz.origin !== "coach") throw new NotFoundError("Quiz not found");
     return quiz;
   }
@@ -1205,6 +1213,9 @@ function toApiError(error: unknown): Error {
       error.code === "PROVIDER_UNAVAILABLE"
         ? "An AI provider is unavailable"
         : "The AI provider returned invalid learning content",
+      error.providerFailures.length > 0
+        ? { providerFailures: error.providerFailures }
+        : undefined,
     );
   }
   if (error instanceof EmbeddingProviderError) {

@@ -1,10 +1,13 @@
 import { AppError, ConflictError, NotFoundError } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
-import type { DocumentRecord } from "../../infra/jsonstore/system-collections";
+import type {
+  CourseRecord,
+  DocumentRecord,
+} from "../../infra/jsonstore/system-collections";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
 import type { DocumentListQuery } from "./document.schemas";
-import { JsonDocumentRepository } from "./document.types";
+import type { DocumentRepository } from "./document.types";
 import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
 import {
   validateDocumentUpload,
@@ -35,7 +38,7 @@ export interface DocumentView {
  */
 export class DocumentService {
   public constructor(
-    private readonly repository: JsonDocumentRepository,
+    private readonly repository: DocumentRepository,
     private readonly storage: PrivateFileStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
@@ -50,10 +53,17 @@ export class DocumentService {
     file: Express.Multer.File,
     requestId: string,
   ): Promise<DocumentView> {
-    const course = this.requireCourse(input.courseId);
-    this.assertCanUpload(actor, course, input.scope);
+    const course = await this.requireCourse(input.courseId);
+    await this.assertCanUpload(actor, course, input.scope);
     const validated = await validateDocumentUpload(file, this.config.maxDocxExpandedSizeBytes);
-    if (this.repository.findDuplicate(input.courseId, input.scope, actor.id, validated.contentHash)) {
+    if (
+      await this.repository.findDuplicate(
+        input.courseId,
+        input.scope,
+        actor.id,
+        validated.contentHash,
+      )
+    ) {
       throw new ConflictError("This file has already been uploaded");
     }
 
@@ -126,8 +136,8 @@ export class DocumentService {
     courseId: string,
     file: Express.Multer.File,
   ): Promise<DocumentView> {
-    const course = this.requireCourse(courseId);
-    this.assertCanUpload(actor, course, "course");
+    const course = await this.requireCourse(courseId);
+    await this.assertCanUpload(actor, course, "course");
     if (!actor.permissions.includes("course:edit")) {
       throw new AppError("FORBIDDEN", 403, "The required permission is not granted");
     }
@@ -135,7 +145,7 @@ export class DocumentService {
 
     return this.repository.withMutationLock(async () => {
       if (
-        this.repository.findDuplicate(
+        await this.repository.findDuplicate(
           courseId,
           "course",
           actor.id,
@@ -188,8 +198,11 @@ export class DocumentService {
   /**
    * Returns safe document metadata only to the uploader or an approved course member.
    */
-  public getStatus(actor: AuthenticatedUser, documentId: string): DocumentView {
-    const document = this.requireVisibleDocument(actor, documentId);
+  public async getStatus(
+    actor: AuthenticatedUser,
+    documentId: string,
+  ): Promise<DocumentView> {
+    const document = await this.requireVisibleDocument(actor, documentId);
     return toDocumentView(document);
   }
 
@@ -204,7 +217,7 @@ export class DocumentService {
     filename: string;
     mimeType: "application/pdf" | "video/mp4";
   }> {
-    const document = this.requireVisibleDocument(actor, documentId);
+    const document = await this.requireVisibleDocument(actor, documentId);
     if (
       document.scope !== "course" ||
       (document.mimeType !== "application/pdf" && document.mimeType !== "video/mp4") ||
@@ -222,17 +235,16 @@ export class DocumentService {
   /**
    * Lists course documents and only the caller's own personal notes.
    */
-  public listForCourse(
+  public async listForCourse(
     actor: AuthenticatedUser,
     courseId: string,
     query: DocumentListQuery,
-  ): { items: DocumentView[]; nextCursor: string | null } {
-    const course = this.requireCourse(courseId);
-    this.assertCanViewCourse(actor, course.id);
-    const visible = this.repository
-      .listDocumentsByCourse(courseId)
+  ): Promise<{ items: DocumentView[]; nextCursor: string | null }> {
+    const course = await this.requireCourse(courseId);
+    await this.assertCanViewCourse(actor, course.id);
+    const visible = (await this.repository.listDocumentsByCourse(courseId))
       .filter((document) => document.scope === "course" || document.ownerId === actor.id);
-    const page = this.repository.listPage(visible, query.limit, query.cursor);
+    const page = await this.repository.listPage(visible, query.limit, query.cursor);
     return {
       items: page.items.map(toDocumentView),
       nextCursor: page.nextCursor,
@@ -244,16 +256,22 @@ export class DocumentService {
    */
   public async retry(actor: AuthenticatedUser, documentId: string, requestId: string): Promise<DocumentView> {
     return this.repository.withDocumentLock(documentId, async () => {
-      const document = this.requireManageableDocument(actor, documentId, "document:upload");
+      const document = await this.requireManageableDocument(
+        actor,
+        documentId,
+        "document:upload",
+      );
       if (document.status !== "failed") {
         throw new ConflictError("Only failed documents can be retried");
       }
-      const course = this.requireCourse(document.courseId);
+      const course = await this.requireCourse(document.courseId);
       if (course.status !== "active") {
         throw new AppError("COURSE_ARCHIVED", 409, "Documents in archived courses cannot be retried");
       }
 
-      const jobStatus = document.ingestJobId ? this.jobs.getJobStatus(document.ingestJobId) : null;
+      const jobStatus = document.ingestJobId
+        ? await this.jobs.getJobStatus(document.ingestJobId)
+        : null;
       if (jobStatus === "queued" || jobStatus === "running") {
         throw new ConflictError("Document ingestion is already queued");
       }
@@ -291,7 +309,9 @@ export class DocumentService {
         }));
         throw error;
       }
-      return toDocumentView(this.repository.findDocument(document.id) ?? updated);
+      return toDocumentView(
+        (await this.repository.findDocument(document.id)) ?? updated,
+      );
     });
   }
 
@@ -305,8 +325,12 @@ export class DocumentService {
   ): Promise<{ id: string; status: "deleting"; cleanupJobId: string }> {
     return this.repository.withCourseContentMutationLock(() =>
       this.repository.withDocumentLock(documentId, async () => {
-        const document = this.requireManageableDocument(actor, documentId, "document:delete");
-        if (this.repository.isCourseLessonMediaReferenced(document.id)) {
+        const document = await this.requireManageableDocument(
+          actor,
+          documentId,
+          "document:delete",
+        );
+        if (await this.repository.isCourseLessonMediaReferenced(document.id)) {
           throw new ConflictError("Remove this file from its course lesson before deleting it");
         }
         const updated = await this.repository.updateDocument(document.id, (current) => ({
@@ -341,8 +365,11 @@ export class DocumentService {
   /**
    * Finds a document visible to the caller while hiding protected resource existence.
    */
-  private requireVisibleDocument(actor: AuthenticatedUser, documentId: string): DocumentRecord {
-    const document = this.repository.findDocument(documentId);
+  private async requireVisibleDocument(
+    actor: AuthenticatedUser,
+    documentId: string,
+  ): Promise<DocumentRecord> {
+    const document = await this.repository.findDocument(documentId);
     if (!document || actor.status !== "active" || actor.role === "admin") {
       throw new NotFoundError("Document not found");
     }
@@ -350,19 +377,19 @@ export class DocumentService {
       if (document.ownerId !== actor.id) throw new NotFoundError("Document not found");
       return document;
     }
-    this.assertCanViewCourse(actor, document.courseId);
+    await this.assertCanViewCourse(actor, document.courseId);
     return document;
   }
 
   /**
    * Finds a document the caller may manage for retry or deletion.
    */
-  private requireManageableDocument(
+  private async requireManageableDocument(
     actor: AuthenticatedUser,
     documentId: string,
     requiredPermission: "document:upload" | "document:delete",
-  ): DocumentRecord {
-    const document = this.repository.findDocument(documentId);
+  ): Promise<DocumentRecord> {
+    const document = await this.repository.findDocument(documentId);
     if (!document || actor.status !== "active" || actor.role === "admin") {
       throw new NotFoundError("Document not found");
     }
@@ -375,7 +402,7 @@ export class DocumentService {
       }
       return document;
     }
-    const course = this.requireCourse(document.courseId);
+    const course = await this.requireCourse(document.courseId);
     if (actor.role !== "coach" || course.ownerId !== actor.id) {
       throw new NotFoundError("Document not found");
     }
@@ -385,11 +412,11 @@ export class DocumentService {
   /**
    * Validates role, permission, course ownership and enrolment for upload.
    */
-  private assertCanUpload(
+  private async assertCanUpload(
     actor: AuthenticatedUser,
-    course: NonNullable<ReturnType<JsonDocumentRepository["findCourse"]>>,
+    course: CourseRecord,
     scope: DocumentRecord["scope"],
-  ): void {
+  ): Promise<void> {
     if (actor.status !== "active") {
       throw new AppError("FORBIDDEN", 403, "An active account is required");
     }
@@ -409,7 +436,8 @@ export class DocumentService {
       actor.role !== "learner" ||
       course.approvalStatus === "pending" ||
       course.approvalStatus === "changes_requested" ||
-      this.repository.findEnrolment(course.id, actor.id)?.status !== "approved"
+      (await this.repository.findEnrolment(course.id, actor.id))?.status !==
+        "approved"
     ) {
       throw new NotFoundError("Course not found");
     }
@@ -418,17 +446,21 @@ export class DocumentService {
   /**
    * Allows course-owner coaches and active, approved learners while excluding admins.
    */
-  private assertCanViewCourse(actor: AuthenticatedUser, courseId: string): void {
+  private async assertCanViewCourse(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<void> {
     if (actor.status !== "active" || actor.role === "admin") {
       throw new NotFoundError("Course not found");
     }
-    const course = this.requireCourse(courseId);
+    const course = await this.requireCourse(courseId);
     if (course.ownerId === actor.id && actor.role === "coach") return;
     if (
       actor.role === "learner" &&
       course.approvalStatus !== "pending" &&
       course.approvalStatus !== "changes_requested" &&
-      this.repository.findEnrolment(course.id, actor.id)?.status === "approved"
+      (await this.repository.findEnrolment(course.id, actor.id))?.status ===
+        "approved"
     ) {
       return;
     }
@@ -438,8 +470,8 @@ export class DocumentService {
   /**
    * Resolves a course without exposing missing-course details to document callers.
    */
-  private requireCourse(courseId: string) {
-    const course = this.repository.findCourse(courseId);
+  private async requireCourse(courseId: string): Promise<CourseRecord> {
+    const course = await this.repository.findCourse(courseId);
     if (!course) throw new NotFoundError("Course not found");
     return course;
   }

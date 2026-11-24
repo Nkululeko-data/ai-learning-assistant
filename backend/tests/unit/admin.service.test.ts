@@ -212,7 +212,7 @@ test("admin summary aggregates active system records without exposing user detai
     loadConfig({ requireJwtSecrets: false }),
   );
 
-  expect(admin.getSummary()).toEqual({
+  await expect(admin.getSummary()).resolves.toEqual({
     activeUsers: 1,
     activeCourses: 1,
     approvedEnrolments: 1,

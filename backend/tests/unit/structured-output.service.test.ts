@@ -59,6 +59,10 @@ describe("StructuredOutputService", () => {
       service.generate("answer", schema, messages, new AbortController().signal),
     ).rejects.toMatchObject<Partial<StructuredOutputError>>({
       code: "PROVIDER_UNAVAILABLE",
+      providerFailures: [
+        { provider: "inception", code: "LLM_PROVIDER_UNAVAILABLE" },
+        { provider: "groq", code: "LLM_PROVIDER_UNAVAILABLE" },
+      ],
     });
   });
 

@@ -10,7 +10,7 @@ import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
 import { CourseService } from "../../src/modules/courses/course.service";
 import { JsonCourseRepository } from "../../src/modules/courses/course.types";
-import { bootstrapSystem } from "../../scripts/bootstrap";
+import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async () => undefined,
@@ -44,16 +44,7 @@ afterEach(cleanupTemporaryDirectory);
 async function createCourseTestContext(): Promise<CourseTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-courses-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapSystem({
-    dataDirectory,
-    environment: "test",
-    adminEmail: "admin@example.test",
-    adminPassword,
-    passwordMinLength: 12,
-    reset: false,
-    yes: false,
-    demo: false,
-  });
+  await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -61,6 +52,9 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     environment: "test",
     port: 3000,
     dataDir: dataDirectory,
+    databaseUrl: undefined,
+    mongodbUri: undefined,
+    mongodbDbName: undefined,
     logLevel: "silent",
     corsOrigins: ["https://ui.example.test"],
     passwordMinLength: 12,
@@ -120,6 +114,8 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -129,7 +125,7 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
   });
 
   const firstAdminLogin = await authService.login("admin@example.test", adminPassword);
-  const firstAdmin = authService.authenticateAccessToken(firstAdminLogin.tokens.accessToken);
+  const firstAdmin = await authService.authenticateAccessToken(firstAdminLogin.tokens.accessToken);
   await authService.changePassword(firstAdmin, adminPassword, changedAdminPassword, "b4-admin-password-change");
   const adminLogin = await authService.login("admin@example.test", changedAdminPassword);
 

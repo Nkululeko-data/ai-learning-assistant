@@ -8,7 +8,7 @@ import type { AuthService } from "./auth.service";
 export function requireAuthentication(
   authService: AuthService,
 ): RequestHandler {
-  return (request, _response, next) => {
+  return async (request, _response, next) => {
     const authorization = request.header("authorization");
     const match = authorization?.match(/^Bearer ([^\s]+)$/i);
     if (!match) {
@@ -24,7 +24,7 @@ export function requireAuthentication(
     try {
       const token = match[1];
       if (!token) throw new AppError("AUTH_TOKEN_INVALID", 401, "Invalid access token");
-      request.auth = authService.authenticateAccessToken(token);
+      request.auth = await authService.authenticateAccessToken(token);
       next();
     } catch (error) {
       next(error);

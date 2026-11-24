@@ -1,28 +1,85 @@
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Alert, CssBaseline, ThemeProvider, createTheme } from "@mui/material";
 import { Link as RouterLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "../auth/useAuth";
 import { AuthPage } from "../features/auth/AuthPage";
-import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
-import { ChatWorkspacePage } from "../features/chat/ChatWorkspacePage";
-import { ConversationHistoryPage } from "../features/chat/ConversationHistoryPage";
-import { CourseDetailsPage } from "../features/courses/CourseDetailsPage";
-import { CourseManagementPage } from "../features/courses/CourseManagementPage";
-import { MyCoursesPage } from "../features/courses/MyCoursesPage";
-import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { AdminCoursesPage } from "../features/admin/AdminCoursesPage";
 import { AdminDashboardPage } from "../features/admin/AdminDashboardPage";
-import { AdminOperationsPanel } from "../features/admin/AdminOperationsPanel";
-import { AdminSettingsPanel } from "../features/admin/AdminSettingsPanel";
-import { AdminUsersPanel } from "../features/admin/AdminUsersPanel";
-import { CoachRequestsPanel } from "../features/admin/CoachRequestsPanel";
 import { CourseApprovalsPanel } from "../features/admin/CourseApprovalsPanel";
-import { DocumentLibraryPage } from "../features/documents/DocumentLibraryPage";
+import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { WorkspaceLayout } from "../features/workspace/WorkspacePage";
-import { LearningWorkspacePage } from "../features/learning/LearningWorkspacePage";
-import { QuizResultsPage } from "../features/learning/QuizResultsPage";
 import { designTokens } from "../theme/designTokens";
+
+const ChangePasswordPage = lazy(() =>
+  import("../features/auth/ChangePasswordPage").then((module) => ({
+    default: module.ChangePasswordPage,
+  })),
+);
+const ChatWorkspacePage = lazy(() =>
+  import("../features/chat/ChatWorkspacePage").then((module) => ({
+    default: module.ChatWorkspacePage,
+  })),
+);
+const ConversationHistoryPage = lazy(() =>
+  import("../features/chat/ConversationHistoryPage").then((module) => ({
+    default: module.ConversationHistoryPage,
+  })),
+);
+const CourseDetailsPage = lazy(() =>
+  import("../features/courses/CourseDetailsPage").then((module) => ({
+    default: module.CourseDetailsPage,
+  })),
+);
+const CourseManagementPage = lazy(() =>
+  import("../features/courses/CourseManagementPage").then((module) => ({
+    default: module.CourseManagementPage,
+  })),
+);
+const MyCoursesPage = lazy(() =>
+  import("../features/courses/MyCoursesPage").then((module) => ({
+    default: module.MyCoursesPage,
+  })),
+);
+const AdminCoursesPage = lazy(() =>
+  import("../features/admin/AdminCoursesPage").then((module) => ({
+    default: module.AdminCoursesPage,
+  })),
+);
+const AdminOperationsPanel = lazy(() =>
+  import("../features/admin/AdminOperationsPanel").then((module) => ({
+    default: module.AdminOperationsPanel,
+  })),
+);
+const AdminSettingsPanel = lazy(() =>
+  import("../features/admin/AdminSettingsPanel").then((module) => ({
+    default: module.AdminSettingsPanel,
+  })),
+);
+const AdminUsersPanel = lazy(() =>
+  import("../features/admin/AdminUsersPanel").then((module) => ({
+    default: module.AdminUsersPanel,
+  })),
+);
+const CoachRequestsPanel = lazy(() =>
+  import("../features/admin/CoachRequestsPanel").then((module) => ({
+    default: module.CoachRequestsPanel,
+  })),
+);
+const DocumentLibraryPage = lazy(() =>
+  import("../features/documents/DocumentLibraryPage").then((module) => ({
+    default: module.DocumentLibraryPage,
+  })),
+);
+const LearningWorkspacePage = lazy(() =>
+  import("../features/learning/LearningWorkspacePage").then((module) => ({
+    default: module.LearningWorkspacePage,
+  })),
+);
+const QuizResultsPage = lazy(() =>
+  import("../features/learning/QuizResultsPage").then((module) => ({
+    default: module.QuizResultsPage,
+  })),
+);
 
 function AuthenticatedRoutes() {
   const { user, status } = useAuth();
@@ -238,155 +295,157 @@ export function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route element={<AuthenticatedRoutes />}>
-          <Route element={<WorkspaceRoutes />}>
-            <Route element={<WorkspaceLayout />}>
-              <Route index element={<DashboardRoute />} />
-              <Route
-                path="admin"
-                element={
-                  <AdminRoute>
-                    <AdminDashboardPage />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/users"
-                element={
-                  <AdminRoute permission="role:manage">
-                    <AdminUsersPanel />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/coach-applications"
-                element={
-                  <AdminRoute permission="user:manage">
-                    <CoachRequestsPanel />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/course-approvals"
-                element={
-                  <AdminRoute permission="user:manage">
-                    <CourseApprovalsPanel />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/courses"
-                element={
-                  <AdminRoute permission="user:manage">
-                    <AdminCoursesPage />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/operations/jobs"
-                element={
-                  <AdminRoute permission="executions:view">
-                    <AdminOperationsPanel section="jobs" />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/operations/audit"
-                element={
-                  <AdminRoute permission="audit:view">
-                    <AdminOperationsPanel section="audit" />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/operations/executions"
-                element={
-                  <AdminRoute permission="executions:view">
-                    <AdminOperationsPanel section="executions" />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="admin/operations/settings"
-                element={
-                  <AdminRoute permission="config:view">
-                    <AdminSettingsRoute />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="my-courses"
-                element={
-                  <NonAdminRoute>
-                    <MyCoursesPage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route path="courses" element={<CourseCatalogRoute />} />
-              <Route
-                path="courses/:courseId"
-                element={
-                  <NonAdminRoute>
-                    <CourseDetailsPage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="courses/:courseId/study"
-                element={
-                  <NonAdminRoute>
-                    <LearningWorkspacePage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="courses/:courseId/documents"
-                element={
-                  <NonAdminRoute>
-                    <DocumentLibraryPage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="chat"
-                element={
-                  <NonAdminRoute>
-                    <ChatWorkspacePage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="history"
-                element={
-                  <NonAdminRoute>
-                    <ConversationHistoryPage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="quiz-results"
-                element={
-                  <NonAdminRoute>
-                    <QuizResultsPage />
-                  </NonAdminRoute>
-                }
-              />
-              <Route
-                path="conversations"
-                element={
-                  <NonAdminRoute>
-                    <ConversationHistoryPage />
-                  </NonAdminRoute>
-                }
-              />
+      <Suspense fallback={<main aria-busy="true">Loading page…</main>}>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route element={<AuthenticatedRoutes />}>
+            <Route element={<WorkspaceRoutes />}>
+              <Route element={<WorkspaceLayout />}>
+                <Route index element={<DashboardRoute />} />
+                <Route
+                  path="admin"
+                  element={
+                    <AdminRoute>
+                      <AdminDashboardPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/users"
+                  element={
+                    <AdminRoute permission="role:manage">
+                      <AdminUsersPanel />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/coach-applications"
+                  element={
+                    <AdminRoute permission="user:manage">
+                      <CoachRequestsPanel />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/course-approvals"
+                  element={
+                    <AdminRoute permission="user:manage">
+                      <CourseApprovalsPanel />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/courses"
+                  element={
+                    <AdminRoute permission="user:manage">
+                      <AdminCoursesPage />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/operations/jobs"
+                  element={
+                    <AdminRoute permission="executions:view">
+                      <AdminOperationsPanel section="jobs" />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/operations/audit"
+                  element={
+                    <AdminRoute permission="audit:view">
+                      <AdminOperationsPanel section="audit" />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/operations/executions"
+                  element={
+                    <AdminRoute permission="executions:view">
+                      <AdminOperationsPanel section="executions" />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="admin/operations/settings"
+                  element={
+                    <AdminRoute permission="config:view">
+                      <AdminSettingsRoute />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="my-courses"
+                  element={
+                    <NonAdminRoute>
+                      <MyCoursesPage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route path="courses" element={<CourseCatalogRoute />} />
+                <Route
+                  path="courses/:courseId"
+                  element={
+                    <NonAdminRoute>
+                      <CourseDetailsPage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="courses/:courseId/study"
+                  element={
+                    <NonAdminRoute>
+                      <LearningWorkspacePage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="courses/:courseId/documents"
+                  element={
+                    <NonAdminRoute>
+                      <DocumentLibraryPage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="chat"
+                  element={
+                    <NonAdminRoute>
+                      <ChatWorkspacePage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="history"
+                  element={
+                    <NonAdminRoute>
+                      <ConversationHistoryPage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="quiz-results"
+                  element={
+                    <NonAdminRoute>
+                      <QuizResultsPage />
+                    </NonAdminRoute>
+                  }
+                />
+                <Route
+                  path="conversations"
+                  element={
+                    <NonAdminRoute>
+                      <ConversationHistoryPage />
+                    </NonAdminRoute>
+                  }
+                />
+              </Route>
             </Route>
+            <Route path="/change-password" element={<ChangePasswordPage />} />
           </Route>
-          <Route path="/change-password" element={<ChangePasswordPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </ThemeProvider>
   );
 }

@@ -170,7 +170,7 @@ describe("Admin review queues", () => {
   it("sends a course back to its coach with review feedback", async () => {
     let isPending = true;
     let decision: unknown;
-    const course = {
+    const courseView = {
       id: courseId,
       name: "Biology",
       description: "Introductory biology",
@@ -186,6 +186,9 @@ describe("Admin review queues", () => {
       archivedBy: null,
       createdAt: "2026-11-20T07:00:00.000Z",
       updatedAt: "2026-11-20T07:00:00.000Z",
+    };
+    const course = {
+      ...courseView,
       owner: {
         id: coachId,
         displayName: "Test coach",
@@ -203,7 +206,7 @@ describe("Admin review queues", () => {
           isPending = false;
           return HttpResponse.json({
             data: {
-              ...course,
+              ...courseView,
               approvalStatus: "changes_requested",
               approvalNote: "Please add an overview.",
               reviewedBy: adminId,
@@ -229,10 +232,79 @@ describe("Admin review queues", () => {
     expect(
       await screen.findByText("There are no courses waiting for approval."),
     ).toBeVisible();
+    expect(
+      screen.queryByText("The service encountered a problem. Try again later."),
+    ).toBeNull();
     expect(decision).toEqual({
       decision: "changes_requested",
       note: "Please add an overview.",
       version: 1,
     });
+  });
+
+  it("approves a course when the decision endpoint returns a course view", async () => {
+    let isPending = true;
+    const courseView = {
+      id: courseId,
+      name: "Biology",
+      description: "Introductory biology",
+      ownerId: coachId,
+      status: "active",
+      approvalStatus: "pending",
+      approvalNote: null,
+      approvalRequestedAt: "2026-11-20T07:00:00.000Z",
+      reviewedBy: null,
+      reviewedAt: null,
+      version: 1,
+      archivedAt: null,
+      archivedBy: null,
+      createdAt: "2026-11-20T07:00:00.000Z",
+      updatedAt: "2026-11-20T07:00:00.000Z",
+    };
+    server.use(
+      http.get("http://localhost:3000/api/v1/admin/courses/approval-queue", () =>
+        HttpResponse.json({
+          data: isPending
+            ? [
+                {
+                  ...courseView,
+                  owner: {
+                    id: coachId,
+                    displayName: "Test coach",
+                    email: "coach@example.test",
+                  },
+                },
+              ]
+            : [],
+        }),
+      ),
+      http.patch(
+        `http://localhost:3000/api/v1/admin/courses/${courseView.id}/approval`,
+        () => {
+          isPending = false;
+          return HttpResponse.json({
+            data: {
+              ...courseView,
+              approvalStatus: "approved",
+              reviewedBy: adminId,
+              reviewedAt: "2026-11-23T07:00:00.000Z",
+              version: 2,
+            },
+          });
+        },
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderAdminPanel(<CourseApprovalsPanel />);
+    await screen.findByRole("heading", { name: "Biology" });
+    await user.click(screen.getByRole("button", { name: "Approve course" }));
+
+    expect(
+      await screen.findByText("There are no courses waiting for approval."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The service encountered a problem. Try again later."),
+    ).toBeNull();
   });
 });

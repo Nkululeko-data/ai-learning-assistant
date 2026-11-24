@@ -2,7 +2,7 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
-import { bootstrapSystem } from "../../scripts/bootstrap";
+import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
 import { createApp } from "../../src/app";
 import { createLogger } from "../../src/common/logging/logger";
 import type { AppConfig } from "../../src/config/config";
@@ -68,16 +68,7 @@ afterEach(async () => {
 async function createContext(): Promise<DocumentTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-documents-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapSystem({
-    dataDirectory,
-    environment: "test",
-    adminEmail: "admin@example.test",
-    adminPassword,
-    passwordMinLength: 12,
-    reset: false,
-    yes: false,
-    demo: false,
-  });
+  await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -85,6 +76,9 @@ async function createContext(): Promise<DocumentTestContext> {
     environment: "test",
     port: 3000,
     dataDir: dataDirectory,
+    databaseUrl: undefined,
+    mongodbUri: undefined,
+    mongodbDbName: undefined,
     logLevel: "silent",
     corsOrigins: [],
     passwordMinLength: 12,
@@ -163,6 +157,8 @@ async function createContext(): Promise<DocumentTestContext> {
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -177,7 +173,7 @@ async function createContext(): Promise<DocumentTestContext> {
   });
 
   const firstLogin = await authService.login("admin@example.test", adminPassword);
-  const firstAdmin = authService.authenticateAccessToken(firstLogin.tokens.accessToken);
+  const firstAdmin = await authService.authenticateAccessToken(firstLogin.tokens.accessToken);
   await authService.changePassword(firstAdmin, adminPassword, changedAdminPassword, "b6-test-password-change");
   const adminLogin = await authService.login("admin@example.test", changedAdminPassword);
   runner = new JobRunner(

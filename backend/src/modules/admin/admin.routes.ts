@@ -24,10 +24,10 @@ export function createAdminRouter(dependencies: AdminRouteDependencies): Router 
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("user:manage"),
-    (_request, response) => {
+    async (_request, response) => {
       response
         .status(200)
-        .json({ data: dependencies.adminService.getSummary() });
+        .json({ data: await dependencies.adminService.getSummary() });
     },
   );
 

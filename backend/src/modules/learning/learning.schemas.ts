@@ -236,6 +236,24 @@ export const quizGenerationOutputSchema = z
   })
   .strict();
 
+export function createQuizGenerationOutputSchema(
+  count: number,
+  types: Array<"mcq" | "true_false">,
+) {
+  const singleType = types.length === 1 ? types[0] : undefined;
+  const questionSchema = quizQuestionOutputSchema.extend({
+    type:
+      singleType === "mcq"
+        ? z.literal("mcq")
+        : singleType === "true_false"
+          ? z.literal("true_false")
+          : z.enum(["mcq", "true_false"]),
+  });
+  return quizGenerationOutputSchema.extend({
+    questions: z.array(questionSchema).length(count),
+  });
+}
+
 export type LearningSelection = z.infer<typeof learningSelectionSchema>;
 export type GenerateSummaryRequest = z.infer<
   typeof generateSummaryRequestSchema

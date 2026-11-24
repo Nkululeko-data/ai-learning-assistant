@@ -12,11 +12,13 @@ export class PermissionService {
   /**
    * Computes effective permissions from the role baseline and user overrides.
    */
-  public resolve(userId: string, roleId: string): string[] {
-    const permissions = new Set(
+  public async resolve(userId: string, roleId: string): Promise<string[]> {
+    const [rolePermissionKeys, overrides] = await Promise.all([
       this.repository.getRolePermissionKeys(roleId),
-    );
-    for (const override of this.repository.getUserOverrides(userId)) {
+      this.repository.getUserOverrides(userId),
+    ]);
+    const permissions = new Set(rolePermissionKeys);
+    for (const override of overrides) {
       if (override.effect === "grant") permissions.add(override.permissionKey);
       else permissions.delete(override.permissionKey);
     }

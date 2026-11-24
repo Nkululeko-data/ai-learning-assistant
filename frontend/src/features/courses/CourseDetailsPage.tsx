@@ -26,12 +26,13 @@ import { CoachQuizzesPanel } from "./CoachQuizzesPanel";
 import { EnrolmentRequestsPanel } from "./EnrolmentRequestsPanel";
 import { CourseLearnersPanel } from "./CourseLearnersPanel";
 
-type CoachCourseSection =
+type CourseSection =
   "overview" | "lessons" | "quizzes" | "people" | "join-requests" | "insights";
 
-function getCoachCourseSection(hash: string): CoachCourseSection {
+function getCourseSection(hash: string): CourseSection {
   switch (hash) {
     case "#course-lessons-editor":
+    case "#course-curriculum":
       return "lessons";
     case "#course-quizzes":
       return "quizzes";
@@ -97,8 +98,8 @@ export function CourseDetailsPage() {
   const canManageQuizzes = canEditLessons && user?.permissions.includes("quiz:create");
   const canManageCoursePeople =
     ownedCourse && user?.permissions.includes("enrolment:approve") === true;
-  const requestedSection = getCoachCourseSection(hash);
-  const activeSection: CoachCourseSection =
+  const requestedSection = getCourseSection(hash);
+  const activeSection: CourseSection =
     requestedSection === "lessons" && canEditLessons
       ? "lessons"
       : requestedSection === "quizzes" && canManageQuizzes
@@ -112,17 +113,19 @@ export function CourseDetailsPage() {
               : "overview";
 
   if (user?.role === "learner") {
+    const learnerSection = isCourseView(course) ? requestedSection : "overview";
+
+    if (learnerSection === "people" && isCourseView(course)) {
+      return <CourseLearnersPanel courseId={course.id} canRemoveLearners={false} />;
+    }
+
     return (
-      <Stack spacing={3}>
-        <CourseCurriculum
-          course={course}
-          hasCourseAccess={isCourseView(course)}
-          canUseStudyTools={Boolean(canUseStudyTools)}
-        />
-        {isCourseView(course) && (
-          <CourseLearnersPanel courseId={course.id} canRemoveLearners={false} />
-        )}
-      </Stack>
+      <CourseCurriculum
+        course={course}
+        hasCourseAccess={isCourseView(course)}
+        canUseStudyTools={Boolean(canUseStudyTools)}
+        section={learnerSection === "lessons" ? "lessons" : "overview"}
+      />
     );
   }
 

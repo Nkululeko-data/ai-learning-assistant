@@ -7,9 +7,9 @@ import type {
 import type { AuthenticatedUser } from "../../src/modules/auth/auth.types";
 import {
   RetrievalService,
-  type ChunkReader,
   type RetrievalRepository,
 } from "../../src/modules/retrieval/retrieval.service";
+import { JsonChunkRepository } from "../../src/modules/documents/chunk.repository";
 
 const courseId = "00000000-0000-4000-8000-000000000001";
 const coachId = "00000000-0000-4000-8000-000000000002";
@@ -117,7 +117,7 @@ function createService(
     course?: CourseRecord | null;
     enrolment?: EnrolmentRecord | null;
   } = {},
-): { service: RetrievalService; storage: ChunkReader } {
+) {
   const repository: RetrievalRepository = {
     findCourse: () => options.course === undefined ? course : options.course,
     findEnrolment: () => options.enrolment ?? {
@@ -131,11 +131,18 @@ function createService(
     },
     listDocumentsByCourse: () => documents,
   };
-  const storage: ChunkReader = {
+  const storage = {
     readChunks: jest.fn(async (documentId: string) => chunkFiles.get(documentId)),
+    writeChunks: jest.fn(async () => {}),
+    removeChunks: jest.fn(async () => {}),
   };
   return {
-    service: new RetrievalService(repository, storage, "mistral-embed", 2),
+    service: new RetrievalService(
+      repository,
+      new JsonChunkRepository(storage),
+      "mistral-embed",
+      2,
+    ),
     storage,
   };
 }

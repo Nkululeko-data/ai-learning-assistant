@@ -6,10 +6,12 @@
 
 **Companion documents:** `design-decisions.md` (product and access decisions), `Database-Design.md` (field-level data specification; wins over section 5 here on field-level detail), and the original Capstone 01 brief. If this file and `design-decisions.md` disagree, `design-decisions.md` wins and this file must be corrected.
 
+**Persistence status:** The approved target is Neon PostgreSQL plus MongoDB Atlas. The migration is partial: production still wires JSON auth and SQLite conversations, and other features still use JSON collections. Treat storage descriptions below as the legacy design unless explicitly marked current. Do not remove legacy storage or enable multiple application instances until the migration plan's verification and cutover gates pass.
+
 **What changed from v1**
-- Real databases are **tabled**. Persistence is **JSON file stores**, except **conversation history, which uses SQLite**. Everything sits behind repository interfaces so MongoDB/PostgreSQL can replace them later.
-- Single process (API + in-process job runner and scheduler), because JSON files must have one writer.
-- Vector search is in-process cosine similarity (no Atlas).
+- The approved target is **Neon PostgreSQL** for relational data and **MongoDB Atlas** for documents, chunks, and jobs. The implementation is in a transitional hybrid state; see `backend/database-implementation-neon-mongo.md`.
+- Keep one application instance while JSON and SQLite repositories remain active. Mongo-backed job leases do not make all other current writers multi-instance safe.
+- Atlas Vector Search is the target retrieval backend; the deployed database index and environment must be verified before relying on it.
 - Citation validator is **deterministic** (cited IDs must exist in the context set).
 - Added: bootstrap/seed script, token lifecycle, query rewriting from conversation history, quiz answer-key protection, concrete contracts, error catalogue, retention and erasure rules, config management, CI and operations, diagrams, and test pass criteria.
 
@@ -35,13 +37,14 @@
 | Runtime / language | Node.js (current LTS) + TypeScript, **strict mode** |
 | HTTP framework | Express.js, REST under `/api/v1` |
 | Validation | Zod (requests, responses, config, agent I/O) |
-| Primary persistence | **JSON file stores** (custom, section 5.2) behind repository interfaces |
-| Conversation history | **SQLite** via Node's built-in `node:sqlite` (`DatabaseSync`, Node 22.5+; experimental) |
-| Vector search | In-process cosine similarity over stored embeddings (section 10) |
+| Primary persistence | Neon PostgreSQL for migrated relational data; JSON stores remain active for unconverted modules |
+| Conversation history | Currently SQLite via Node's built-in `node:sqlite`; planned migration target is Neon PostgreSQL |
+| Document and job persistence | MongoDB Atlas for migrated documents, chunks, jobs, and scheduler state |
+| Vector search | Atlas Vector Search over MongoDB-backed chunks |
 | AI orchestration | **LangGraph.js** (`@langchain/langgraph`) |
 | LLM providers | **Inception Labs** (primary; model `mercury-3`, official `inceptionai` SDK, structured output via `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }`), **Groq** (fallback), behind an adapter |
 | Embeddings | **Mistral embeddings only** (DECIDED), behind the `EmbeddingProvider` adapter. Model `mistral-embed` (verify the model name and vector dimension, expected 1024, in Mistral's current docs). Key from `MISTRAL_API_KEY` |
-| Jobs / scheduler | In-process runner over a JSON job store (section 13) |
+| Jobs / scheduler | In-process runner with MongoDB-backed jobs and scheduler state |
 | Auth | JWT access token + rotating refresh token; argon2 password hashing |
 | Parsing | `pdfjs-dist` (per-page PDF text), `mammoth` (DOCX), plain read (TXT), `file-type` (content sniffing), `multer` (uploads) |
 | Logging | pino, structured JSON with redaction |
@@ -55,7 +58,7 @@ Pin exact dependency versions (lockfile committed). LangGraph.js in particular c
 
 ## 3. Architectural style
 
-**Modular monolith, single process.** Domain modules are isolated. No microservices. One Node process serves the API **and** runs the job runner and scheduler. This is a hard requirement of the JSON stores (one writer). **Do not run more than one instance** against the same data directory.
+**Modular monolith.** Domain modules are isolated. No microservices. The API and job runner currently run in one Node process. Keep a single application instance while active JSON/SQLite persistence, in-memory rate limiting, and local upload storage remain; re-evaluate only after the remaining cutovers and shared-storage work are verified.
 
 ### 3.1 Layers (strict, top-down dependencies only)
 
@@ -63,7 +66,7 @@ Pin exact dependency versions (lockfile committed). LangGraph.js in particular c
 HTTP layer        routes -> controllers          (parse, validate, call service, shape response)
 Application layer services                       (use cases, orchestration, authorization policies)
 Domain layer      entities, rules, value objects (pure TypeScript, no I/O)
-Infrastructure    repositories, adapters         (JSON stores, SQLite, LLM, embeddings, file storage)
+Infrastructure    repositories, adapters         (PostgreSQL, MongoDB, legacy JSON/SQLite, LLM, embeddings, file storage)
 AI layer          LangGraph graphs, nodes, prompts (called by services, never by controllers)
 ```
 
@@ -72,7 +75,7 @@ AI layer          LangGraph graphs, nodes, prompts (called by services, never by
 - Services depend on **repository interfaces** (ports), not on JSON or SQLite directly.
 - Domain code imports nothing from infrastructure.
 - Modules talk to each other only through exported service interfaces (`index.ts` public surface).
-- Repositories are the only code that touches storage. Swapping JSON for MongoDB/PostgreSQL later must require changing only repository implementations and wiring, nothing above them.
+- Repositories are the only code that touches storage. Persistence changes should be confined to repository implementations and wiring; keep services independent of storage technologies.
 - The AI layer reaches data only through injected retrieval and repository interfaces.
 
 ---
@@ -101,8 +104,10 @@ backend/
       validation/              # deterministic citation validator
       evaluation/              # eval runner, datasets, fixtures
     infra/
-      jsonstore/               # JSON store engine (section 5.2)
-      sqlite/                  # SQLite connection + schema for conversations/messages
+      jsonstore/               # legacy JSON store engine; still active for unconverted modules
+      sqlite/                  # legacy SQLite conversations and daily chat usage
+      postgres/                # Neon PostgreSQL client and migrations
+      mongo/                   # MongoDB client, indexes, and Atlas readiness
       storage/                 # uploaded-file storage adapter (local disk)
   scripts/
     bootstrap.ts               # section 6
@@ -122,15 +127,18 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 
 ### 5.1 Stores
 
-| Store | Technology | Contents |
+| Store | Current runtime | Target / migrated contents |
 |---|---|---|
-| Main data | JSON files (`data/json/`) | users, roles, permissions, role_permissions, user_permission_overrides, refresh_tokens, coach_requests, courses, enrolments, documents, document_chunks, learning_summaries, quizzes, quiz_attempts, flashcards, feedback, audit_logs, activity_events, jobs, agent_executions, gap_reports, config_versions, scheduler_state |
-| Conversation history | SQLite (`data/sqlite/conversations.db`) | conversations, messages |
-| Uploaded files | Local disk (`data/uploads/`), outside any web root | original files |
+| Relational data | JSON remains for auth and unconverted modules; courses and enrolments use PostgreSQL | Neon PostgreSQL for users/access, courses, enrolments, conversations, and other relational records as cut over |
+| Documents, chunks, jobs | MongoDB Atlas | MongoDB Atlas for document metadata, chunks, jobs, and scheduler state |
+| Other feature data | JSON collections remain active | Migration and repository cutover are still required |
+| Conversations | SQLite (`data/sqlite/conversations.db`) | Neon PostgreSQL; not yet cut over |
+| Uploaded files | Local private disk (`data/uploads/`), outside any web root | Persistent private storage shared by replicas before multi-instance operation |
 
-### 5.2 JSON store engine (MUST implement as a shared component)
+### 5.2 Legacy JSON store engine (still active)
 
-- **Layout:** one file per collection (`users.json`, `courses.json`, ...) containing an array of records. **Exception:** `document_chunks` is stored **one file per document** (`chunks/<documentId>.json`) because chunks carry embeddings and would otherwise make one giant file.
+- The engine remains required by production auth and other unconverted modules. Keep it until every dependent module is migrated and the remaining data is verified in its target.
+- **Layout:** one file per collection (`users.json`, `courses.json`, ...) containing an array of records. Legacy chunks were stored per document; active chunks now use MongoDB.
 - **Single writer:** all writes go through one in-process store. Each collection has a **write queue (mutex)**; read-modify-write happens inside it.
 - **Atomic writes:** write to `<file>.tmp`, flush (`fsync`), then **rename** over the real file. A crash never leaves a half-written file.
 - **In-memory cache + indexes:** load collections into memory at startup and keep `Map` indexes for lookups (by `id`, and by declared secondary keys). Reads are served from memory. Chunk files are loaded lazily per document, with an LRU cap (config).
@@ -142,9 +150,9 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 - **Backups:** the store takes a snapshot (copy of `data/json` and the SQLite file) at startup, and a nightly scheduled backup job keeps the last N (config). `scripts/restore.ts` restores a chosen snapshot. Document in the README.
 - **Limits:** designed for classroom scale (thousands of records, roughly 20,000 chunks at 1024 dimensions). If a collection file exceeds a configured size, log a warning recommending migration to a real database.
 
-### 5.3 Collections (JSON)
+### 5.3 Legacy JSON collection catalog
 
-| Collection | Key fields | Notes |
+| Legacy JSON collection | Key fields | Notes |
 |---|---|---|
 | `users` | id, email (unique), passwordHash, displayName, roleId, status (`active`/`suspended`/`archived`), mustChangePassword, failedLoginCount, lockedUntil, createdAt, updatedAt | Stash via `status` |
 | `roles` | id, name (`learner`/`coach`/`admin`) | seeded |
@@ -156,7 +164,7 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 | `courses` | id, ownerId, name, description, status (`active`/`archived`), version, createdAt, updatedAt | |
 | `enrolments` | id, courseId, userId, status (`pending`/`approved`/`rejected`/`removed`), requestedAt, decidedBy, decidedAt | UNIQUE(courseId,userId) |
 | `documents` | id, courseId, ownerId, scope (`course`/`personal`), filename, mimeType, sizeBytes, contentHash, storageKey, status (`uploaded`/`processing`/`ready`/`failed`/`deleting`), errorCode, errorDetail, extractionDiagnostics, pageCount, embeddingModel, createdAt | |
-| `document_chunks` (per-document file) | id, documentId, courseId, ownerId, scope, chunkIndex, text, pageStart, pageEnd, section, embedding (base64-encoded Float32Array; ~4 KB per 1024-dim vector versus ~10 KB as a JSON number array), embeddingModel, createdAt | |
+| `document_chunks` (legacy per-document file) | id, documentId, courseId, ownerId, scope, chunkIndex, text, pageStart, pageEnd, section, embedding, embeddingModel, createdAt | Active chunks now use MongoDB Atlas |
 | `learning_summaries` | id, courseId, ownerId, visibility, scope (`document`/`section`), sourceDocumentIds, sourceChunkIds, sourceHash, content, version, createdAt | |
 | `flashcards` | one record per generated set: id, courseId, ownerId, visibility, status, title, cards[{id, front, back, sourceChunkIds}], sourceHash, version, createdAt | see `Database-Design.md` 6.5 |
 | `quizzes` | id, courseId, createdBy, origin (`coach`/`learner_generated`), visibility (`course`/`private`), ownerId, status (`draft`/`published`/`superseded`), lineageId, version (each version is its own record), title, questions[], sourceDocumentIds, sourceChunkIds, generationParams, createdAt, updatedAt | see section 11 and `Database-Design.md` 6.2 |
@@ -170,7 +178,9 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 | `config_versions` | id, version, changedBy, before, after, createdAt | |
 | `scheduler_state` | taskName, lastRunAt, nextRunAt | prevents duplicate runs after restart |
 
-### 5.4 SQLite (conversation history only)
+### 5.4 SQLite conversation source (current runtime; cutover pending)
+
+The following schema documents the current legacy source, not the target database. Conversations, messages, and daily chat usage are still wired to SQLite in `server.ts`. A PostgreSQL conversation repository, migration, and verification are prerequisites to removing this database.
 
 ```
 conversations(id TEXT PK, user_id TEXT NOT NULL, course_id TEXT NOT NULL, title TEXT,
@@ -188,15 +198,16 @@ INDEX messages(grounding_status)
 - A user may only read their own conversations (policy check in the service, not only in the query).
 - Admin endpoints never read this database.
 
-### 5.5 Cross-store consistency rules (MUST)
+### 5.5 Cross-store consistency rules
 
-- **Access check first.** Enrolment, ownership and permission checks run against the JSON stores **before** any chunk, message or quiz query.
+- **Access check first.** Course and enrolment checks use PostgreSQL; auth and some unconverted access records still use JSON. Validate access before querying Mongo chunks or private content.
 - **No transactions across stores.** Multi-step operations (document delete, user/course stash, erasure) run as **idempotent jobs** so a failure midway can retry.
-- **Chat turn writes** (SQLite message, then JSON `activity_events`): write the message first, then the event with `dedupeKey = messageId`. Event writes are **at-least-once and deduplicated**. On startup and in the nightly job, a **reconciliation task** finds assistant messages with no matching event (and events whose message was deleted) and repairs them.
+- **Current chat writes** use SQLite messages and JSON `activity_events`; the message is written first, then the event with `dedupeKey = messageId`. The conversation store cutover is pending.
 - Reconciliation also finds chunks/documents whose course or owner is missing or stashed.
 
-### 5.6 Migration path to real databases (design constraint)
-Because services use repository interfaces, moving to MongoDB (documents, chunks, jobs, executions) and PostgreSQL later means writing new repository implementations and a one-off migration script that reads the JSON files. Vector search would move to Atlas Vector Search behind the same `ChunkSearch` interface. **Do not leak JSON-specific assumptions above the repository layer.**
+### 5.6 Database migration and cutover
+
+The migration is tracked phase-by-phase in `backend/database-implementation-neon-mongo.md`. PostgreSQL currently backs courses/enrolments; MongoDB backs document metadata, chunks, jobs, and scheduler state. Auth remains JSON-backed, conversations remain SQLite-backed, and other JSON records are not fully migrated. Do not remove legacy implementations, claim full cutover, or enable multiple instances until all remaining repositories and data are migrated and tested against isolated databases.
 
 ---
 
@@ -404,7 +415,7 @@ ingest job
 
 `RetrievalService.search(user, courseId, queryEmbedding, opts)` is the **only** way to read chunks.
 
-1. **Access gate (JSON stores):** the course must be `active`, and the user must be the course owner or an `approved` enrolled learner. Otherwise return no content (`ENROLMENT_REQUIRED`).
+1. **Access gate:** the course must be `active`, and the user must be the course owner or an `approved` enrolled learner. Course/enrolment checks use PostgreSQL; auth and unconverted access records may still use JSON. Otherwise return no content (`ENROLMENT_REQUIRED`).
 2. **Filter first, then score:** candidate chunks are those where
    `courseId = X AND embeddingModel = current AND ( scope = 'course' OR (scope = 'personal' AND ownerId = currentUser) )`.
    Cosine similarity is computed **only over the filtered candidates**, never over everything and filtered afterwards.
@@ -456,13 +467,13 @@ Coach quiz analytics are aggregate only (average score, hardest questions, compl
 
 ---
 
-## 13. Jobs and scheduler (in-process)
+## 13. Jobs and scheduler (in-process runner, MongoDB persistence)
 
-- **Job runner** starts inside the server process. Jobs live in the `jobs` JSON collection. Types: `ingest`, `reembed`, `generate`, `cluster`, `cleanup` (deletion cascades, erasure), `reconcile`, `backup`, `prune`.
-- **Claiming:** the runner picks the oldest `queued` job whose `runAfter <= now`, or a `running` job whose `lockedUntil` expired, inside the store's write queue (atomic within the process). Concurrency limit from config.
+- **Job runner** starts inside the server process. Jobs and scheduler state use MongoDB. Types include `ingest`, `reembed`, `generate`, `cluster`, `cleanup`, `reconcile`, `backup`, and `prune`.
+- **Claiming:** MongoDB performs atomic job claims with leases so an expired claim can be retried. The runner is still in-process; multi-instance deployment remains gated on all other storage, rate limiting, and uploads being ready.
 - **Retries:** bounded `maxAttempts` with exponential backoff via `runAfter`. After the last attempt the job becomes `dead` (dead-letter), visible to admins with the error code, and can be retried manually. Jobs MUST be idempotent. A per-type job timeout releases stuck jobs.
 - **Graceful shutdown:** on SIGTERM stop claiming, wait up to `shutdownGraceMs` for in-flight jobs, and leave the rest to be picked up on restart (lock expiry).
-- **Scheduler:** in-process timers read/write `scheduler_state` so a restart does not re-run a task that already ran in its window. Scheduled tasks: nightly `backup`, `reconcile`, `prune` (retention), gap-report generation.
+- **Scheduler:** in-process timers read/write MongoDB `scheduler_state` so a restart does not re-run a task that already ran in its window.
 - Long-running API calls return **202 Accepted** with a status link (`GET /jobs/:id` or the resource status endpoint).
 
 ---
@@ -478,7 +489,7 @@ Coach quiz analytics are aggregate only (average score, hardest questions, compl
 | **Archived course** | Read-only: no new documents, enrolments or questions; documents are retained but excluded from retrieval; learners can still view their history; owner/admin can reactivate. Admin may reassign an archived or stashed coach's courses |
 | **User erasure** (privacy request, POPIA) | Admin-initiated `cleanup` job: hard-delete the user's personal notes and conversations, replace `email`/`displayName` with a tombstone, revoke tokens, and replace `userId` in `activity_events`/`feedback` with a one-way pseudonym so aggregates survive. Audit the action (no content). (DERIVED) |
 
-**Document hard-delete (job, idempotent):** mark `deleting` -> delete `chunks/<id>.json` -> delete the uploaded file -> delete the document record -> write `audit_logs` (document id + actor only).
+**Document hard-delete (job, idempotent):** mark `deleting` -> delete MongoDB chunks -> delete the uploaded file -> delete the document record -> write `audit_logs` (document id + actor only).
 
 **Retention (config, applied by the `prune` job):** `agent_executions` 30 days, `activity_events` and `audit_logs` kept (size-warned), expired `refresh_tokens` and finished jobs pruned, conversations deleted only by the user (or erasure). Backups kept per `backup.keep`.
 
@@ -498,7 +509,7 @@ Coach quiz analytics are aggregate only (average score, hardest questions, compl
 - **Envelope:** success `{ data, meta? }`; error `{ error: { code, message, details?, requestId } }`.
 - **Pagination** on all list endpoints (`limit` with a max, `cursor`). **Idempotency-Key** header supported on suitable POSTs (keys stored with a TTL).
 - Every request has a `requestId` (propagated to logs, executions and errors). `GET /health` (liveness) and `GET /ready` (stores open, schema version ok, provider config present).
-- **Rate limiting:** in-memory per-IP and per-user limiters are acceptable because the app is single-instance. Documented as a constraint.
+- **Rate limiting:** current in-memory per-IP and per-user limiters are process-local. Do not horizontally scale until a shared limiter is implemented or per-instance behavior is explicitly accepted and protected by deployment controls.
 
 ### 16.1 Error catalogue
 
@@ -601,8 +612,8 @@ Structured logs with `requestId` and `executionId`; `agent_executions` metadata 
 ## 20. Delivery and operations
 
 - **CI** (GitHub Actions or equivalent): install with lockfile, ESLint + Prettier check, `tsc --noEmit` (strict), unit + integration + contract tests, dependency audit. AI evaluation is not part of default CI.
-- **Docker:** multi-stage Dockerfile; run as non-root; one container with the `data/` volume mounted persistently. `docker-compose.yml` for local use. Document that the JSON store needs a persistent volume and a **single instance**.
-- **Deployment target:** AWS or Azure per the brief (container + persistent volume). OPEN-17: choose the target; no horizontal scaling until real databases replace the JSON stores.
+- **Docker:** multi-stage Dockerfile; run as non-root. The current hybrid runtime requires persistent private storage for JSON, SQLite, and uploads.
+- **Deployment target:** AWS or Azure per the brief (container + persistent volume). Keep a single instance until remaining legacy stores, process-local rate limiting, and upload sharing are addressed.
 - **Backups and restore:** nightly snapshot job, startup snapshot, `scripts/restore.ts`, instructions in the README.
 - **Lint/format/commit:** ESLint, Prettier, optional pre-commit hook; conventional commit messages.
 - **README** must cover: setup, `npm run bootstrap`, env vars, running, tests, backup/restore, limitations.
@@ -617,8 +628,9 @@ flowchart LR
   FE[Frontend later] --> API[Express routes/controllers]
   API --> SVC[Services + policies]
   SVC --> REPO[Repository interfaces]
-  REPO --> JS[(JSON stores)]
-  REPO --> SQL[(SQLite: conversations)]
+  REPO --> PG[(Neon PostgreSQL: migrated relational data)]
+  REPO --> MG[(MongoDB Atlas: documents, chunks, jobs)]
+  REPO --> LEGACY[(JSON stores + SQLite: remaining runtime data)]
   SVC --> GR[GraphRunner / LangGraph]
   GR --> PROV[LLM + Embedding adapters]
   GR --> RET[Retrieval service]
@@ -655,7 +667,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   UP[Upload] --> V[Validate + hash] --> ST[Store file] --> Q[Enqueue ingest job]
-  Q --> EX[Extract per page] --> CH[Chunk + overlap] --> EM[Embed] --> W[Write chunks file] --> RDY[Status ready]
+  Q --> EX[Extract per page] --> CH[Chunk + overlap] --> EM[Embed] --> W[Write chunks to MongoDB] --> RDY[Status ready]
 ```
 
 ---
@@ -665,14 +677,14 @@ flowchart LR
 | Step | Deliverable |
 |---|---|
 | B0 | Repo assessment (existing code? if greenfield, short stack note) |
-| B1 | Docs: `Architecture.md`, `Database-Design.md` (JSON collections + SQLite schema + indexes), `API-Specification.md`, OpenAPI draft, the three diagrams. **Review before coding** |
-| B2 | Foundation: config + env validation, logger, request ID, error middleware, **JSON store engine**, SQLite setup, health/readiness, **bootstrap script** |
+| B1 | Docs: `Architecture.md`, `Database-Design.md`, `API-Specification.md`, OpenAPI draft, the three diagrams. **Review before coding** |
+| B2 | Foundation: config + env validation, logger, request ID, error middleware, JSON store engine, SQLite setup, health/readiness, bootstrap script |
 | B3 | Auth and users: register (+coach request), login, token rotation, lockout, permissions, middleware, audit; admin coach-request approval |
 | B4 | Courses and enrolments |
 | B5 | Job runner + scheduler (claim, retry, dead-letter, shutdown, scheduler state) |
 | B6 | Documents and ingestion (upload validation, extraction, chunking, embedding adapter, status/retry, hard-delete job) |
 | B7 | Retrieval service with the access filter + isolation tests |
-| B8 | Chat graph: provider adapters + fakes, nodes (incl. rewrite), evidence gate, deterministic validator, grounding states, execution tracking; `POST /chat/ask`; SQLite conversations |
+| B8 | Chat graph: provider adapters + fakes, nodes (incl. rewrite), evidence gate, deterministic validator, grounding states, execution tracking; `POST /chat/ask`; legacy SQLite conversation persistence |
 | B9 | Learning graph: summaries, flashcards, quizzes, attempts, answer-key protection, coach publishing |
 | B10 | Feedback, `activity_events`, insights endpoints, gap-report job (clustering last) |
 | B11 | Admin: audit, executions, users, config, jobs, erasure |
@@ -680,13 +692,15 @@ flowchart LR
 
 Build one step at a time, one piece at a time within a step, per section 1.
 
+Database replacement and final cleanup are a separate approved sequence in `backend/database-implementation-neon-mongo.md`; this historical build order does not imply the migration is complete.
+
 ---
 
 ## 23. Open items (do not implement until resolved)
 
 | ID | Question | Recommendation |
 |---|---|---|
-| OPEN-1 | Does "basic SQL" for conversation history mean SQLite? | Yes (assumed) |
+| OPEN-1 | Does "basic SQL" for conversation history mean SQLite? | SQLite is the current source; the approved target is Neon PostgreSQL |
 | OPEN-6 | Show answers after attempt | Yes (assumed in 11.1) |
 | OPEN-8 | Topic grouping method | Hybrid: embed, cluster, LLM label |
 | OPEN-9 | "Summary of the questions" | Theme-level summary for the coach |
@@ -696,16 +710,16 @@ Build one step at a time, one piece at a time within a step, per section 1.
 | OPEN-16 | Does the Groq fallback support JSON-schema structured output? (Inception confirmed) | Verify before B8; if not, use JSON mode + Zod repair retry on the fallback path |
 | OPEN-19, 21-22 | Data-design points: coach access to feedback comments, question embedding storage, conversation hard delete | See `Database-Design.md` section 12; OPEN-20 is resolved with a configurable 24-hour default |
 | OPEN-17 | AWS vs Azure target | Decide before B12 |
-| OPEN-18 | Real-database migration timing (MongoDB/PostgreSQL) | After the coach approves; repository interfaces make this a swap |
+| OPEN-18 | Real-database migration timing (MongoDB/PostgreSQL) | Approved and in progress; complete remaining migrations and verify before cleanup |
 
-Resolved since v1: OPEN-4 ("specialized" quiz = generated from content the learner selects), OPEN-2 (Mistral embeddings only), OPEN-3 (conversations in SQLite), OPEN-5 (version quizzes), OPEN-10 (SSE over POST), OPEN-12 (no Atlas; in-process search), OPEN-1 old (SQL engine, now SQLite for conversations only).
+Resolved since v1: OPEN-4 ("specialized" quiz = generated from content the learner selects), OPEN-2 (Mistral embeddings only), OPEN-3 (SQLite was the initial conversation store; migration target is Neon), OPEN-5 (version quizzes), OPEN-10 (SSE over POST), OPEN-12 (superseded: Atlas Vector Search is now the target).
 
 ---
 
 ## 24. Deviations from the brief (need coach approval; document in `Architecture.md`)
 
-1. **Persistence:** JSON file stores plus SQLite for conversation history, instead of MongoDB with Atlas Vector Search. Temporary; designed to be swapped behind repository interfaces. Vector search is in-process cosine similarity.
-2. **Single instance / single process** (a consequence of JSON stores). Scalability and "isolate background jobs" are deferred.
+1. **Persistence cutover is partial:** PostgreSQL and MongoDB Atlas are wired for selected modules, while JSON and SQLite remain active elsewhere. Do not describe the target as fully deployed.
+2. **Single instance / single process remains required** until active JSON/SQLite writers, local uploads, and process-local rate limiting are addressed.
 3. **LLM providers** are Inception Labs and Groq (brief: Claude and OpenAI; alternatives allowed with documented approval).
 4. **LangGraph.js** for orchestration (brief allows LangChain.js or a custom layer).
 5. **Deterministic citation validation** as the runtime gate; semantic faithfulness is measured offline.

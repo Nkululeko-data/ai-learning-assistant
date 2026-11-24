@@ -28,6 +28,7 @@ import {
   RetrievalService,
   type RetrievalRepository,
 } from "../../src/modules/retrieval/retrieval.service";
+import { createTestChunkRepository } from "../helpers/chunk-repository";
 
 const courseId = "00000000-0000-4000-8000-000000000001";
 const coachId = "00000000-0000-4000-8000-000000000002";
@@ -133,8 +134,7 @@ async function createLearningService(
   bytes.writeFloatLE(0, 4);
   const retrievalService = new RetrievalService(
     repository,
-    {
-      readChunks: async () => ({
+    createTestChunkRepository(async () => ({
         header: {
           documentId,
           courseId,
@@ -157,8 +157,7 @@ async function createLearningService(
             embedding: bytes.toString("base64"),
           },
         ],
-      }),
-    },
+      })),
     "mistral-embed",
     2,
   );
@@ -231,7 +230,9 @@ describe("LearningService", () => {
     });
     expect(second.id).toBe(first.id);
     expect(primary.calls).toHaveLength(1);
-    expect(service.listSummaries(otherLearner, courseId, 20).items).toEqual([]);
+    expect(
+      (await service.listSummaries(otherLearner, courseId, 20)).items,
+    ).toEqual([]);
     expect(collections.agentExecutions.list()).toMatchObject([
       {
         graph: "learning",
@@ -314,7 +315,9 @@ describe("LearningService", () => {
       version: 1,
     });
     expect(regenerated.version).toBe(2);
-    expect(service.listSummaries(learner, courseId, 20).items).toEqual([]);
+    expect((await service.listSummaries(learner, courseId, 20)).items).toEqual(
+      [],
+    );
     const published = await service.publishSummary(
       coach,
       draft.id,
@@ -322,9 +325,9 @@ describe("LearningService", () => {
       "request-7",
     );
     expect(published).toMatchObject({ status: "published", version: 1 });
-    expect(service.listSummaries(learner, courseId, 20).items).toMatchObject([
-      { id: draft.id, status: "published" },
-    ]);
+    expect(
+      (await service.listSummaries(learner, courseId, 20)).items,
+    ).toMatchObject([{ id: draft.id, status: "published" }]);
   });
 
   test("does not return generated quiz keys to a learner before submission", async () => {
@@ -372,6 +375,52 @@ describe("LearningService", () => {
     expect(JSON.stringify(quiz)).not.toContain("explanation");
   });
 
+  test("repairs generated quizzes that do not match the requested count and types", async () => {
+    const question = {
+      type: "mcq",
+      prompt: "What is a database?",
+      options: [
+        { id: "a", text: "An organized collection of data" },
+        { id: "b", text: "A programming language" },
+      ],
+      correctOptionId: "a",
+      explanation:
+        "The source defines a database as an organized collection of data.",
+      sourceChunkIds: [chunkId],
+    };
+    const invalidResponse = JSON.stringify({
+      title: "Incorrect draft",
+      questions: [{ ...question, type: "true_false" }, question],
+    });
+    const correctedResponse = JSON.stringify({
+      title: "Corrected draft",
+      questions: [question],
+    });
+    const { service, primary } = await createLearningService([
+      invalidResponse,
+      correctedResponse,
+    ]);
+
+    const quiz = await service.generateQuiz(
+      learner,
+      generateQuizRequestSchema.parse({
+        courseId,
+        selection: { documentIds: [documentId] },
+        count: 1,
+        types: ["mcq"],
+        difficulty: "medium",
+      }),
+      "request-repaired-quiz",
+      new AbortController().signal,
+    );
+
+    expect(quiz).toMatchObject({
+      title: "Corrected draft",
+      questions: [{ type: "mcq", prompt: "What is a database?" }],
+    });
+    expect(primary.calls).toHaveLength(2);
+  });
+
   test("publishes coach flashcards without changing their content version", async () => {
     const response = JSON.stringify({
       title: "Database basics",
@@ -412,7 +461,9 @@ describe("LearningService", () => {
       status: "published",
       version: draft.version,
     });
-    expect(service.getFlashcards(learner, draft.id).status).toBe("published");
+    expect((await service.getFlashcards(learner, draft.id)).status).toBe(
+      "published",
+    );
   });
 
   test("hides quiz keys from learners, scores on the server, and versions edits after attempts", async () => {
@@ -446,7 +497,7 @@ describe("LearningService", () => {
       "request-4",
     );
     expect(published.version).toBe(draft.version);
-    const learnerView = service.getQuiz(learner, published.id);
+    const learnerView = await service.getQuiz(learner, published.id);
     expect(JSON.stringify(learnerView)).not.toContain("correctOptionId");
     expect(JSON.stringify(learnerView)).not.toContain("explanation");
 

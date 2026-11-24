@@ -1,8 +1,7 @@
 # AI Learning Assistant: Database Implementation (Neon Postgres + MongoDB Atlas)
 
 Build spec for the coding agent. Repo: `Nkululeko-data/ai-learning-assistant`, backend in `backend/`.
-Replaces the JSON file store and SQLite with real databases. Where this file conflicts with
-`docs/implementation-phases.md` (single-process rule) or the "JSON for now" decision, this file wins.
+This is the approved target architecture and phased migration plan, not a claim that the cutover is complete. Production is currently hybrid: JSON auth and other feature collections, SQLite conversations, PostgreSQL courses/enrolments, and MongoDB documents/chunks/jobs. Keep the legacy stores and single-instance deployment constraint until the final verification and cleanup gates pass.
 
 ## 0. Working rules
 
@@ -24,7 +23,7 @@ Replaces the JSON file store and SQLite with real databases. Where this file con
 | Conversations + messages | **Move from SQLite to Neon** |
 | Existing JSON data | **Migrate all relational data** into Neon, keeping existing UUIDs |
 | Courses | New tables in Neon; seed some courses |
-| Single-instance rule | **Lifted** (see section 9 for what must change because of it) |
+| Single-instance rule | **Retained during migration.** Revisit only after all active JSON/SQLite writers, local uploads, and process-local rate limiting are addressed and verified. |
 
 ## 2. What goes where
 
@@ -133,6 +132,8 @@ Each test file uses a clean schema (truncate between tests). Add a concurrency t
 `scripts/bootstrap.ts` keeps its behaviour (idempotent roles, permissions, baseline grants, first admin once,
 `mustChangePassword: true`, audit row `bootstrap.admin_created`), but writes to Postgres.
 
+- `npm run bootstrap` requires `DATABASE_URL`; JSON/SQLite application tests keep using a test-only fixture
+  until the repository cutover.
 - Use `INSERT ... ON CONFLICT DO NOTHING` and report counts of what was actually added.
 - Run migrations first.
 - `--reset` now means: truncate all app tables, **refuse in production**, require `--yes`.
@@ -145,6 +146,8 @@ Done when: running it twice adds nothing the second time; tests cover admin-exis
 
 `scripts/migrate-json-to-neon.ts`. One-off, idempotent, safe to re-run.
 
+- Run against a schema-only target before running Postgres bootstrap. The importer preserves source UUIDs
+  and refuses target rows that are not present in the source; it does not remap IDs or delete data.
 - Read `DATA_DIR/json/*.json` with the existing Zod schemas; **reject the run if any record fails validation** (report which collection and id, no field values).
 - **Keep existing UUIDs** so references stay valid.
 - Insert in dependency order: roles, permissions, role_permissions, users, user_permission_overrides, coach_requests,
@@ -154,23 +157,31 @@ Done when: running it twice adds nothing the second time; tests cover admin-exis
 - At the end, compare row counts (source vs Neon) per table and exit non-zero on mismatch.
 - Logs show counts only, never emails, hashes, message content.
 - Convert SQLite `cited_chunk_ids` / `cited_document_ids` (JSON text) into `text[]`.
+- Preserve complete SQLite citation metadata in a `messages.citations` JSONB column. This additive
+  migration is `003_conversation_citations.sql`; do not rewrite already-applied migrations.
 - Back up first: copy the source files into `DATA_DIR/backups/<timestamp>/` before reading.
 
 Done when: dry run on real data passes, a real run matches counts, a second run inserts zero rows.
 
 ## 8. Step 6: Courses, enrolments, seed
 
-**003_courses.sql:**
+**004_courses.sql:**
 - `courses(id pk, owner_id fk users, title, description, status check active/archived, created_at, updated_at)`
 - `enrolments(id pk, course_id fk, user_id fk, status check pending/approved/rejected/removed, requested_at, decided_by, decided_at,
   unique(course_id, user_id))`
+- Preserve the current API fields in PostgreSQL too: lessons, approval state/notes/review timestamps, archive metadata,
+  optimistic version, and enrolment decision notes/timestamps.
+- Extend the JSON-to-Neon importer to migrate courses and enrolments before switching the running course service.
+- After importing, run `npm run bootstrap`, then `npm run seed:courses`. An optional
+  `seed/courses.json` is an array of `{ "title": "...", "description": "..." }`; without it, add two
+  pending placeholder courses only when the target has no imported courses.
 - Self-join with approval by the course owner (existing decision). Archive, never hard-delete, courses ("stash").
 
 **Seed:** `scripts/seed-courses.ts`, idempotent (upsert by a stable slug or title + owner).
 Input from a small `seed/courses.json` the user provides; if none, create two placeholder courses.
 Owner is an existing coach user; fail clearly if there is none.
 
-Repository interfaces: `CourseRepository`, `EnrolmentRepository` (Postgres implementations only; no JSON versions).
+Repository interfaces: async `CourseRepository`, `EnrolmentRepository` with Postgres implementations.
 Authorization (owner / enrolled) is checked here before any Mongo read.
 
 ## 9. Step 7: Mongo collections and indexes
@@ -182,27 +193,49 @@ Authorization (owner / enrolled) is checked here before any Mongo read.
 - `document_chunks`: `{ _id: "<documentId>:<chunkIndex>", documentId, courseId, scope, ownerId, text, embedding, embeddingModel, ... }`;
   index `(documentId)`.
 - **Atlas Vector Search index** (created in Atlas, definition committed as `docs/atlas-vector-index.json` and applied by a script):
-  - vector field `embedding`, `numDimensions` = confirmed `mistral-embed` size (expected 1024), similarity `cosine`
-  - filter fields: `courseId`, `scope`, `ownerId`, `embeddingModel`
-- `jobs`: lease fields (`lockedBy`, `lockedUntil`), `status`, `attempts`, `runAt`; index `(status, runAt)`.
+  - vector field `embedding`, `numDimensions` = 1024, similarity `cosine`
+  - filter fields: `courseId`, `documentId`, `scope`, `ownerId`, `embeddingModel`, `normalizedSection`
+- `jobs`: lease fields (`lockedBy`, `lockedUntil`), `status`, `attempts`, `runAfter`; index `(status, runAfter, createdAt)`.
   Claim with an atomic `findOneAndUpdate`.
 - Hard delete for documents (with the warning in the UI): delete chunks and the document; idempotent job.
 
 Repository interfaces: `DocumentRepository`, `ChunkRepository` (vector search takes the filter above as a required argument).
 
+Implementation and cutover:
+- `ensure-indexes.ts` creates the regular MongoDB indexes at startup; startup also refuses to proceed unless the Atlas vector index is queryable.
+- `docs/atlas-vector-index.json` is applied idempotently by `npm run mongo:vector-index`. The `mistral-embed` documentation confirms 1024 dimensions: https://docs.mistral.ai/inference/embeddings/text_embeddings
+- `npm run migrate:json-to-mongo -- --dry-run` backs up and validates `documents.json`, `jobs.json`, `scheduler_state.json`, all legacy chunk files, and private upload file sizes. The real run is idempotent, preserves IDs and upload paths, and refuses invalid, conflicting, or extra target records; it never deletes target data.
+- Stop the API and workers before the real import. Then run the importer, create the Atlas vector index, wait until Atlas reports it queryable, and only then start the Mongo-backed document, chunk, and job services. Uploaded file bytes remain in `DATA_DIR/uploads`, so that directory must stay on persistent private storage and be shared at the same path by every API/worker replica when horizontally scaled.
+- Document deletion remains a confirmed, idempotent cleanup job: it permanently removes chunks, the private upload, and metadata. The existing UI confirmation warns that deletion cannot be undone.
+
 ## 10. Step 8: Cleanup and doc updates
 
-- Remove `better-sqlite3`, `@types/better-sqlite3`, `infra/sqlite/*`, `infra/jsonstore/*`, `JsonAuthRepository`, `scripts/migrations/001-initial-schema.ts`
-  once the migration is verified and the user approves.
-- `docs/implementation-phases.md`: delete the single-process rule; update B2 ("JSON storage and SQLite") and B8 ("Persist conversations in SQLite") wording.
-- `Database-Design.md`, `backend-architecture`, `design-decisions`: replace "JSON stores + SQLite" with Neon + Mongo.
+- This cleanup is gated on verified migration and cutover. **Do not remove**
+  `infra/sqlite/*`, `infra/jsonstore/*`, `JsonAuthRepository`, or
+  `scripts/migrations/001-initial-schema.ts` while the server or modules still
+  depend on them.
+- As of this phase, production still wires JSON auth and SQLite conversations;
+  JSON also backs learning content, feedback, analytics, executions, and other
+  records. The PostgreSQL auth repository is not yet wired into the server, and
+  the data importers do not migrate every remaining JSON collection.
+- `better-sqlite3` and `@types/better-sqlite3` are already absent from
+  `backend/package.json`; conversations use Node's built-in `node:sqlite`.
+- Documentation now distinguishes the Neon/Atlas target from the current
+  hybrid runtime. Keep the one-instance deployment constraint until the
+  remaining repositories, rate limiting, and upload storage are ready for
+  multiple instances.
+- Before deleting legacy persistence, migrate the remaining data, switch all
+  production repositories, run isolated PostgreSQL and Atlas integration
+  tests, verify source/target counts and backups, and receive explicit approval
+  for removal.
 
-## 11. Knock-on changes caused by lifting the single-instance rule
+## 11. Requirements before lifting the single-instance rule
 
-- **Rate limiting** (auth routes) currently uses an in-memory store; with more than one instance it must use a shared store (Postgres table or similar) or stay per-instance and be documented as such.
-- **Job runner and scheduler** must claim jobs with leases so two instances never run the same job.
-- **Readiness** checks both databases (step 1).
-- **Health vs readiness**: `/health` stays process-only; `/ready` touches the databases.
+- **Rate limiting** (auth routes) currently uses an in-memory store; implement a shared store or explicitly accept and protect per-instance limits.
+- **Job runner and scheduler** use MongoDB leases for atomic claims, but other multi-instance prerequisites remain.
+- **Uploads** must use persistent storage shared consistently by every API/worker instance.
+- **Remaining JSON and SQLite repositories** must be migrated and verified before multiple instances are enabled.
+- **Readiness** checks both databases; `/health` stays process-only and `/ready` touches the databases.
 
 ## 12. Testing strategy
 
@@ -218,7 +251,7 @@ Repository interfaces: `DocumentRepository`, `ChunkRepository` (vector search ta
 2. Rate-limit store when multi-instance: Postgres table [default] or per-instance and documented?
 3. Course seed list: provided by the user, otherwise two placeholders.
 4. Where the frontend lives (not in the default branch of the cloned repo); only needed for CORS origin config and API contract checks.
-5. Confirm `mistral-embed` dimension before creating the vector index.
+5. `mistral-embed` dimension is confirmed as 1024 in the official Mistral documentation linked above.
 
 ## 14. Definition of done (whole feature)
 

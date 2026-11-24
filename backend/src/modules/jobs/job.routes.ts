@@ -26,9 +26,9 @@ export function createJobRouter(dependencies: JobRouteDependencies): Router {
     "/jobs/:jobId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const actor = requireAuthContext(request);
-      const job = dependencies.jobService.getAuthorizedJob(
+      const job = await dependencies.jobService.getAuthorizedJob(
         requireRouteParam(request, "jobId"),
         actor.id,
         actor.permissions,
@@ -42,9 +42,9 @@ export function createJobRouter(dependencies: JobRouteDependencies): Router {
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("executions:view"),
-    (request, response) => {
+    async (request, response) => {
       const query = jobListQuerySchema.parse(request.query);
-      const page = dependencies.jobService.listAdminJobs(
+      const page = await dependencies.jobService.listAdminJobs(
         query.limit,
         query.cursor,
         query.status,

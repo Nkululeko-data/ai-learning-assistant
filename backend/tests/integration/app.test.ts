@@ -14,6 +14,8 @@ function createReadyTestApp() {
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -50,6 +52,8 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
     getReadiness: () => ({
       jsonStoreOpen: true,
       sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: false,
@@ -61,6 +65,24 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
   expect(readiness.body.error.requestId).toBe(
     readiness.headers["x-request-id"],
   );
+
+  const databaseUnreadyApp = createApp({
+    logger,
+    corsOrigins: [],
+    getReadiness: () => ({
+      jsonStoreOpen: true,
+      sqliteOpen: true,
+      postgresReady: false,
+      mongoReady: true,
+      schemaVersion: 0,
+      expectedSchemaVersion: 0,
+      providerConfigurationPresent: true,
+    }),
+  });
+  const databaseReadiness = await request(databaseUnreadyApp).get("/ready");
+  expect(databaseReadiness.status).toBe(503);
+  expect(databaseReadiness.body.error.details.postgresReady).toBe(false);
+  expect(databaseReadiness.body.error.details.mongoReady).toBe(true);
 
   const missing = await request(createReadyTestApp()).get("/not-found");
   expect(missing.status).toBe(404);

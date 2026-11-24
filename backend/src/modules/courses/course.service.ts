@@ -157,25 +157,35 @@ export class CourseService {
   /**
    * Lists active course cards and archived courses accessible to the caller.
    */
-  public listCourses(actor: AuthenticatedUser, pageOptions: PageOptions): PageResult<CourseCard | CourseView> {
+  public async listCourses(
+    actor: AuthenticatedUser,
+    pageOptions: PageOptions,
+  ): Promise<PageResult<CourseCard | CourseView>> {
+    const courses = await this.repository.listCourses();
     if (actor.role === "admin" && actor.permissions.includes("user:manage")) {
-      const page = paginate(this.repository.listCourses(), pageOptions);
+      const page = paginate(courses, pageOptions);
       return {
         items: page.items.map(toCourseView),
         ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
       };
     }
 
-    const accessible = this.repository.listCourses().filter((course) => {
+    const enrolments = await Promise.all(
+      courses.map((course) => this.repository.findEnrolment(course.id, actor.id)),
+    );
+    const enrolmentByCourseId = new Map(
+      courses.map((course, index) => [course.id, enrolments[index]] as const),
+    );
+    const accessible = courses.filter((course, index) => {
       if (course.ownerId === actor.id) return true;
       if (courseApprovalStatus(course) !== "approved") return false;
       if (course.status === "active") return true;
-      return this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
+      return enrolments[index]?.status === "approved";
     });
     const page = paginate(accessible, pageOptions);
     return {
       items: page.items.map((course) => {
-        const enrolment = this.repository.findEnrolment(course.id, actor.id);
+        const enrolment = enrolmentByCourseId.get(course.id);
         return course.ownerId === actor.id || enrolment?.status === "approved"
           ? toCourseView(course)
           : toCourseCard(course);
@@ -190,29 +200,32 @@ export class CourseService {
   public listMyCourses(
     actor: AuthenticatedUser,
     pageOptions: PageOptions,
-  ): PageResult<CourseView> {
+  ): Promise<PageResult<CourseView>> {
     assertCoach(actor);
-    const owned = this.repository
-      .listCourses()
-      .filter((course) => course.ownerId === actor.id);
-    const page = paginate(owned, pageOptions);
-    return {
-      items: page.items.map(toCourseView),
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-    };
+    return this.repository.listCourses().then((courses) => {
+      const page = paginate(
+        courses.filter((course) => course.ownerId === actor.id),
+        pageOptions,
+      );
+      return {
+        items: page.items.map(toCourseView),
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    });
   }
 
-  public listCourseApprovalQueue(
+  public async listCourseApprovalQueue(
     actor: AuthenticatedUser,
     pageOptions: PageOptions,
-  ): PageResult<CourseApprovalView> {
+  ): Promise<PageResult<CourseApprovalView>> {
     assertAdmin(actor);
     requirePermission(actor, "user:manage");
-    const pending = this.repository
-      .listCourses()
-      .filter((course) => courseApprovalStatus(course) === "pending")
-      .map((course) => {
-        const owner = this.repository.findUserById(course.ownerId);
+    const pendingCourses = (await this.repository.listCourses()).filter(
+      (course) => courseApprovalStatus(course) === "pending",
+    );
+    const pending = await Promise.all(
+      pendingCourses.map(async (course) => {
+        const owner = await this.repository.findUserById(course.ownerId);
         if (!owner) {
           throw new Error(`Course "${course.id}" references a missing owner`);
         }
@@ -224,16 +237,20 @@ export class CourseService {
             email: owner.email,
           },
         };
-      });
+      }),
+    );
     return paginate(pending, pageOptions);
   }
 
   /**
    * Returns full details only to the owner or an approved learner.
    */
-  public getCourse(actor: AuthenticatedUser, courseId: string): CourseCard | CourseView {
-    const course = this.requireCourse(courseId);
-    const enrolment = this.repository.findEnrolment(course.id, actor.id);
+  public async getCourse(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseCard | CourseView> {
+    const course = await this.requireCourse(courseId);
+    const enrolment = await this.repository.findEnrolment(course.id, actor.id);
     const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
     if (
       (course.status === "archived" ||
@@ -248,9 +265,12 @@ export class CourseService {
   /**
    * Returns only lesson titles for active courses to support course discovery.
    */
-  public getCoursePreview(actor: AuthenticatedUser, courseId: string): CoursePreviewView {
-    const course = this.requireCourse(courseId);
-    const enrolment = this.repository.findEnrolment(course.id, actor.id);
+  public async getCoursePreview(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CoursePreviewView> {
+    const course = await this.requireCourse(courseId);
+    const enrolment = await this.repository.findEnrolment(course.id, actor.id);
     const hasCourseAccess = course.ownerId === actor.id || enrolment?.status === "approved";
     if (
       (course.status === "archived" ||
@@ -268,8 +288,11 @@ export class CourseService {
   /**
    * Lists ordered lessons only for the course owner and approved learners.
    */
-  public getCourseLessons(actor: AuthenticatedUser, courseId: string): CourseLessonsView {
-    const course = this.requireCourseAccess(actor, courseId);
+  public async getCourseLessons(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseLessonsView> {
+    const course = await this.requireCourseAccess(actor, courseId);
     return toCourseLessonsView(course, this.repository);
   }
 
@@ -285,14 +308,14 @@ export class CourseService {
     assertCoach(actor);
     requirePermission(actor, "course:edit");
     return this.repository.withCourseContentMutationLock(async () => {
-      const current = this.requireOwnedCourse(actor, courseId);
+      const current = await this.requireOwnedCourse(actor, courseId);
       if (current.status !== "active") {
         throw new AppError("COURSE_ARCHIVED", 409, "Archived courses are read-only until reactivated");
       }
       assertExpectedVersion(current, input.version);
       for (const lesson of input.lessons) {
         if (lesson.pdfDocumentId === null) continue;
-        const document = this.repository.findDocumentById(lesson.pdfDocumentId);
+        const document = await this.repository.findDocumentById(lesson.pdfDocumentId);
         if (
           !document ||
           document.courseId !== courseId ||
@@ -318,7 +341,7 @@ export class CourseService {
           );
         }
         if (lesson.videoDocumentId === null) continue;
-        const video = this.repository.findDocumentById(lesson.videoDocumentId);
+        const video = await this.repository.findDocumentById(lesson.videoDocumentId);
         if (
           !video ||
           video.courseId !== courseId ||
@@ -370,7 +393,7 @@ export class CourseService {
     if (input.status !== undefined) requirePermission(actor, "course:archive");
 
     return this.repository.withMutationLock(async () => {
-      const current = this.requireOwnedCourse(actor, courseId);
+      const current = await this.requireOwnedCourse(actor, courseId);
       assertExpectedVersion(current, input.version);
       if (current.status === "archived" && changesDetails && input.status !== "active") {
         throw new AppError("COURSE_ARCHIVED", 409, "Archived courses are read-only until reactivated");
@@ -422,10 +445,12 @@ export class CourseService {
     assertAdmin(actor);
     requirePermission(actor, "user:manage");
     return this.repository.withMutationLock(async () => {
-      const current = this.requireCourse(courseId);
+      const current = await this.requireCourse(courseId);
       assertExpectedVersion(current, version);
-      const target = this.repository.findUserById(ownerId);
-      const role = target ? this.repository.findRoleById(target.roleId) : null;
+      const target = await this.repository.findUserById(ownerId);
+      const role = target
+        ? await this.repository.findRoleById(target.roleId)
+        : null;
       if (!target || target.status !== "active" || role?.name !== "coach") {
         throw new AppError("VALIDATION_FAILED", 422, "The new course owner must be an active coach");
       }
@@ -473,12 +498,14 @@ export class CourseService {
     requirePermission(actor, "user:manage");
 
     return this.repository.withMutationLock(async () => {
-      const current = this.requireCourse(courseId);
+      const current = await this.requireCourse(courseId);
       assertExpectedVersion(current, version);
       if (current.status === status) return toCourseView(current);
       if (status === "active") {
-        const owner = this.repository.findUserById(current.ownerId);
-        const role = owner ? this.repository.findRoleById(owner.roleId) : null;
+        const owner = await this.repository.findUserById(current.ownerId);
+        const role = owner
+          ? await this.repository.findRoleById(owner.roleId)
+          : null;
         if (!owner || owner.status !== "active" || role?.name !== "coach") {
           throw new ConflictError("Reassign the course to an active coach before reactivating it");
         }
@@ -516,14 +543,16 @@ export class CourseService {
     assertAdmin(actor);
     requirePermission(actor, "user:manage");
     return this.repository.withMutationLock(async () => {
-      const current = this.requireCourse(courseId);
+      const current = await this.requireCourse(courseId);
       assertExpectedVersion(current, input.version);
       if (courseApprovalStatus(current) !== "pending") {
         throw new ConflictError("Only courses awaiting review can be decided");
       }
       if (input.decision === "approved") {
-        const owner = this.repository.findUserById(current.ownerId);
-        const role = owner ? this.repository.findRoleById(owner.roleId) : null;
+        const owner = await this.repository.findUserById(current.ownerId);
+        const role = owner
+          ? await this.repository.findRoleById(owner.roleId)
+          : null;
         if (!owner || owner.status !== "active" || role?.name !== "coach") {
           throw new ConflictError(
             "The course owner must be an active coach before approval",
@@ -570,7 +599,7 @@ export class CourseService {
     assertCoach(actor);
     requirePermission(actor, "course:edit");
     return this.repository.withMutationLock(async () => {
-      const current = this.requireOwnedCourse(actor, courseId);
+      const current = await this.requireOwnedCourse(actor, courseId);
       assertExpectedVersion(current, version);
       if (courseApprovalStatus(current) !== "changes_requested") {
         throw new ConflictError(
@@ -613,7 +642,7 @@ export class CourseService {
   ): Promise<{ enrolment: EnrolmentRecord; created: boolean }> {
     assertLearner(actor);
     return this.repository.withMutationLock(async () => {
-      const course = this.requireCourse(courseId);
+      const course = await this.requireCourse(courseId);
       if (course.status !== "active") {
         throw new AppError("COURSE_ARCHIVED", 409, "Archived courses do not accept new enrolment requests");
       }
@@ -628,7 +657,7 @@ export class CourseService {
         throw new ConflictError("Course owners cannot request enrolment in their course");
       }
 
-      const existing = this.repository.findEnrolment(courseId, actor.id);
+      const existing = await this.repository.findEnrolment(courseId, actor.id);
       if (existing?.status === "pending") {
         return { enrolment: existing, created: false };
       }
@@ -680,36 +709,43 @@ export class CourseService {
   /**
    * Lists the caller's enrolments with safe course-card metadata.
    */
-  public listMyEnrolments(actor: AuthenticatedUser, pageOptions: PageOptions): PageResult<EnrolmentView> {
-    const enrolments = this.repository.listEnrolmentsByUser(actor.id).map((enrolment) => {
-      const course = this.requireCourse(enrolment.courseId);
-      return {
-        ...enrolment,
-        course: {
-          ...toCourseCard(course),
-          status: course.status,
-        },
-      };
-    });
+  public async listMyEnrolments(
+    actor: AuthenticatedUser,
+    pageOptions: PageOptions,
+  ): Promise<PageResult<EnrolmentView>> {
+    const storedEnrolments = await this.repository.listEnrolmentsByUser(actor.id);
+    const enrolments = await Promise.all(
+      storedEnrolments.map(async (enrolment) => {
+        const course = await this.requireCourse(enrolment.courseId);
+        return {
+          ...enrolment,
+          course: {
+            ...toCourseCard(course),
+            status: course.status,
+          },
+        };
+      }),
+    );
     return paginate(enrolments, pageOptions);
   }
 
   /**
    * Lists enrolment requests for a course owned by the caller.
    */
-  public listJoinRequests(
+  public async listJoinRequests(
     actor: AuthenticatedUser,
     courseId: string,
     status?: EnrolmentRecord["status"],
     pageOptions: PageOptions = { limit: 20 },
-  ): PageResult<JoinRequestView> {
+  ): Promise<PageResult<JoinRequestView>> {
     requirePermission(actor, "enrolment:approve");
-    const course = this.requireOwnedCourse(actor, courseId);
-    const requests = this.repository
-      .listEnrolmentsByCourse(course.id)
+    const course = await this.requireOwnedCourse(actor, courseId);
+    const storedEnrolments = await this.repository.listEnrolmentsByCourse(course.id);
+    const requests = await Promise.all(
+      storedEnrolments
       .filter((enrolment) => status === undefined || enrolment.status === status)
-      .map((enrolment) => {
-        const applicant = this.repository.findUserById(enrolment.userId);
+      .map(async (enrolment) => {
+        const applicant = await this.repository.findUserById(enrolment.userId);
         if (!applicant) {
           throw new Error(`Enrolment "${enrolment.id}" references a missing user`);
         }
@@ -721,41 +757,45 @@ export class CourseService {
             email: applicant.email,
           },
         };
-      });
+      }),
+    );
     return paginate(requests, pageOptions);
   }
 
   /**
    * Lists active learners who can access a course to its owner and members.
    */
-  public listCourseLearners(
+  public async listCourseLearners(
     actor: AuthenticatedUser,
     courseId: string,
     pageOptions: PageOptions,
-  ): PageResult<CourseLearnerView> {
-    const course = this.requireCourseAccess(actor, courseId);
-    const learners = this.repository
-      .listEnrolmentsByCourse(course.id)
-      .filter((enrolment) => enrolment.status === "approved")
-      .flatMap((enrolment) => {
-        const learner = this.repository.findUserById(enrolment.userId);
+  ): Promise<PageResult<CourseLearnerView>> {
+    const course = await this.requireCourseAccess(actor, courseId);
+    const approvedEnrolments = (
+      await this.repository.listEnrolmentsByCourse(course.id)
+    ).filter((enrolment) => enrolment.status === "approved");
+    const learnerRecords = await Promise.all(
+      approvedEnrolments.map(async (enrolment) => {
+        const learner = await this.repository.findUserById(enrolment.userId);
         if (!learner) {
           throw new Error(`Enrolment "${enrolment.id}" references a missing user`);
         }
-        const role = this.repository.findRoleById(learner.roleId);
+        const role = await this.repository.findRoleById(learner.roleId);
         if (!role) {
           throw new Error(`User "${learner.id}" references a missing role`);
         }
-        if (learner.status !== "active" || role.name !== "learner") return [];
-        return [
-          {
+        if (learner.status !== "active" || role.name !== "learner") return null;
+        return {
             id: enrolment.id,
             learnerId: learner.id,
             displayName: learner.displayName,
             enrolledAt: enrolment.decidedAt ?? enrolment.requestedAt,
-          },
-        ];
-      });
+        };
+      }),
+    );
+    const learners = learnerRecords.filter(
+      (learner): learner is CourseLearnerView => learner !== null,
+    );
     return paginate(learners, pageOptions);
   }
 
@@ -771,9 +811,9 @@ export class CourseService {
     assertCoach(actor);
     requirePermission(actor, "enrolment:approve");
     return this.repository.withMutationLock(async () => {
-      const current = this.repository.findEnrolmentById(enrolmentId);
+      const current = await this.repository.findEnrolmentById(enrolmentId);
       if (!current) throw new NotFoundError();
-      const course = this.requireOwnedCourse(actor, current.courseId);
+      const course = await this.requireOwnedCourse(actor, current.courseId);
       if (current.status === "removed") return current;
       if (current.status !== "approved") {
         throw new ConflictError("Only an approved learner can be removed");
@@ -812,9 +852,9 @@ export class CourseService {
     assertCoach(actor);
     requirePermission(actor, "enrolment:approve");
     return this.repository.withMutationLock(async () => {
-      const current = this.repository.findEnrolmentById(enrolmentId);
+      const current = await this.repository.findEnrolmentById(enrolmentId);
       if (!current) throw new NotFoundError();
-      const course = this.requireOwnedCourse(actor, current.courseId);
+      const course = await this.requireOwnedCourse(actor, current.courseId);
       if (current.status === input.status) return current;
       if (current.status !== "pending") {
         throw new ConflictError("Only pending enrolment requests can be decided");
@@ -823,7 +863,7 @@ export class CourseService {
         throw new AppError("COURSE_ARCHIVED", 409, "Archived courses cannot approve new enrolments");
       }
       if (input.status === "approved") {
-        const applicant = this.repository.findUserById(current.userId);
+        const applicant = await this.repository.findUserById(current.userId);
         if (!applicant) {
           throw new Error(`Enrolment "${current.id}" references a missing user`);
         }
@@ -865,8 +905,8 @@ export class CourseService {
   public async removeMyEnrolment(actor: AuthenticatedUser, courseId: string, requestId: string): Promise<void> {
     assertLearner(actor);
     await this.repository.withMutationLock(async () => {
-      this.requireCourse(courseId);
-      const current = this.repository.findEnrolment(courseId, actor.id);
+      await this.requireCourse(courseId);
+      const current = await this.repository.findEnrolment(courseId, actor.id);
       if (!current) throw new NotFoundError();
       if (current.status === "removed") return;
       if (current.status !== "approved") {
@@ -901,8 +941,8 @@ export class CourseService {
   /**
    * Finds a course or returns the shared not-found error.
    */
-  private requireCourse(courseId: string): CourseRecord {
-    const course = this.repository.findCourseById(courseId);
+  private async requireCourse(courseId: string): Promise<CourseRecord> {
+    const course = await this.repository.findCourseById(courseId);
     if (!course) throw new NotFoundError();
     return course;
   }
@@ -910,9 +950,12 @@ export class CourseService {
   /**
    * Finds a course owned by an active coach and hides other owners' resources.
    */
-  private requireOwnedCourse(actor: AuthenticatedUser, courseId: string): CourseRecord {
+  private async requireOwnedCourse(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseRecord> {
     assertCoach(actor);
-    const course = this.requireCourse(courseId);
+    const course = await this.requireCourse(courseId);
     if (course.ownerId !== actor.id) throw new NotFoundError();
     return course;
   }
@@ -920,13 +963,17 @@ export class CourseService {
   /**
    * Finds a course the owner or an approved learner may study.
    */
-  private requireCourseAccess(actor: AuthenticatedUser, courseId: string): CourseRecord {
-    const course = this.requireCourse(courseId);
+  private async requireCourseAccess(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseRecord> {
+    const course = await this.requireCourse(courseId);
     const isOwner = actor.role === "coach" && course.ownerId === actor.id;
     const isApprovedLearner =
       actor.role === "learner" &&
       courseApprovalStatus(course) === "approved" &&
-      this.repository.findEnrolment(course.id, actor.id)?.status === "approved";
+      (await this.repository.findEnrolment(course.id, actor.id))?.status ===
+        "approved";
     if (actor.status !== "active" || (!isOwner && !isApprovedLearner)) {
       throw new NotFoundError();
     }
@@ -1051,37 +1098,44 @@ function toCourseView(course: CourseRecord): CourseView {
   };
 }
 
-function toCourseLessonsView(course: CourseRecord, repository: CourseRepository): CourseLessonsView {
+async function toCourseLessonsView(
+  course: CourseRecord,
+  repository: CourseRepository,
+): Promise<CourseLessonsView> {
   return {
     courseId: course.id,
     version: course.version,
-    lessons: (course.lessons ?? []).map((lesson) => {
-      const document = lesson.pdfDocumentId ? repository.findDocumentById(lesson.pdfDocumentId) : null;
-      const videoDocument = lesson.videoDocumentId
-        ? repository.findDocumentById(lesson.videoDocumentId)
-        : null;
-      const pdfIsAvailable =
-        document?.courseId === course.id &&
-        document.scope === "course" &&
-        document.mimeType === "application/pdf" &&
-        document.status === "ready";
-      const videoIsAvailable =
-        videoDocument?.courseId === course.id &&
-        videoDocument.scope === "course" &&
-        videoDocument.mimeType === "video/mp4" &&
-        videoDocument.status === "ready";
-      return {
-        id: lesson.id,
-        title: lesson.title,
-        introduction: lesson.introduction,
-        pdfDocumentId: pdfIsAvailable ? document.id : null,
-        pdfFilename: pdfIsAvailable ? document.filename : null,
-        videoDocumentId: videoIsAvailable ? videoDocument.id : null,
-        videoFilename: videoIsAvailable ? videoDocument.filename : null,
-        videoSizeBytes: videoIsAvailable ? videoDocument.sizeBytes : null,
-        videoUrl: lesson.videoUrl,
-      };
-    }),
+    lessons: await Promise.all(
+      (course.lessons ?? []).map(async (lesson) => {
+        const document = lesson.pdfDocumentId
+          ? await repository.findDocumentById(lesson.pdfDocumentId)
+          : null;
+        const videoDocument = lesson.videoDocumentId
+          ? await repository.findDocumentById(lesson.videoDocumentId)
+          : null;
+        const pdfIsAvailable =
+          document?.courseId === course.id &&
+          document.scope === "course" &&
+          document.mimeType === "application/pdf" &&
+          document.status === "ready";
+        const videoIsAvailable =
+          videoDocument?.courseId === course.id &&
+          videoDocument.scope === "course" &&
+          videoDocument.mimeType === "video/mp4" &&
+          videoDocument.status === "ready";
+        return {
+          id: lesson.id,
+          title: lesson.title,
+          introduction: lesson.introduction,
+          pdfDocumentId: pdfIsAvailable ? document.id : null,
+          pdfFilename: pdfIsAvailable ? document.filename : null,
+          videoDocumentId: videoIsAvailable ? videoDocument.id : null,
+          videoFilename: videoIsAvailable ? videoDocument.filename : null,
+          videoSizeBytes: videoIsAvailable ? videoDocument.sizeBytes : null,
+          videoUrl: lesson.videoUrl,
+        };
+      }),
+    ),
   };
 }
 
