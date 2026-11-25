@@ -14,6 +14,7 @@ import {
   RetrievalService,
   type RetrievalRepository,
 } from "../../src/modules/retrieval/retrieval.service";
+import { createTestChunkRepository } from "../helpers/chunk-repository";
 
 const courseId = "00000000-0000-4000-8000-000000000001";
 const coachId = "00000000-0000-4000-8000-000000000002";
@@ -82,8 +83,7 @@ function createRetrievalService(documents: DocumentRecord[]): RetrievalService {
   bytes.writeFloatLE(0, 4);
   return new RetrievalService(
     repository,
-    {
-      readChunks: async () => ({
+    createTestChunkRepository(async () => ({
         header: {
           documentId,
           courseId,
@@ -106,8 +106,7 @@ function createRetrievalService(documents: DocumentRecord[]): RetrievalService {
             embedding: bytes.toString("base64"),
           },
         ],
-      }),
-    },
+      })),
     "mistral-embed",
     2,
   );

@@ -102,15 +102,15 @@ Derived: coach quiz (`origin=coach`, `visibility=course`, draft then published; 
 
 | ID | Status | Decision |
 |---|---|---|
-| S-1 | **TABLED** | Real databases (MongoDB, PostgreSQL) are postponed. The earlier two-database plan is not abandoned, just deferred. |
-| S-2 | DECIDED | **JSON file stores** are used for all data, **except conversation history, which uses basic SQL**. |
-| S-3 | DERIVED | "Basic SQL" is taken to mean **SQLite** (OPEN-1 to confirm). Only `conversations` and `messages` live there. |
-| S-4 | DERIVED | Because JSON files need a single writer, the backend runs as **one process** (API + in-process job runner and scheduler) and **one instance**. |
-| S-5 | DERIVED | Vector search is **in-process cosine similarity** over embeddings stored in JSON (filter first, then score). No Atlas. |
-| S-6 | DECIDED | Async work uses a **job collection** (now in JSON, run in-process) rather than Redis/BullMQ. |
-| S-7 | DERIVED | All storage sits behind **repository interfaces** so MongoDB/PostgreSQL can replace the JSON/SQLite implementations later without changing services. |
+| S-1 | DECIDED | The approved persistence target is **Neon PostgreSQL** for relational data and **MongoDB Atlas** for documents, chunks, and jobs. |
+| S-2 | DECIDED | PostgreSQL is the relational source of truth for migrated access and course data; conversations are planned for PostgreSQL but still use SQLite at runtime. |
+| S-3 | DECIDED | MongoDB Atlas stores migrated document metadata, chunks, jobs, and scheduler state; Atlas Vector Search is the retrieval target. |
+| S-4 | DERIVED | The migration is partial. Production still uses JSON auth, SQLite conversations, and JSON for other feature data. Keep a single instance until all active local stores and process-local limits are addressed. |
+| S-5 | DECIDED | Existing source UUIDs are preserved during imports; importers must preflight targets and must not delete existing target data. |
+| S-6 | DECIDED | Jobs use MongoDB-backed atomic claims and leases. Uploaded bytes remain in private persistent storage; replicas must share the same storage before scaling. |
+| S-7 | DERIVED | Storage access remains behind repository interfaces. Remove legacy implementations only after every dependent repository and data set is migrated, verified, and approved. |
 
-Rules: JSON store engine uses a per-collection write queue, atomic temp-file-and-rename writes, in-memory indexes, repository-enforced uniqueness, optimistic versioning, schema versioning with startup migrations, and snapshot backups. Chat turns write the SQLite message first, then an `activity_events` row deduplicated by message ID, with a reconciliation task. Multi-step deletes run as idempotent jobs. See architecture section 5.
+Rules: Treat the current system as a hybrid, not a completed cutover. Do not remove active JSON/SQLite storage, claim multi-instance readiness, or run importers against production without the migration plan's backups, preflight, and verification steps. See `backend/database-implementation-neon-mongo.md` and architecture section 5.
 
 ---
 
@@ -138,8 +138,8 @@ The B8 adapters call the documented OpenAI-compatible REST APIs through `fetch`.
 
 ## 10. Deviations from the brief (need coach approval and a written rationale in `Architecture.md`)
 
-1. JSON stores + SQLite instead of MongoDB with Atlas Vector Search (temporary, swappable).
-2. Single-instance, single-process deployment (consequence of JSON stores).
+1. **Persistence migration is partial:** selected relational and document/job data use Neon and MongoDB Atlas; auth, conversations, and other feature data still use JSON/SQLite.
+2. **Single-instance, single-process deployment remains required** until the remaining legacy stores, process-local rate limiting, and upload sharing are addressed.
 3. LLM providers are Inception Labs and Groq instead of Claude and OpenAI.
 4. LangGraph.js for orchestration (brief allows LangChain.js or custom).
 5. Deterministic citation validation as the runtime gate.
@@ -173,7 +173,7 @@ The B8 adapters call the documented OpenAI-compatible REST APIs through `fetch`.
 | 16 | RESOLVED — Does the Groq fallback support JSON-schema structured output? | Yes. Groq documents strict JSON Schema for selected models; B8 defaults to `openai/gpt-oss-20b`. Requests still undergo Zod validation and the one-repair policy. |
 | 19, 21-22 | Data-design points (feedback comment visibility for coaches, question embedding storage, conversation hard delete) | See `Database-Design.md` section 12. OPEN-20 was resolved by E-3. |
 | 17 | AWS vs Azure target | Decide before deployment |
-| 18 | When to move to real databases | After coach approval; interfaces make it a swap |
+| 18 | When to move to real databases | Approved and in progress; complete remaining migrations and verify before removing legacy stores |
 
 ---
 

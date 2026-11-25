@@ -6,25 +6,45 @@ import {
   type AppConfig,
 } from "./config/config";
 import { createLogger } from "./common/logging/logger";
-import { createPostgresPool, verifyPostgresConnection } from "./infra/postgres/connection";
 import {
-  CURRENT_DATABASE_SCHEMA_VERSION,
-  getDatabaseSchemaVersion,
-} from "./infra/postgres/migrations/006-runtime-storage";
-import { loadUserIdAliases } from "./infra/postgres/user-id-aliases";
-import { createSystemStore } from "./infra/jsonstore/create-system-store";
-import { openMongoConnection } from "./infra/mongodb/connection";
-import type { MongoConnection } from "./infra/mongodb/connection";
-import { MongoConversationRepository } from "./infra/mongodb/conversation.repository";
+  isConversationDatabaseReady,
+  openConversationDatabase,
+} from "./infra/sqlite/database";
+import { createPostgresPool, isPostgresReady } from "./infra/postgres/pool";
+import {
+  EXPECTED_SCHEMA_VERSION,
+  getSchemaVersion,
+} from "./infra/postgres/migrate";
+import { createMongoClient, isMongoReady } from "./infra/mongo/client";
+import {
+  assertAtlasVectorIndexReady,
+  ensureMongoIndexes,
+} from "./infra/mongo/ensure-indexes";
+import type { Pool } from "pg";
+import type { Db, MongoClient } from "mongodb";
+import { JsonStore } from "./infra/jsonstore/json-store";
+import { registerSystemCollections } from "./infra/jsonstore/system-collections";
+import { ConversationRepository } from "./infra/sqlite/conversation.repository";
 import { JsonAuthRepository } from "./modules/auth/auth.types";
 import { AuthService } from "./modules/auth/auth.service";
-import { JsonCourseRepository } from "./modules/courses/course.types";
+import { PgCourseRepository } from "./modules/courses/pg-course.repository";
 import { CourseService } from "./modules/courses/course.service";
 import { JobRunner } from "./modules/jobs/job.runner";
 import { JobScheduler } from "./modules/jobs/job.scheduler";
 import { JobService } from "./modules/jobs/job.service";
-import { JsonJobRepository } from "./modules/jobs/job.types";
-import { JsonDocumentRepository } from "./modules/documents/document.types";
+import {
+  MongoJobRepository,
+  type MongoJobDocument,
+  type MongoSchedulerStateDocument,
+} from "./modules/jobs/mongo-job.repository";
+import {
+  MongoDocumentRepository,
+  type MongoDocumentRecord,
+} from "./modules/documents/mongo-document.repository";
+import {
+  MongoChunkRepository,
+  type ChunkRecordDocument,
+} from "./modules/documents/chunk.repository";
 import { DocumentService } from "./modules/documents/document.service";
 import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
 import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
@@ -41,6 +61,7 @@ import { LearningRepository } from "./modules/learning/learning.repository";
 import { LearningService } from "./modules/learning/learning.service";
 import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
 import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
+import { initializeSchemaMetadata } from "./infra/jsonstore/schema-metadata";
 import { FeedbackRepository } from "./modules/feedback/feedback.repository";
 import { FeedbackService } from "./modules/feedback/feedback.service";
 import { InsightsRepository } from "./modules/insights/insights.repository";
@@ -51,50 +72,77 @@ import { AdminService } from "./modules/admin/admin.service";
  * Initializes storage, builds the API, and starts listening on the configured port.
  */
 export async function startServer(): Promise<Server> {
-  const config = loadConfig({ requireDatabases: true });
+  const config = loadConfig();
   configureTracing(config.environment);
   const logger = createLogger(
     config.logLevel,
     config.environment === "development",
   );
-  if (!config.databaseUrl || !config.mongodbUri || !config.mongodbDatabase) {
-    throw new Error("DATABASE_URL, MONGODB_URI, and MONGODB_DATABASE are required");
-  }
-  const postgres = createPostgresPool(config.databaseUrl);
-  let mongo: MongoConnection | undefined;
-  let server: Server | undefined;
+  const { databaseUrl, mongodbUri, mongodbDbName } =
+    requireDatabaseConfiguration(config);
+  const postgresPool = createPostgresPool(databaseUrl);
+  const mongoClient = createMongoClient(mongodbUri);
+  let mongoDatabase: Db;
   try {
-  await verifyPostgresConnection(postgres);
-  const schemaVersion = await getDatabaseSchemaVersion(postgres);
-  if (schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
-    throw new Error(
-      `Neon schema version ${schemaVersion} is not ready; run npm run db:migrate to reach version ${CURRENT_DATABASE_SCHEMA_VERSION}`,
+    await mongoClient.connect();
+    mongoDatabase = mongoClient.db(mongodbDbName);
+    await ensureMongoIndexes(mongoDatabase);
+    await assertAtlasVectorIndexReady(
+      mongoDatabase,
+      config.mistralEmbeddingModel,
+      config.mistralEmbeddingDimension,
     );
+  } catch (error) {
+    const cleanupErrors: unknown[] = [];
+    try {
+      await mongoClient.close();
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    try {
+      await postgresPool.end();
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "MongoDB initialization failed and database clients could not be fully closed",
+      );
+    }
+    throw error;
   }
-  mongo = await openMongoConnection(
-    config.mongodbUri,
-    config.mongodbDatabase,
-  );
-  const { store, collections } = createSystemStore(postgres);
+  const store = new JsonStore(config.dataDir);
+  const collections = registerSystemCollections(store);
   await store.initialize();
-  const authRepository = new JsonAuthRepository(
-    collections,
-    await loadUserIdAliases(postgres),
-  );
+  await initializeSchemaMetadata(store.jsonDirectory);
+  const database = openConversationDatabase(config.dataDir);
+  const authRepository = new JsonAuthRepository(collections);
   const authService = new AuthService(authRepository, config, {
     allowRefreshTokenInBody: config.allowRefreshTokenInBody,
   });
-  const courseRepository = new JsonCourseRepository(collections);
+  let documentRepository!: MongoDocumentRepository;
+  const courseRepository = new PgCourseRepository(
+    postgresPool,
+    collections,
+    (id) => documentRepository.findDocument(id),
+  );
   const courseService = new CourseService(
     courseRepository,
     config.enrolmentReRequestCooldownHours,
   );
-  const jobRepository = new JsonJobRepository(
-    collections.jobs,
-    collections.schedulerState,
+  const jobRepository = new MongoJobRepository(
+    mongoDatabase.collection<MongoJobDocument>("jobs"),
+    mongoDatabase.collection<MongoSchedulerStateDocument>("scheduler_state"),
   );
   const jobService = new JobService(jobRepository);
-  const documentRepository = new JsonDocumentRepository(collections);
+  documentRepository = new MongoDocumentRepository(
+    mongoDatabase.collection<MongoDocumentRecord>("documents"),
+    courseRepository,
+  );
+  const chunkRepository = new MongoChunkRepository(
+    mongoDatabase.collection<ChunkRecordDocument>("document_chunks"),
+  );
   const privateFileStorage = new PrivateFileStorage(
     config.dataDir,
     config.chunkCacheMaxDocuments,
@@ -102,7 +150,7 @@ export async function startServer(): Promise<Server> {
   await privateFileStorage.initialize();
   const retrievalService = new RetrievalService(
     documentRepository,
-    privateFileStorage,
+    chunkRepository,
     config.mistralEmbeddingModel,
     config.mistralEmbeddingDimension,
   );
@@ -124,18 +172,14 @@ export async function startServer(): Promise<Server> {
     config.chunkSizeTokens,
     config.chunkOverlapTokens,
     config.maxDocxExpandedSizeBytes,
+    chunkRepository,
   );
   const structuredOutput = new StructuredOutputService(
     new InceptionProvider(config.inceptionApiKey, config.inceptionModel),
     new GroqProvider(config.groqApiKey, config.groqModel),
     config.chatMaxCompletionTokens,
   );
-  const conversationRepository = new MongoConversationRepository(
-    mongo.client,
-    mongo.database,
-    postgres,
-  );
-  await conversationRepository.initialize();
+  const conversationRepository = new ConversationRepository(database);
   const feedbackService = new FeedbackService(
     new FeedbackRepository(collections),
     conversationRepository,
@@ -151,6 +195,9 @@ export async function startServer(): Promise<Server> {
     privateFileStorage,
     jobService,
     config,
+    documentRepository,
+    chunkRepository,
+    courseRepository,
   );
   const executionRepository = new JsonAgentExecutionRepository(
     collections.agentExecutions,
@@ -237,61 +284,95 @@ export async function startServer(): Promise<Server> {
     feedback: { authService, feedbackService },
     insights: { authService, insightsService },
     admin: { authService, adminService },
-    getReadiness: () => ({
-      neonOpen: true,
-      mongoOpen: true,
-      schemaVersion,
-      expectedSchemaVersion: CURRENT_DATABASE_SCHEMA_VERSION,
-      providerConfigurationPresent: hasProviderConfiguration(config),
-    }),
+    getReadiness: async () => {
+      const [schemaVersion, mongoReady] = await Promise.all([
+        checkDatabaseReadiness(
+          "PostgreSQL",
+          async () => {
+            await isPostgresReady(postgresPool);
+            return getSchemaVersion(postgresPool);
+          },
+          logger,
+        ),
+        checkDatabaseReadiness(
+          "MongoDB",
+          () => isMongoReady(mongoClient, mongodbDbName),
+          logger,
+        ),
+      ]);
+      const postgresReady = schemaVersion !== undefined;
+      return {
+        jsonStoreOpen: true,
+        sqliteOpen: isConversationDatabaseReady(database),
+        postgresReady,
+        mongoReady: mongoReady ?? false,
+        schemaVersion: schemaVersion ?? 0,
+        expectedSchemaVersion: EXPECTED_SCHEMA_VERSION,
+        providerConfigurationPresent: hasProviderConfiguration(config),
+      };
+    },
   });
 
-  server = await new Promise<Server>((resolve, reject) => {
+  const server = await new Promise<Server>((resolve, reject) => {
     const listeningServer = app.listen(config.port, () => resolve(listeningServer));
     listeningServer.once("error", reject);
   });
 
   logger.info(
-    { port: config.port, storage: "Neon PostgreSQL and MongoDB" },
+    { port: config.port, dataDirectory: config.dataDir },
     "AI Learning Assistant backend started",
   );
   jobRunner.start();
   jobScheduler.start();
   registerShutdownHandlers(
     server,
-    postgres,
-    mongo.client,
+    database,
+    postgresPool,
+    mongoClient,
     jobRunner,
     jobScheduler,
     logger,
   );
   return server;
+}
+
+/**
+ * Requires database settings before creating clients while keeping test config validation optional.
+ */
+function requireDatabaseConfiguration(config: AppConfig): {
+  databaseUrl: string;
+  mongodbUri: string;
+  mongodbDbName: string;
+} {
+  if (!config.databaseUrl || !config.mongodbUri || !config.mongodbDbName) {
+    throw new Error(
+      "DATABASE_URL, MONGODB_URI, and MONGODB_DB_NAME are required to start the server",
+    );
+  }
+  return {
+    databaseUrl: config.databaseUrl,
+    mongodbUri: config.mongodbUri,
+    mongodbDbName: config.mongodbDbName,
+  };
+}
+
+/**
+ * Converts database probe failures into safely logged not-ready results.
+ */
+async function checkDatabaseReadiness<T>(
+  dependency: "PostgreSQL" | "MongoDB",
+  check: () => Promise<T>,
+  logger: ReturnType<typeof createLogger>,
+): Promise<T | undefined> {
+  try {
+    return await check();
   } catch (error) {
-    const cleanupErrors: unknown[] = [];
-    if (server) {
-      await new Promise<void>((resolve) => {
-        server?.close(() => resolve());
-      });
-    }
-    if (mongo) {
-      try {
-        await mongo.client.close();
-      } catch (closeError) {
-        cleanupErrors.push(closeError);
-      }
-    }
-    try {
-      await postgres.end();
-    } catch (closeError) {
-      cleanupErrors.push(closeError);
-    }
-    if (cleanupErrors.length > 0) {
-      throw new AggregateError(
-        [error, ...cleanupErrors],
-        "Backend startup failed and database connections could not all be closed",
-      );
-    }
-    throw error;
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    logger.warn(
+      { dependency, errorName },
+      "Database readiness check failed",
+    );
+    return undefined;
   }
 }
 
@@ -315,12 +396,13 @@ function configureTracing(environment: AppConfig["environment"]): void {
 }
 
 /**
- * Stops accepting requests, closes both database connections, and reports failures.
+ * Stops background work, closes the HTTP server, and then closes all database clients.
  */
 function registerShutdownHandlers(
   server: Server,
-  postgres: ReturnType<typeof createPostgresPool>,
-  mongo: MongoConnection["client"],
+  database: ReturnType<typeof openConversationDatabase>,
+  postgresPool: Pool,
+  mongoClient: MongoClient,
   jobRunner: JobRunner,
   jobScheduler: JobScheduler,
   logger: ReturnType<typeof createLogger>,
@@ -344,17 +426,24 @@ function registerShutdownHandlers(
         });
       });
       try {
-        await mongo.close();
+        await postgresPool.end();
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : "UnknownError";
+        logger.error({ signal, errorName }, "PostgreSQL shutdown failed");
+        process.exitCode = 1;
+      }
+      try {
+        await mongoClient.close();
       } catch (error) {
         const errorName = error instanceof Error ? error.name : "UnknownError";
         logger.error({ signal, errorName }, "MongoDB shutdown failed");
         process.exitCode = 1;
       }
       try {
-        await postgres.end();
+        database.close();
       } catch (error) {
         const errorName = error instanceof Error ? error.name : "UnknownError";
-        logger.error({ signal, errorName }, "Neon PostgreSQL shutdown failed");
+        logger.error({ signal, errorName }, "MongoDB shutdown failed");
         process.exitCode = 1;
       }
     })().catch((error: unknown) => {

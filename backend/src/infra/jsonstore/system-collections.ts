@@ -682,7 +682,7 @@ export interface SystemCollections {
 /**
  * Registers the identity, course, document, audit, and background-job collections.
  */
-export function registerSystemCollections(store: JsonStore): SystemCollections {
+export function registerSystemCollections(store: JsonStore) {
   return {
     users: store.register({
       name: "users",
@@ -979,5 +979,5 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "taskName", key: (record) => record.taskName, unique: true },
       ],
     }),
-  };
+  } satisfies SystemCollections;
 }

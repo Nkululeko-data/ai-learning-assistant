@@ -66,6 +66,7 @@ function clearConfigEnvironment(): void {
     configEnvironmentKeys.map((key) => [key, process.env[key]]),
   );
   for (const key of configEnvironmentKeys) delete process.env[key];
+  process.env.NODE_ENV = "test";
 }
 
 /**
@@ -116,6 +117,42 @@ function verifiesRequiredSecretsAndCorsValidation(): void {
   process.env.JWT_REFRESH_SECRET = "test-refresh-secret-with-32-characters";
   process.env.CORS_ORIGINS = "*";
   expect(() => loadConfig()).toThrow("cannot contain '*'");
+}
+
+/**
+ * Verifies Neon and Mongo connection settings are required outside test environments.
+ */
+function verifiesDatabaseConfigurationOutsideTests(): void {
+  process.env.NODE_ENV = "development";
+  expect(() => loadConfig({ requireJwtSecrets: false })).toThrow(
+    "Missing required configuration: DATABASE_URL, MONGODB_URI, MONGODB_DB_NAME",
+  );
+
+  process.env.DATABASE_URL =
+    "postgresql://test:test@localhost:5432/ai_learning_assistant?sslmode=require";
+  process.env.MONGODB_URI = "mongodb://localhost:27017";
+  process.env.MONGODB_DB_NAME = "ai_learning_assistant";
+  const config = loadConfig({ requireJwtSecrets: false });
+  expect(config.databaseUrl).toContain("sslmode=require");
+  expect(config.mongodbUri).toBe("mongodb://localhost:27017");
+  expect(config.mongodbDbName).toBe("ai_learning_assistant");
+}
+
+/**
+ * Verifies Postgres-only commands can validate without Mongo configuration.
+ */
+function verifiesPostgresOnlyConfiguration(): void {
+  process.env.NODE_ENV = "development";
+  process.env.DATABASE_URL =
+    "postgresql://test:test@localhost:5432/ai_learning_assistant?sslmode=require";
+
+  const config = loadConfig({
+    requireJwtSecrets: false,
+    requireMongoConfiguration: false,
+  });
+  expect(config.databaseUrl).toContain("sslmode=require");
+  expect(config.mongodbUri).toBeUndefined();
+  expect(config.mongodbDbName).toBeUndefined();
 }
 
 /**
@@ -195,7 +232,7 @@ function verifiesDatabaseConfigurationIsRequiredForRuntime(): void {
     "Missing required configuration: DATABASE_URL, MONGODB_URI, MONGODB_DATABASE",
   );
 
-  process.env.DATABASE_URL = "postgresql://db.example.test/app";
+  process.env.DATABASE_URL = "postgresql://db.example.test/app?sslmode=require";
   process.env.MONGODB_URI = "mongodb://mongo.example.test";
   process.env.MONGODB_DATABASE = "learning_assistant";
   expect(
@@ -210,6 +247,14 @@ function verifiesDatabaseConfigurationIsRequiredForRuntime(): void {
 describe("configuration", () => {
   test("loads validated default values", verifiesDefaultConfiguration);
   test("requires auth secrets and rejects wildcard credentialed CORS", verifiesRequiredSecretsAndCorsValidation);
+  test(
+    "requires database configuration outside tests",
+    verifiesDatabaseConfigurationOutsideTests,
+  );
+  test(
+    "validates Postgres-only commands without Mongo configuration",
+    verifiesPostgresOnlyConfiguration,
+  );
   test("validates the enrolment re-request cooldown", verifiesEnrolmentCooldownConfiguration);
   test("validates document upload and chunk limits", verifiesDocumentConfiguration);
   test("validates chat daily quota limits", verifiesChatDailyQuotaConfiguration);

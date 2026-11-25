@@ -1,8 +1,8 @@
 # AI Learning Assistant: Data Design (B1)
 
-**Status:** Original B2 data-model baseline; current runtime mapping is described below.
+**Status:** Approved logical data-model baseline; current runtime mapping is described below.
 
-`docs/architecture/Database-Design.md`. Detailed field-level specification of every collection and table. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
+Detailed field-level specification of the data model. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
 
 ### Current runtime mapping (2026-11)
 
@@ -38,7 +38,7 @@ the original files.
 | Text/PII | Collections marked **no text** must never hold question text, answer text or document text |
 | Versioning | `version: integer` where concurrent edits are possible (optimistic check). Store schema version in `data/json/_meta.json` |
 
-### Files on disk
+### Legacy source files on disk (migration input; not the final storage layout)
 ```
 data/
   json/
@@ -74,12 +74,12 @@ erDiagram
   DOCUMENTS ||--o{ CHUNKS : "split into"
   COURSES ||--o{ QUIZZES : "has"
   QUIZZES ||--o{ QUIZ_ATTEMPTS : "attempted in"
-  USERS ||--o{ CONVERSATIONS : "has (SQLite)"
-  CONVERSATIONS ||--o{ MESSAGES : "contains (SQLite)"
+  USERS ||--o{ CONVERSATIONS : "has (relational)"
+  CONVERSATIONS ||--o{ MESSAGES : "contains (relational)"
   MESSAGES ||--o{ FEEDBACK : "rated by"
   COURSES ||--o{ GAP_REPORTS : "has"
 ```
-Cross-store references (SQLite `messages` <-> JSON `feedback`, `activity_events`) are by plain ID and kept consistent by the application (architecture 5.5).
+Current runtime cross-store references include SQLite messages and JSON `feedback`/`activity_events`; the target is to migrate relational records and conversations to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
 
 ---
 
@@ -544,9 +544,9 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 
 ---
 
-## 9. SQLite: conversation history
+## 9. Legacy SQLite conversation source (current runtime; PostgreSQL cutover pending)
 
-File `data/sqlite/conversations.db`, WAL mode, foreign keys on, parameterised queries only.
+This section describes the current migration source, not a final target schema. Runtime conversations, messages, and daily chat usage still use `data/sqlite/conversations.db`. The Neon conversation schema and data migration remain to be implemented and verified before SQLite can be removed. Use WAL mode, foreign keys, and parameterised queries while this legacy source remains active.
 
 ### 9.1 `conversations`
 | Column | Type | Null | Notes |
@@ -608,14 +608,14 @@ Primary key: (`user_id`, `usage_date`). This table contains quota counts only; n
 | From | To | Rule on delete/stash |
 |---|---|---|
 | `documents.courseId` | `courses.id` | Course archived: documents retained, excluded from retrieval |
-| `chunks.documentId` | `documents.id` | Hard-delete job removes the chunk file first, then the record |
+| `chunks.documentId` | `documents.id` | MongoDB hard-delete job removes chunks before the document record |
 | `enrolments.userId/courseId` | `users`, `courses` | Stash cascades logically (access denied), records kept |
 | `quizzes.sourceChunkIds` | chunks | A deleted source leaves the quiz readable; the source shows "source removed" |
 | `messages.cited_*` | chunks, documents | Same: "source removed" |
 | `feedback.messageId` | SQLite `messages.id` | Orphans (deleted conversations) are harmless; reconciliation may prune them |
 | `activity_events.dedupeKey` | message / attempt ids | Reconciliation repairs missing or orphaned events |
 
-The reconciliation job also reports: chunk files without a document, documents whose course or owner no longer exists, uploaded files without a document, and documents stuck in `processing` or `deleting` beyond a timeout.
+The reconciliation job also reports: chunks without a document, documents whose course or owner no longer exists, uploaded files without a document, and documents stuck in `processing` or `deleting` beyond a timeout.
 
 ---
 

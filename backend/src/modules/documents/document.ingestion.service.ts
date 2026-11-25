@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { JobExecutionError } from "../jobs/job.service";
 import type { JobRecord } from "../../infra/jsonstore/system-collections";
-import { JsonDocumentRepository } from "./document.types";
+import type { DocumentRepository } from "./document.types";
 import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
 import { chunkDocumentPages } from "./document.chunker";
 import { extractDocumentText, type ExtractionResult } from "./document.extractors";
@@ -9,6 +9,10 @@ import {
   EmbeddingProviderError,
   type DocumentEmbeddingProvider,
 } from "./mistral-embedding.provider";
+import {
+  JsonChunkRepository,
+  type ChunkRepository,
+} from "./chunk.repository";
 
 const documentIdPayloadSchema = z.object({
   documentId: z.string().uuid(),
@@ -22,12 +26,13 @@ const minimumPdfTextCharacters = 50;
  */
 export class DocumentIngestionService {
   public constructor(
-    private readonly repository: JsonDocumentRepository,
+    private readonly repository: DocumentRepository,
     private readonly storage: PrivateFileStorage,
     private readonly embeddings: DocumentEmbeddingProvider,
     private readonly chunkSizeTokens: number,
     private readonly chunkOverlapTokens: number,
     private readonly maxExtractedTextBytes: number,
+    private readonly chunks: ChunkRepository = new JsonChunkRepository(storage),
   ) {}
 
   /**
@@ -41,7 +46,7 @@ export class DocumentIngestionService {
     const initialDocument = await this.repository.withDocumentLock(
       documentId,
       async () => {
-        const document = this.repository.findDocument(documentId);
+        const document = await this.repository.findDocument(documentId);
         if (
           !document ||
           document.status === "ready" ||
@@ -123,36 +128,40 @@ export class DocumentIngestionService {
       }
 
       const createdAt = new Date().toISOString();
-      const chunkFile = {
-        header: {
+      const chunkRecords = chunks.map((chunk, index) => {
+        const embedding = vectors[index];
+        if (!embedding) {
+          throw new DocumentProcessingFailure(
+            "EMBEDDING_PROVIDER_RESPONSE_INVALID",
+            "The embedding provider returned an invalid response. Retry processing.",
+          );
+        }
+        return {
+          id: `${initialDocument.id}:${chunk.chunkIndex}`,
           documentId: initialDocument.id,
           courseId: initialDocument.courseId,
           ownerId: initialDocument.ownerId,
           scope: initialDocument.scope,
           embeddingModel: this.embeddings.model,
-          dimension: this.embeddings.dimension,
-          chunkCount: chunks.length,
           createdAt,
-        },
-        chunks: chunks.map((chunk, index) => ({
-          id: `${initialDocument.id}:${chunk.chunkIndex}`,
           chunkIndex: chunk.chunkIndex,
           tokenEstimate: Math.ceil(chunk.text.length / 4),
           pageStart: chunk.pageStart,
           pageEnd: chunk.pageEnd,
           section: chunk.section,
+          normalizedSection: normalizeSection(chunk.section),
           text: chunk.text,
-          embedding: encodeEmbedding(vectors[index] ?? []),
-        })),
-      };
+          embedding,
+        };
+      });
 
       stage = "store";
       const committed = await this.repository.withDocumentLock(
         documentId,
         async () => {
-          const current = this.repository.findDocument(documentId);
+          const current = await this.repository.findDocument(documentId);
           if (!current || current.status !== "processing") return false;
-          await this.storage.writeChunks(documentId, chunkFile);
+          await this.chunks.replaceForDocument(documentId, chunkRecords);
           await this.repository.updateDocument(documentId, (document) => ({
             ...document,
             status: "ready",
@@ -174,7 +183,7 @@ export class DocumentIngestionService {
       if (signal.aborted) throw error;
       const failure = mapProcessingFailure(error, stage);
       await this.repository.withDocumentLock(documentId, async () => {
-        const current = this.repository.findDocument(documentId);
+        const current = await this.repository.findDocument(documentId);
         if (!current || current.status !== "processing") return;
         await this.repository.updateDocument(documentId, (document) => ({
           ...document,
@@ -200,16 +209,16 @@ export class DocumentIngestionService {
     const documentId = parseDocumentId(job);
     signal.throwIfAborted();
     return this.repository.withDocumentLock(documentId, async () => {
-      const document = this.repository.findDocument(documentId);
+      const document = await this.repository.findDocument(documentId);
       if (!document) {
-        await this.storage.removeChunks(documentId);
+        await this.chunks.deleteForDocument(documentId);
         return { deleted: false };
       }
       if (document.status !== "deleting") {
         return { skipped: "document_not_marked_for_deletion" };
       }
       try {
-        await this.storage.removeChunks(documentId);
+        await this.chunks.deleteForDocument(documentId);
         await this.storage.removeUpload(document.storageKey);
         await this.repository.removeDocument(documentId);
       } catch {
@@ -218,15 +227,6 @@ export class DocumentIngestionService {
       return { deleted: true };
     });
   }
-}
-
-/**
- * Serializes a vector as little-endian Float32 bytes encoded with base64.
- */
-function encodeEmbedding(vector: number[]): string {
-  const bytes = Buffer.alloc(vector.length * 4);
-  vector.forEach((value, index) => bytes.writeFloatLE(value, index * 4));
-  return bytes.toString("base64");
 }
 
 /**
@@ -291,6 +291,13 @@ function mapProcessingFailure(
         : "The document could not be processed. Check the file and retry.",
     retryable: stage === "store",
   };
+}
+
+/**
+ * Normalizes section labels for exact Atlas Vector Search filtering.
+ */
+function normalizeSection(section: string | null): string | null {
+  return section?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? null;
 }
 
 /**

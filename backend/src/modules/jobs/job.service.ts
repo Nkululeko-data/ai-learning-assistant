@@ -1,7 +1,7 @@
 import { NotFoundError } from "../../common/errors/app-error";
 import type { JobRecord } from "../../infra/jsonstore/system-collections";
 import {
-  JsonJobRepository,
+  type JobRepository,
   type EnqueueJobInput,
   type JobClaim,
   type JobPage,
@@ -38,7 +38,7 @@ export class JobExecutionError extends Error {
  * Applies job access rules and exposes safe queue operations to routes and workers.
  */
 export class JobService {
-  public constructor(private readonly repository: JsonJobRepository) {}
+  public constructor(private readonly repository: JobRepository) {}
 
   /**
    * Enqueues a validated job record for an application or scheduler caller.
@@ -50,19 +50,19 @@ export class JobService {
   /**
    * Returns internal status only for another service coordinating an idempotent workflow.
    */
-  public getJobStatus(id: string): JobStatus | null {
-    return this.repository.getById(id)?.status ?? null;
+  public async getJobStatus(id: string): Promise<JobStatus | null> {
+    return (await this.repository.getById(id))?.status ?? null;
   }
 
   /**
    * Returns one job only to its creator or an administrator with execution visibility.
    */
-  public getAuthorizedJob(
+  public async getAuthorizedJob(
     id: string,
     actorId: string,
     permissions: readonly string[],
-  ): JobView {
-    const job = this.repository.getById(id);
+  ): Promise<JobView> {
+    const job = await this.repository.getById(id);
     if (!job) throw new NotFoundError("Job not found");
     if (
       job.createdBy !== actorId &&
@@ -76,16 +76,20 @@ export class JobService {
   /**
    * Lists safe job metadata for administrators.
    */
-  public listAdminJobs(
+  public async listAdminJobs(
     limit: number,
     cursor?: string,
     status?: JobStatus,
-  ): { items: JobView[]; nextCursor: string | null } {
-    const page: JobPage = this.repository.list(limit, cursor, status);
+  ): Promise<{ items: JobView[]; nextCursor: string | null }> {
+    const page: JobPage = await this.repository.list(limit, cursor, status);
     return {
       items: page.items.map(toJobView),
       nextCursor: page.nextCursor,
     };
+  }
+
+  public countByStatuses(statuses: JobStatus[]): Promise<number> {
+    return this.repository.countByStatuses(statuses);
   }
 
   /**

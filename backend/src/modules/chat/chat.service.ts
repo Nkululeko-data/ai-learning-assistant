@@ -64,7 +64,7 @@ export class ChatService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<AskChatResult> {
-    this.retrievalService.assertCourseAccess(actor, input.courseId);
+    await this.retrievalService.assertCourseAccess(actor, input.courseId);
     const existingConversation = input.conversationId
       ? await this.requireOwnedConversation(actor.id, input.conversationId)
       : null;

@@ -10,26 +10,39 @@ import type {
 } from "../../infra/jsonstore/system-collections";
 import type { AuditInput } from "../auth/auth.types";
 
-export interface CourseRepository {
+export type CourseUserRecord = Pick<
+  UserRecord,
+  "id" | "email" | "displayName" | "roleId" | "status"
+>;
+export type CourseRoleRecord = Pick<RoleRecord, "id" | "name">;
+
+export interface EnrolmentRepository {
+  findEnrolment(courseId: string, userId: string): Promise<EnrolmentRecord | null>;
+  findEnrolmentById(id: string): Promise<EnrolmentRecord | null>;
+  listEnrolmentsByCourse(courseId: string): Promise<EnrolmentRecord[]>;
+  listEnrolmentsByUser(userId: string): Promise<EnrolmentRecord[]>;
+  createEnrolment(input: Omit<EnrolmentRecord, "id">): Promise<EnrolmentRecord>;
+  updateEnrolment(
+    id: string,
+    update: (enrolment: EnrolmentRecord) => EnrolmentRecord,
+  ): Promise<EnrolmentRecord>;
+}
+
+export interface CourseRepository extends EnrolmentRepository {
   withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
   withCourseContentMutationLock<T>(operation: () => Promise<T>): Promise<T>;
-  findCourseById(id: string): CourseRecord | null;
-  listCourses(): CourseRecord[];
-  findDocumentById(id: string): DocumentRecord | null;
+  findCourseById(id: string): Promise<CourseRecord | null>;
+  listCourses(): Promise<CourseRecord[]>;
+  countEnrolmentsByStatus(status: EnrolmentRecord["status"]): Promise<number>;
+  findDocumentById(id: string): Promise<DocumentRecord | null>;
   createCourse(input: Omit<CourseRecord, "id">): Promise<CourseRecord>;
   updateCourse(
     id: string,
     update: (course: CourseRecord) => CourseRecord,
     expectedVersion: number,
   ): Promise<CourseRecord>;
-  findEnrolment(courseId: string, userId: string): EnrolmentRecord | null;
-  findEnrolmentById(id: string): EnrolmentRecord | null;
-  listEnrolmentsByCourse(courseId: string): EnrolmentRecord[];
-  listEnrolmentsByUser(userId: string): EnrolmentRecord[];
-  createEnrolment(input: Omit<EnrolmentRecord, "id">): Promise<EnrolmentRecord>;
-  updateEnrolment(id: string, update: (enrolment: EnrolmentRecord) => EnrolmentRecord): Promise<EnrolmentRecord>;
-  findUserById(id: string): UserRecord | null;
-  findRoleById(id: string): RoleRecord | null;
+  findUserById(id: string): Promise<CourseUserRecord | null>;
+  findRoleById(id: string): Promise<CourseRoleRecord | null>;
   createAudit(input: AuditInput): Promise<void>;
 }
 
@@ -61,21 +74,29 @@ export class JsonCourseRepository implements CourseRepository {
   /**
    * Finds a course by its ID.
    */
-  public findCourseById(id: string): CourseRecord | null {
+  public async findCourseById(id: string): Promise<CourseRecord | null> {
     return this.collections.courses.getById(id);
   }
 
   /**
    * Lists all courses for service-layer visibility filtering.
    */
-  public listCourses(): CourseRecord[] {
+  public async listCourses(): Promise<CourseRecord[]> {
     return this.collections.courses.list();
+  }
+
+  public async countEnrolmentsByStatus(
+    status: EnrolmentRecord["status"],
+  ): Promise<number> {
+    return this.collections.enrolments.list(
+      (enrolment) => enrolment.status === status,
+    ).length;
   }
 
   /**
    * Finds a document for course-lesson attachment validation.
    */
-  public findDocumentById(id: string): DocumentRecord | null {
+  public async findDocumentById(id: string): Promise<DocumentRecord | null> {
     return this.collections.documents.getById(id);
   }
 
@@ -100,28 +121,28 @@ export class JsonCourseRepository implements CourseRepository {
   /**
    * Finds the unique enrolment for a user and course.
    */
-  public findEnrolment(courseId: string, userId: string): EnrolmentRecord | null {
+  public async findEnrolment(courseId: string, userId: string): Promise<EnrolmentRecord | null> {
     return this.collections.enrolments.findUnique("courseUser", `${courseId}:${userId}`);
   }
 
   /**
    * Finds an enrolment by ID.
    */
-  public findEnrolmentById(id: string): EnrolmentRecord | null {
+  public async findEnrolmentById(id: string): Promise<EnrolmentRecord | null> {
     return this.collections.enrolments.getById(id);
   }
 
   /**
    * Lists enrolments associated with a course.
    */
-  public listEnrolmentsByCourse(courseId: string): EnrolmentRecord[] {
+  public async listEnrolmentsByCourse(courseId: string): Promise<EnrolmentRecord[]> {
     return this.collections.enrolments.findByIndex("courseId", courseId);
   }
 
   /**
    * Lists enrolments associated with a learner.
    */
-  public listEnrolmentsByUser(userId: string): EnrolmentRecord[] {
+  public async listEnrolmentsByUser(userId: string): Promise<EnrolmentRecord[]> {
     return this.collections.enrolments.findByIndex("userId", userId);
   }
 
@@ -145,15 +166,25 @@ export class JsonCourseRepository implements CourseRepository {
   /**
    * Finds a user record for owner, applicant and administrator policies.
    */
-  public findUserById(id: string): UserRecord | null {
-    return this.collections.users.getById(id);
+  public async findUserById(id: string): Promise<CourseUserRecord | null> {
+    const user = this.collections.users.getById(id);
+    if (!user) return null;
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      roleId: user.roleId,
+      status: user.status,
+    };
   }
 
   /**
    * Finds the role attached to a user record.
    */
-  public findRoleById(id: string): RoleRecord | null {
-    return this.collections.roles.getById(id);
+  public async findRoleById(id: string): Promise<CourseRoleRecord | null> {
+    const role = this.collections.roles.getById(id);
+    if (!role) return null;
+    return { id: role.id, name: role.name };
   }
 
   /**

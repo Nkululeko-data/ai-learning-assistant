@@ -26,6 +26,7 @@ const tokenResponseSchema = z.object({
   accessToken: z.string().min(1),
   accessTokenExpiresIn: z.number().int().positive(),
   refreshToken: z.string().min(1).optional(),
+  authenticatedUser: authenticatedUserSchema.optional(),
 });
 
 const registrationResponseSchema = z.object({

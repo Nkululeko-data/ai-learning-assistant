@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { AuthenticatedUser } from "../../api/auth";
 import { AuthContext, type AuthContextValue } from "../../auth/auth-context";
 import { server } from "../../test/server";
+import { CoachQuizzesPanel } from "./CoachQuizzesPanel";
 import { CourseDetailsPage } from "./CourseDetailsPage";
 
 const courseId = "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7911";
@@ -60,6 +61,80 @@ function renderCourseDetails(
 }
 
 describe("CourseDetailsPage", () => {
+  it("shows provider failure details and the request ID for quiz generation errors", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/documents`, () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: documentId,
+              courseId,
+              scope: "course",
+              filename: "Cell structure.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 120,
+              status: "ready",
+              errorCode: null,
+              errorDetail: null,
+              extractionDiagnostics: null,
+              chunkCount: 1,
+              embeddingModel: "test-model",
+              ingestJobId: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              readyAt: "2026-01-01T00:01:00.000Z",
+            },
+          ],
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
+        HttpResponse.json({ data: [] }),
+      ),
+      http.post("http://localhost:3000/api/v1/quizzes/generate", () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "An AI provider is unavailable",
+              details: {
+                providerFailures: [
+                  { provider: "inception", code: "LLM_PROVIDER_AUTH_FAILED" },
+                  { provider: "groq", code: "LLM_PROVIDER_AUTH_FAILED" },
+                ],
+              },
+              requestId: "quiz-generation-request-1",
+            },
+          },
+          { status: 503 },
+        ),
+      ),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <CoachQuizzesPanel courseId={courseId} canGenerate />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Cell structure.pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Generate draft" }));
+
+    expect(
+      await screen.findByText(/Inception and Groq rejected an API key/i),
+    ).toBeVisible();
+    expect(
+      await screen.findByText("Request ID: quiz-generation-request-1"),
+    ).toBeVisible();
+  });
+
   it("shows a lesson-topic preview and lets an unapproved learner request access", async () => {
     const learnerId = "307d4918-a7f5-4db4-b857-97d8176e305b";
     server.use(
@@ -276,13 +351,49 @@ describe("CourseDetailsPage", () => {
     ).toBeVisible();
   });
 
-  it("shows approved learners the ordered course curriculum", async () => {
+  it("shows the course introduction only in the overview", async () => {
     server.use(
       http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
         HttpResponse.json({
           data: {
             id: courseId,
             name: "Course one",
+            description: "The course introduction belongs on this page.",
+            ownerId: coachId,
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+    renderCourseDetails({
+      id: learnerId,
+      email: "learner@example.test",
+      displayName: "Test learner",
+      role: "learner",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["content:generate"],
+      permsVersion: 1,
+    });
+
+    expect(
+      await screen.findByText("The course introduction belongs on this page."),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Lessons" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Class learners" })).toBeNull();
+  });
+
+  it("shows only the ordered lessons when Lessons is selected", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            description: "The course introduction belongs on the overview.",
             ownerId: coachId,
             status: "active",
             version: 1,
@@ -312,8 +423,48 @@ describe("CourseDetailsPage", () => {
           },
         }),
       ),
-      http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
-        HttpResponse.json({ data: [] }),
+    );
+    renderCourseDetails(
+      {
+        id: learnerId,
+        email: "learner@example.test",
+        displayName: "Test learner",
+        role: "learner",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["content:generate"],
+        permsVersion: 1,
+      },
+      `/courses/${courseId}#course-curriculum`,
+    );
+
+    const lessonRow = await screen.findByRole("button", { name: /Cell structure/ });
+    expect(
+      screen.queryByText("The course introduction belongs on the overview."),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Class learners" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Course quizzes" })).toBeNull();
+    expect(lessonRow).toBeVisible();
+    expect(screen.queryByText("Explore how cell structures work.")).toBeNull();
+    await userEvent.click(lessonRow);
+    expect(screen.getByText("Explore how cell structures work.")).toBeVisible();
+  });
+
+  it("shows only the learner roster when People is selected", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            description: "The course introduction belongs on the overview.",
+            ownerId: coachId,
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
       ),
       http.get(`http://localhost:3000/api/v1/courses/${courseId}/learners`, () =>
         HttpResponse.json({
@@ -328,30 +479,28 @@ describe("CourseDetailsPage", () => {
         }),
       ),
     );
-    renderCourseDetails({
-      id: learnerId,
-      email: "learner@example.test",
-      displayName: "Test learner",
-      role: "learner",
-      status: "active",
-      mustChangePassword: false,
-      permissions: ["content:generate"],
-      permsVersion: 1,
-    });
+    renderCourseDetails(
+      {
+        id: learnerId,
+        email: "learner@example.test",
+        displayName: "Test learner",
+        role: "learner",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["content:generate"],
+        permsVersion: 1,
+      },
+      `/courses/${courseId}#course-people`,
+    );
 
-    const lessonRow = await screen.findByRole("button", { name: /Cell structure/ });
+    expect(
+      await screen.findByRole("heading", { name: "Class learners" }),
+    ).toBeVisible();
     expect(await screen.findByText("A classmate")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Remove A classmate from course" }),
+      screen.queryByText("The course introduction belongs on the overview."),
     ).toBeNull();
-    expect(lessonRow).toBeVisible();
-    expect(screen.queryByText("Explore how cell structures work.")).toBeNull();
-    await userEvent.click(lessonRow);
-    expect(screen.getByText("Explore how cell structures work.")).toBeVisible();
-    expect(screen.getByRole("link", { name: "AI study tools" })).toHaveAttribute(
-      "href",
-      `/courses/${courseId}/study`,
-    );
+    expect(screen.queryByRole("heading", { name: "Lessons" })).toBeNull();
   });
 
   it("shows the lesson editor to a course owner with edit permission", async () => {

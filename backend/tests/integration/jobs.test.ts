@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
+import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
 import { createApp } from "../../src/app";
 import { createLogger } from "../../src/common/logging/logger";
 import type { AppConfig } from "../../src/config/config";
@@ -12,7 +13,10 @@ import { JobRunner } from "../../src/modules/jobs/job.runner";
 import { JobScheduler } from "../../src/modules/jobs/job.scheduler";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
-import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
+
+jest.mock("file-type", () => ({
+  fileTypeFromBuffer: async () => undefined,
+}));
 
 const adminPassword = "B5-integration-admin-passphrase-2026!";
 const changedAdminPassword = "B5-changed-admin-passphrase-2026!";
@@ -54,7 +58,7 @@ async function createStorage() {
 async function createAdminContext(): Promise<JobTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-job-api-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
+  await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -62,6 +66,9 @@ async function createAdminContext(): Promise<JobTestContext> {
     environment: "test",
     port: 3000,
     dataDir: dataDirectory,
+    databaseUrl: undefined,
+    mongodbUri: undefined,
+    mongodbDbName: undefined,
     logLevel: "silent",
     corsOrigins: [],
     passwordMinLength: 12,
@@ -114,7 +121,7 @@ async function createAdminContext(): Promise<JobTestContext> {
     { allowRefreshTokenInBody: true },
   );
   const initialLogin = await authService.login("admin@example.test", adminPassword);
-  const initialAdmin = authService.authenticateAccessToken(
+  const initialAdmin = await authService.authenticateAccessToken(
     initialLogin.tokens.accessToken,
   );
   await authService.changePassword(
@@ -127,7 +134,7 @@ async function createAdminContext(): Promise<JobTestContext> {
     "admin@example.test",
     changedAdminPassword,
   );
-  const admin = authService.authenticateAccessToken(
+  const admin = await authService.authenticateAccessToken(
     adminLogin.tokens.accessToken,
   );
   const repository = new JsonJobRepository(
@@ -139,8 +146,10 @@ async function createAdminContext(): Promise<JobTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      neonOpen: true,
-      mongoOpen: true,
+      jsonStoreOpen: true,
+      sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

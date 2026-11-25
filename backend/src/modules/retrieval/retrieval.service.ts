@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type {
   CourseRecord,
@@ -6,37 +5,12 @@ import type {
   EnrolmentRecord,
 } from "../../infra/jsonstore/system-collections";
 import type { AuthenticatedUser } from "../auth/auth.types";
-
-const chunkFileSchema = z
-  .object({
-    header: z
-      .object({
-        documentId: z.string().uuid(),
-        courseId: z.string().uuid(),
-        ownerId: z.string().uuid(),
-        scope: z.enum(["course", "personal"]),
-        embeddingModel: z.string().min(1),
-        dimension: z.number().int().positive(),
-        chunkCount: z.number().int().nonnegative(),
-        createdAt: z.string().datetime(),
-      })
-      .strict(),
-    chunks: z.array(
-      z
-        .object({
-          id: z.string().min(1),
-          chunkIndex: z.number().int().nonnegative(),
-          tokenEstimate: z.number().int().nonnegative(),
-          pageStart: z.number().int().positive(),
-          pageEnd: z.number().int().positive(),
-          section: z.string().nullable(),
-          text: z.string().min(1),
-          embedding: z.string().min(1),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
+import type { Awaitable } from "../documents/document.types";
+import type {
+  ChunkRecord,
+  ChunkRepository,
+} from "../documents/chunk.repository";
+import { ChunkDataError } from "../documents/chunk.repository";
 
 const defaultResultLimit = 8;
 const maximumResultLimit = 50;
@@ -64,13 +38,12 @@ export interface RetrievalOptions {
 }
 
 export interface RetrievalRepository {
-  findCourse(id: string): CourseRecord | null;
-  findEnrolment(courseId: string, userId: string): EnrolmentRecord | null;
-  listDocumentsByCourse(courseId: string): DocumentRecord[];
-}
-
-export interface ChunkReader {
-  readChunks(documentId: string): Promise<unknown>;
+  findCourse(id: string): Awaitable<CourseRecord | null>;
+  findEnrolment(
+    courseId: string,
+    userId: string,
+  ): Awaitable<EnrolmentRecord | null>;
+  listDocumentsByCourse(courseId: string): Awaitable<DocumentRecord[]>;
 }
 
 /**
@@ -79,7 +52,7 @@ export interface ChunkReader {
 export class RetrievalService {
   public constructor(
     private readonly repository: RetrievalRepository,
-    private readonly storage: ChunkReader,
+    private readonly chunks: ChunkRepository,
     private readonly embeddingModel: string,
     private readonly embeddingDimension: number,
   ) {}
@@ -93,7 +66,7 @@ export class RetrievalService {
     queryEmbedding: number[],
     options: RetrievalOptions = {},
   ): Promise<RetrievedChunk[]> {
-    const course = this.requireCourseAccess(actor, courseId);
+    const course = await this.requireCourseAccess(actor, courseId);
     if (course.status !== "active") return [];
 
     const limit = options.limit ?? defaultResultLimit;
@@ -113,8 +86,7 @@ export class RetrievalService {
       queryEmbedding,
       this.embeddingDimension,
     );
-    const queryNorm = vectorNorm(queryVector);
-    if (queryNorm === 0) {
+    if (vectorNorm(queryVector) === 0) {
       throw new AppError(
         "INVALID_QUERY_EMBEDDING",
         400,
@@ -122,7 +94,7 @@ export class RetrievalService {
       );
     }
 
-    const courseDocuments = this.repository.listDocumentsByCourse(courseId);
+    const courseDocuments = await this.repository.listDocumentsByCourse(courseId);
     const accessibleDocuments = courseDocuments.filter(
       (document) =>
         document.courseId === courseId &&
@@ -165,71 +137,63 @@ export class RetrievalService {
         "All selected documents must be ready for learning-content generation",
       );
     }
-    const scored: RetrievedChunk[] = [];
-    const matchedSections = new Set<string>();
     const requestedSections = new Set(
       (options.sections ?? []).map(normalizeSection),
     );
-
-    for (const document of candidates) {
-      const chunkFile = await this.readValidatedChunkFile(document);
-      for (const chunk of chunkFile.chunks) {
-        const normalizedSection = chunk.section
-          ? normalizeSection(chunk.section)
-          : null;
-        if (normalizedSection && requestedSections.has(normalizedSection)) {
-          matchedSections.add(normalizedSection);
-        }
-        if (
-          requestedSections.size > 0 &&
-          (!normalizedSection || !requestedSections.has(normalizedSection))
-        ) {
-          continue;
-        }
-        const vector = decodeEmbedding(
-          chunk.embedding,
-          this.embeddingDimension,
-          document.id,
-        );
-        const vectorMagnitude = vectorNorm(vector);
-        if (vectorMagnitude === 0) {
-          throw invalidChunkData(document.id);
-        }
-        scored.push({
-          id: chunk.id,
-          documentId: document.id,
-          courseId: document.courseId,
-          filename: document.filename,
-          scope: document.scope,
-          text: chunk.text,
-          tokenEstimate: chunk.tokenEstimate,
-          pageStart: chunk.pageStart,
-          pageEnd: chunk.pageEnd,
-          section: chunk.section,
-          score:
-            cosineSimilarity(queryVector, queryNorm, vector, vectorMagnitude),
-        });
-      }
-    }
-
-    if (
-      [...requestedSections].some((section) => !matchedSections.has(section))
-    ) {
+    const documentsById = new Map(candidates.map((document) => [document.id, document]));
+    const candidateIds = candidates.map((document) => document.id);
+    const chunkRecords =
+      requestedSections.size > 0
+        ? (await this.withChunkDataHandling(
+            this.chunks.findByDocumentIds(candidateIds),
+          )).filter(
+            (chunk) =>
+              chunk.normalizedSection !== null &&
+              requestedSections.has(chunk.normalizedSection),
+          )
+        : await this.withChunkDataHandling(
+            this.chunks.vectorSearch(
+              queryVector,
+              {
+                courseId,
+                embeddingModel: this.embeddingModel,
+                ownerId: actor.id,
+                documentIds: candidateIds,
+              },
+              Math.min(10_000, Math.max(100, limit * 10)),
+            ),
+          );
+    const matchedSections = new Set(
+      chunkRecords
+        .map((chunk) => chunk.normalizedSection)
+        .filter((section): section is string => section !== null),
+    );
+    if ([...requestedSections].some((section) => !matchedSections.has(section))) {
       throw insufficientMaterialError(
         "One or more selected sections are not available in the selected documents",
       );
     }
+
+    const scored = chunkRecords.map((chunk) =>
+      this.toRetrievedChunk(
+        chunk,
+        documentsById.get(chunk.documentId),
+        queryVector,
+      ),
+    );
     if (requestedSections.size > 0 && scored.length === 0) {
       throw insufficientMaterialError(
         "The selected sections do not contain searchable material",
       );
     }
-
     return rankHybridResults(scored, options.queryText ?? "", limit);
   }
 
-  public assertCourseAccess(actor: AuthenticatedUser, courseId: string): void {
-    const course = this.requireCourseAccess(actor, courseId);
+  public async assertCourseAccess(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<void> {
+    const course = await this.requireCourseAccess(actor, courseId);
     if (course.status !== "active") {
       throw new NotFoundError("Course not found");
     }
@@ -240,7 +204,7 @@ export class RetrievalService {
     courseId: string,
     documentIds: string[],
   ): Promise<RetrievedChunk[]> {
-    const course = this.requireCourseAccess(actor, courseId);
+    const course = await this.requireCourseAccess(actor, courseId);
     if (course.status !== "active") throw new NotFoundError("Course not found");
     if (new Set(documentIds).size !== documentIds.length) {
       throw new AppError(
@@ -250,8 +214,7 @@ export class RetrievalService {
       );
     }
 
-    const visibleDocuments = this.repository
-      .listDocumentsByCourse(courseId)
+    const visibleDocuments = (await this.repository.listDocumentsByCourse(courseId))
       .filter(
         (document) =>
           document.courseId === courseId &&
@@ -274,23 +237,33 @@ export class RetrievalService {
       return document;
     });
 
-    const selectedChunks: RetrievedChunk[] = [];
+    const chunkRecords = await this.withChunkDataHandling(
+      this.chunks.findByDocumentIds(
+        selectedDocuments.map((document) => document.id),
+      ),
+    );
+    const documentsById = new Map(
+      selectedDocuments.map((document) => [document.id, document]),
+    );
+    const chunksByDocument = new Map<string, number>();
+    const selectedChunks = chunkRecords.map((chunk) => {
+      chunksByDocument.set(
+        chunk.documentId,
+        (chunksByDocument.get(chunk.documentId) ?? 0) + 1,
+      );
+      return this.toRetrievedChunk(
+        chunk,
+        documentsById.get(chunk.documentId),
+        null,
+      );
+    });
     for (const document of selectedDocuments) {
-      const chunkFile = await this.readValidatedChunkFile(document);
-      for (const chunk of chunkFile.chunks) {
-        selectedChunks.push({
-          id: chunk.id,
-          documentId: document.id,
-          courseId: document.courseId,
-          filename: document.filename,
-          scope: document.scope,
-          text: chunk.text,
-          tokenEstimate: chunk.tokenEstimate,
-          pageStart: chunk.pageStart,
-          pageEnd: chunk.pageEnd,
-          section: chunk.section,
-          score: 0,
-        });
+      if (
+        document.chunkCount !== null &&
+        document.chunkCount !== undefined &&
+        (chunksByDocument.get(document.id) ?? 0) !== document.chunkCount
+      ) {
+        throw invalidChunkData(document.id);
       }
     }
     if (selectedChunks.length === 0) {
@@ -301,11 +274,11 @@ export class RetrievalService {
     return selectedChunks;
   }
 
-  private requireCourseAccess(
+  private async requireCourseAccess(
     actor: AuthenticatedUser,
     courseId: string,
-  ): CourseRecord {
-    const course = this.repository.findCourse(courseId);
+  ): Promise<CourseRecord> {
+    const course = await this.repository.findCourse(courseId);
     if (!course || actor.status !== "active" || actor.role === "admin") {
       throw new NotFoundError("Course not found");
     }
@@ -314,53 +287,70 @@ export class RetrievalService {
       actor.role === "learner" &&
       course.approvalStatus !== "pending" &&
       course.approvalStatus !== "changes_requested" &&
-      this.repository.findEnrolment(course.id, actor.id)?.status === "approved"
+      (await this.repository.findEnrolment(course.id, actor.id))?.status ===
+        "approved"
     ) {
       return course;
     }
     throw new NotFoundError("Course not found");
   }
 
-  private async readValidatedChunkFile(
-    document: DocumentRecord,
-  ): Promise<z.infer<typeof chunkFileSchema>> {
-    let rawChunkFile: unknown;
+  private toRetrievedChunk(
+    chunk: ChunkRecord,
+    document: DocumentRecord | undefined,
+    queryVector: number[] | null,
+  ): RetrievedChunk {
+    if (
+      !document ||
+      chunk.id !== `${document.id}:${chunk.chunkIndex}` ||
+      chunk.documentId !== document.id ||
+      chunk.courseId !== document.courseId ||
+      chunk.ownerId !== document.ownerId ||
+      chunk.scope !== document.scope ||
+      chunk.embeddingModel !== this.embeddingModel ||
+      chunk.embedding.length !== this.embeddingDimension ||
+      chunk.embedding.some((value) => !Number.isFinite(value)) ||
+      vectorNorm(chunk.embedding) === 0 ||
+      chunk.pageEnd < chunk.pageStart ||
+      chunk.text.length === 0
+    ) {
+      throw invalidChunkData(document?.id ?? chunk.documentId);
+    }
+    const score =
+      queryVector === null
+        ? 0
+        : cosineSimilarity(
+            queryVector,
+            vectorNorm(queryVector),
+            chunk.embedding,
+            vectorNorm(chunk.embedding),
+          );
+    return {
+      id: chunk.id,
+      documentId: document.id,
+      courseId: document.courseId,
+      filename: document.filename,
+      scope: document.scope,
+      text: chunk.text,
+      tokenEstimate: chunk.tokenEstimate,
+      pageStart: chunk.pageStart,
+      pageEnd: chunk.pageEnd,
+      section: chunk.section,
+      score,
+    };
+  }
+
+  private async withChunkDataHandling(
+    result: Promise<ChunkRecord[]>,
+  ): Promise<ChunkRecord[]> {
     try {
-      rawChunkFile = await this.storage.readChunks(document.id);
+      return await result;
     } catch (error) {
-      if (error instanceof SyntaxError || isMissingFileError(error)) {
-        throw invalidChunkData(document.id);
+      if (error instanceof ChunkDataError) {
+        throw invalidChunkData(error.documentId);
       }
       throw error;
     }
-    const parsed = chunkFileSchema.safeParse(rawChunkFile);
-    if (!parsed.success) throw invalidChunkData(document.id);
-
-    const { header, chunks } = parsed.data;
-    if (
-      header.documentId !== document.id ||
-      header.courseId !== document.courseId ||
-      header.ownerId !== document.ownerId ||
-      header.scope !== document.scope ||
-      header.embeddingModel !== this.embeddingModel ||
-      header.dimension !== this.embeddingDimension ||
-      header.chunkCount !== chunks.length ||
-      (document.chunkCount !== null &&
-        document.chunkCount !== undefined &&
-        document.chunkCount !== chunks.length)
-    ) {
-      throw invalidChunkData(document.id);
-    }
-    chunks.forEach((chunk, index) => {
-      if (
-        chunk.id !== `${document.id}:${index}` ||
-        chunk.chunkIndex !== index ||
-        chunk.pageEnd < chunk.pageStart
-      ) {
-        throw invalidChunkData(document.id);
-      }
-    });
-    return parsed.data;
   }
 }
 
@@ -387,27 +377,6 @@ function validateQueryEmbedding(
     );
   }
   return embedding;
-}
-
-function decodeEmbedding(
-  encoded: string,
-  dimension: number,
-  documentId: string,
-): number[] {
-  const bytes = Buffer.from(encoded, "base64");
-  if (
-    bytes.length !== dimension * Float32Array.BYTES_PER_ELEMENT ||
-    bytes.toString("base64") !== encoded
-  ) {
-    throw invalidChunkData(documentId);
-  }
-  const values = Array.from({ length: dimension }, (_value, index) =>
-    bytes.readFloatLE(index * Float32Array.BYTES_PER_ELEMENT),
-  );
-  if (values.some((value) => !Number.isFinite(value))) {
-    throw invalidChunkData(documentId);
-  }
-  return values;
 }
 
 function vectorNorm(vector: number[]): number {
@@ -554,14 +523,5 @@ function invalidChunkData(documentId: string): AppError {
     500,
     "A processed document is unavailable for retrieval",
     { documentId },
-  );
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
   );
 }

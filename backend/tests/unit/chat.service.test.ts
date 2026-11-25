@@ -16,6 +16,7 @@ import {
   RetrievalService,
   type RetrievalRepository,
 } from "../../src/modules/retrieval/retrieval.service";
+import { createTestChunkRepository } from "../helpers/chunk-repository";
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const courseId = "00000000-0000-4000-8000-000000000002";
@@ -52,7 +53,7 @@ describe("ChatService", () => {
     };
     const retrievalService = new RetrievalService(
       retrievalRepository,
-      { readChunks: async () => ({}) },
+      createTestChunkRepository(async () => ({})),
       "mistral-embed",
       2,
     );

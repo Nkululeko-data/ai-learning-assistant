@@ -85,10 +85,15 @@ export function createAuthRouter(
         body.email,
         body.password,
       );
+      const authenticatedUser =
+        await dependencies.authService.authenticateAccessToken(
+          result.tokens.accessToken,
+        );
       setRefreshCookie(response, result.tokens, dependencies.config);
       response.status(200).json({
         data: {
           user: result.user,
+          authenticatedUser,
           accessToken: result.tokens.accessToken,
           accessTokenExpiresIn: result.tokens.accessTokenExpiresIn,
           ...(dependencies.authService.allowRefreshTokenInBody
@@ -118,10 +123,15 @@ export function createAuthRouter(
       );
     }
     const result = await dependencies.authService.refresh(token);
+    const authenticatedUser =
+      await dependencies.authService.authenticateAccessToken(
+        result.tokens.accessToken,
+      );
     setRefreshCookie(response, result.tokens, dependencies.config);
     response.status(200).json({
       data: {
         user: result.user,
+        authenticatedUser,
         accessToken: result.tokens.accessToken,
         accessTokenExpiresIn: result.tokens.accessTokenExpiresIn,
         ...(dependencies.authService.allowRefreshTokenInBody
@@ -165,8 +175,8 @@ export function createAuthRouter(
     },
   );
 
-  router.get("/me", authenticate, (request, response) => {
-    const currentUser = dependencies.authService.getCurrentUser(
+  router.get("/me", authenticate, async (request, response) => {
+    const currentUser = await dependencies.authService.getCurrentUser(
       requireAuthContext(request),
     );
     response.status(200).json({ data: currentUser });
@@ -177,9 +187,11 @@ export function createAuthRouter(
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("user:manage"),
-    (request, response) => {
+    async (request, response) => {
       const query = coachRequestListQuerySchema.parse(request.query);
-      const requests = dependencies.authService.listCoachRequests(query.status);
+      const requests = await dependencies.authService.listCoachRequests(
+        query.status,
+      );
       response.status(200).json({ data: requests });
     },
   );
@@ -242,12 +254,15 @@ export function createAuthRouter(
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("role:manage"),
-    (request, response) => {
+    async (request, response) => {
       const query = adminUserListQuerySchema.parse(request.query);
       const cursor = query.cursor
         ? decodeBase64UuidCursor(query.cursor)
         : undefined;
-      const page = dependencies.authService.listUsers(query.limit, cursor);
+      const page = await dependencies.authService.listUsers(
+        query.limit,
+        cursor,
+      );
       response.status(200).json({
         data: page.items,
         ...(page.nextCursor

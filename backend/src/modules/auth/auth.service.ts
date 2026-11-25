@@ -13,10 +13,10 @@ import type {
 } from "./auth.types";
 import type {
   CoachRequestRecord,
+  RefreshTokenRecord,
   UserRecord,
 } from "../../infra/jsonstore/system-collections";
 
-const refreshFamilyMutex = new AsyncMutex();
 const coachDecisionMutex = new AsyncMutex();
 const dummyPasswordHash = argon2.hash(randomBytes(32).toString("hex"), {
   type: argon2.argon2id,
@@ -101,14 +101,20 @@ export class AuthService {
         "Password is on the weak-password deny-list",
       );
     }
-    if (this.repository.findUserByEmail(email)) {
+    if (await this.repository.findUserByEmail(email)) {
       throw new ConflictError("An account already uses this email address");
     }
 
-    const learnerRole = this.repository.findRoleByName("learner");
+    const learnerRole = await this.repository.findRoleByName("learner");
     if (!learnerRole) throw new Error("Learner role is not initialized");
     const now = new Date().toISOString();
-    const user = await this.repository.createUser({
+    const coachRequest = input.requestCoach
+      ? {
+          ...(input.coachMessage ? { message: input.coachMessage.trim() } : {}),
+          requestedAt: now,
+        }
+      : undefined;
+    const user = await this.repository.createUserAndCoachRequest({
       email,
       passwordHash: await argon2.hash(input.password, {
         type: argon2.argon2id,
@@ -121,24 +127,12 @@ export class AuthService {
       permsVersion: 1,
       createdAt: now,
       updatedAt: now,
-    });
+    }, coachRequest);
 
-    let coachRequestCreated = false;
-    if (input.requestCoach) {
-      try {
-        await this.repository.createCoachRequest({
-          userId: user.id,
-          status: "pending",
-          ...(input.coachMessage ? { message: input.coachMessage.trim() } : {}),
-          requestedAt: now,
-        });
-        coachRequestCreated = true;
-      } catch (error) {
-        await this.repository.removeUser(user.id);
-        throw error;
-      }
-    }
-    return { user: toSafeUser(user), coachRequestCreated };
+    return {
+      user: toSafeUser(user),
+      coachRequestCreated: input.requestCoach,
+    };
   }
 
   /**
@@ -146,7 +140,7 @@ export class AuthService {
    */
   public async login(emailInput: string, password: string): Promise<AuthResult> {
     const email = emailInput.trim().toLowerCase();
-    const user = this.repository.findUserByEmail(email);
+    const user = await this.repository.findUserByEmail(email);
     if (!user) {
       await argon2.verify(await dummyPasswordHash, password);
       throw invalidCredentials();
@@ -206,37 +200,38 @@ export class AuthService {
    * Rotates an opaque refresh token and revokes its entire family on reuse.
    */
   public async refresh(rawRefreshToken: string): Promise<AuthResult> {
-    return refreshFamilyMutex.runExclusive(async () => {
-      const tokenHash = hashRefreshToken(rawRefreshToken);
-      const currentToken = this.repository.findRefreshTokenByHash(tokenHash);
-      if (!currentToken) throw invalidToken();
-      if (currentToken.usedAt || currentToken.revokedAt) {
-        await this.revokeFamily(currentToken.familyId);
-        throw invalidToken();
-      }
-      if (Date.parse(currentToken.expiresAt) <= Date.now()) {
-        await this.revokeFamily(currentToken.familyId);
-        throw invalidToken();
-      }
+    const tokenHash = hashRefreshToken(rawRefreshToken);
+    const currentToken = await this.repository.findRefreshTokenByHash(tokenHash);
+    if (!currentToken) throw invalidToken();
+    if (currentToken.usedAt || currentToken.revokedAt) {
+      await this.revokeFamily(currentToken.familyId);
+      throw invalidToken();
+    }
+    if (Date.parse(currentToken.expiresAt) <= Date.now()) {
+      await this.revokeFamily(currentToken.familyId);
+      throw invalidToken();
+    }
 
-      const user = this.repository.findUserById(currentToken.userId);
-      if (!user || user.status !== "active") {
-        await this.revokeFamily(currentToken.familyId);
-        throw invalidToken();
-      }
+    const user = await this.repository.findUserById(currentToken.userId);
+    if (!user || user.status !== "active") {
+      await this.revokeFamily(currentToken.familyId);
+      throw invalidToken();
+    }
 
-      const tokens = await this.createTokenPair(user, currentToken.familyId);
-      await this.repository.updateRefreshToken(currentToken.id, (record) => ({
-        ...record,
-        usedAt: new Date().toISOString(),
-        replacedByTokenId: tokens.refreshTokenId,
-      }));
-      return {
-        user: toSafeUser(user),
-        tokens: tokens.pair,
-        coachRequestCreated: false,
-      };
-    });
+    const tokens = await this.createTokenPair(user, currentToken.familyId);
+    const rotation = await this.repository.rotateRefreshToken(
+      currentToken.id,
+      tokens.refreshToken,
+    );
+    if (!rotation) {
+      await this.revokeFamily(currentToken.familyId);
+      throw invalidToken();
+    }
+    return {
+      user: toSafeUser(user),
+      tokens: tokens.pair,
+      coachRequestCreated: false,
+    };
   }
 
   /**
@@ -244,7 +239,7 @@ export class AuthService {
    */
   public async logout(rawRefreshToken: string | undefined): Promise<void> {
     if (!rawRefreshToken) return;
-    const record = this.repository.findRefreshTokenByHash(
+    const record = await this.repository.findRefreshTokenByHash(
       hashRefreshToken(rawRefreshToken),
     );
     if (record) await this.revokeFamily(record.familyId);
@@ -253,11 +248,13 @@ export class AuthService {
   /**
    * Validates access claims, checks the current user state, and resolves current permissions.
    */
-  public authenticateAccessToken(rawToken: string): AuthenticatedUser {
+  public async authenticateAccessToken(
+    rawToken: string,
+  ): Promise<AuthenticatedUser> {
     const claims = this.verifyAccessToken(rawToken);
-    const user = this.repository.findUserById(claims.userId);
+    const user = await this.repository.findUserById(claims.userId);
     if (!user || user.status !== "active") throw invalidToken();
-    const role = this.repository.findRoleById(user.roleId);
+    const role = await this.repository.findRoleById(user.roleId);
     if (!role || claims.role !== role.name) throw invalidToken();
     const permsVersion = user.permsVersion ?? 1;
     if (claims.permsVersion !== permsVersion) throw invalidToken();
@@ -269,7 +266,7 @@ export class AuthService {
       role: role.name,
       status: user.status,
       mustChangePassword: user.mustChangePassword,
-      permissions: this.permissions.resolve(user.id, user.roleId),
+      permissions: await this.permissions.resolve(user.id, user.roleId),
       permsVersion,
     };
   }
@@ -283,7 +280,7 @@ export class AuthService {
     newPassword: string,
     requestId: string,
   ): Promise<SafeUser> {
-    const currentUser = this.repository.findUserById(actor.id);
+    const currentUser = await this.repository.findUserById(actor.id);
     if (!currentUser || currentUser.status !== "active") throw invalidToken();
     if (!(await argon2.verify(currentUser.passwordHash, currentPassword))) {
       throw invalidCredentials();
@@ -319,34 +316,39 @@ export class AuthService {
   /**
    * Lists coach applications with safe applicant identity fields for administrator review.
    */
-  public listCoachRequests(
+  public async listCoachRequests(
     status?: "pending" | "approved" | "rejected",
-  ): CoachRequestView[] {
-    return this.repository.listCoachRequests(status).map((request) => {
-      const user = this.repository.findUserById(request.userId);
-      if (!user) {
-        throw new Error(
-          `Coach request "${request.id}" references a missing user`,
-        );
-      }
-      return {
-        id: request.id,
-        userId: request.userId,
-        status: request.status,
-        ...(request.message === undefined ? {} : { message: request.message }),
-        requestedAt: request.requestedAt,
-        ...(request.decidedBy === undefined
-          ? {}
-          : { decidedBy: request.decidedBy }),
-        ...(request.decidedAt === undefined
-          ? {}
-          : { decidedAt: request.decidedAt }),
-        ...(request.decisionNote === undefined
-          ? {}
-          : { decisionNote: request.decisionNote }),
-        applicant: { displayName: user.displayName, email: user.email },
-      };
-    });
+  ): Promise<CoachRequestView[]> {
+    const requests = await this.repository.listCoachRequests(status);
+    return Promise.all(
+      requests.map(async (request) => {
+        const user = await this.repository.findUserById(request.userId);
+        if (!user) {
+          throw new Error(
+            `Coach request "${request.id}" references a missing user`,
+          );
+        }
+        return {
+          id: request.id,
+          userId: request.userId,
+          status: request.status,
+          ...(request.message === undefined
+            ? {}
+            : { message: request.message }),
+          requestedAt: request.requestedAt,
+          ...(request.decidedBy === undefined
+            ? {}
+            : { decidedBy: request.decidedBy }),
+          ...(request.decidedAt === undefined
+            ? {}
+            : { decidedAt: request.decidedAt }),
+          ...(request.decisionNote === undefined
+            ? {}
+            : { decisionNote: request.decisionNote }),
+          applicant: { displayName: user.displayName, email: user.email },
+        };
+      }),
+    );
   }
 
   /**
@@ -361,11 +363,11 @@ export class AuthService {
   ): Promise<CoachRequestView> {
     return coachDecisionMutex.runExclusive(async () => {
       requirePermission(actor, "user:manage");
-      const coachRequest = this.repository.findCoachRequestById(requestId);
+      const coachRequest = await this.repository.findCoachRequestById(requestId);
       if (!coachRequest) throw new NotFoundError();
       if (coachRequest.status !== "pending") {
         if (coachRequest.status === decision) {
-          const existingView = this.listCoachRequests(coachRequest.status).find(
+          const existingView = (await this.listCoachRequests(coachRequest.status)).find(
             (item) => item.id === coachRequest.id,
           );
           if (!existingView) throw new NotFoundError();
@@ -373,13 +375,49 @@ export class AuthService {
         }
         throw new ConflictError("Coach request already has a conflicting decision");
       }
-      const user = this.repository.findUserById(coachRequest.userId);
+      const user = await this.repository.findUserById(coachRequest.userId);
       if (!user) throw new NotFoundError();
 
       let afterUser = user;
-      if (decision === "approved") {
-        const coachRole = this.repository.findRoleByName("coach");
-        if (!coachRole) throw new Error("Coach role is not initialized");
+      const coachRole =
+        decision === "approved"
+          ? await this.repository.findRoleByName("coach")
+          : null;
+      if (decision === "approved" && !coachRole) {
+        throw new Error("Coach role is not initialized");
+      }
+
+      const decidedAt = new Date().toISOString();
+      let decisionAlreadyApplied = false;
+      const updatedRequest = await this.repository.updateCoachRequest(
+        coachRequest.id,
+        (record) => {
+          if (record.status !== "pending") {
+            if (record.status === decision) {
+              decisionAlreadyApplied = true;
+              return record;
+            }
+            throw new ConflictError(
+              "Coach request already has a conflicting decision",
+            );
+          }
+          return {
+            ...record,
+            status: decision,
+            decidedBy: actor.id,
+            decidedAt,
+            decisionNote: decisionNote ?? null,
+          };
+        },
+      );
+      if (decisionAlreadyApplied) {
+        const currentUser = await this.repository.findUserById(
+          updatedRequest.userId,
+        );
+        if (!currentUser) throw new Error("Coach request user disappeared");
+        return this.toCoachRequestView(updatedRequest, currentUser);
+      }
+      if (coachRole) {
         afterUser = await this.repository.updateUser(user.id, (record) => ({
           ...record,
           roleId: coachRole.id,
@@ -387,18 +425,6 @@ export class AuthService {
           updatedAt: new Date().toISOString(),
         }));
       }
-
-      const decidedAt = new Date().toISOString();
-      const updatedRequest = await this.repository.updateCoachRequest(
-        coachRequest.id,
-        (record) => ({
-          ...record,
-          status: decision,
-          decidedBy: actor.id,
-          decidedAt,
-          decisionNote: decisionNote ?? null,
-        }),
-      );
       await this.repository.createAudit({
         actorId: actor.id,
         actorRole: actor.role,
@@ -409,7 +435,7 @@ export class AuthService {
         after: { status: decision, userRoleId: afterUser.roleId },
         requestId: requestIdHeader,
       });
-      const currentUser = this.repository.findUserById(updatedRequest.userId);
+      const currentUser = await this.repository.findUserById(updatedRequest.userId);
       if (!currentUser) throw new Error("Coach request user disappeared");
       return this.toCoachRequestView(updatedRequest, currentUser);
     });
@@ -428,9 +454,9 @@ export class AuthService {
     if (targetUserId === actor.id) {
       throw new AppError("FORBIDDEN", 403, "Users cannot change their own role");
     }
-    const user = this.repository.findUserById(targetUserId);
+    const user = await this.repository.findUserById(targetUserId);
     if (!user) throw new NotFoundError();
-    const role = this.repository.findRoleByName(roleName);
+    const role = await this.repository.findRoleByName(roleName);
     if (!role) throw new Error(`Role "${roleName}" is not initialized`);
     if (user.roleId === role.id) return toSafeUser(user);
     const updated = await this.repository.updateUser(user.id, (record) => ({
@@ -463,9 +489,9 @@ export class AuthService {
     requestId: string,
   ): Promise<AuthenticatedUser> {
     requirePermission(actor, "role:manage");
-    const user = this.repository.findUserById(targetUserId);
+    const user = await this.repository.findUserById(targetUserId);
     if (!user) throw new NotFoundError();
-    const role = this.repository.findRoleById(user.roleId);
+    const role = await this.repository.findRoleById(user.roleId);
     if (!role) throw new Error("User role is not initialized");
     if (role.name !== "coach") {
       throw new AppError(
@@ -474,13 +500,14 @@ export class AuthService {
         "Fine-grained permission overrides are only supported for coaches",
       );
     }
-    const permissionId = this.repository.findPermissionIdByKey(permissionKey);
+    const permissionId =
+      await this.repository.findPermissionIdByKey(permissionKey);
     if (!permissionId) {
       throw new AppError("VALIDATION_FAILED", 422, "Unknown permission key");
     }
-    const existing = this.repository
-      .getUserOverrides(user.id)
-      .find((override) => override.permissionKey === permissionKey);
+    const existing = (await this.repository.getUserOverrides(user.id)).find(
+      (override) => override.permissionKey === permissionKey,
+    );
     if (existing?.effect === effect) {
       return this.toAuthenticatedUser(user);
     }
@@ -509,22 +536,23 @@ export class AuthService {
     return this.toAuthenticatedUser(updated);
   }
 
-  public listUsers(limit: number, cursor?: string): {
+  public async listUsers(limit: number, cursor?: string): Promise<{
     items: Array<SafeUser & { role: AuthenticatedUser["role"] }>;
     nextCursor?: string;
-  } {
-    const records = this.repository
-      .listUsers()
+  }> {
+    const records = (await this.repository.listUsers())
       .filter((record) => record.id >= (cursor ?? ""))
       .sort((left, right) => left.id.localeCompare(right.id));
     const hasMore = records.length > limit;
-    const items = (hasMore ? records.slice(0, limit) : records).map((record) => {
-      const role = this.repository.findRoleById(record.roleId);
-      if (!role) {
-        throw new Error(`User "${record.id}" references a missing role`);
-      }
-      return { ...toSafeUser(record), role: role.name };
-    });
+    const items = await Promise.all(
+      (hasMore ? records.slice(0, limit) : records).map(async (record) => {
+        const role = await this.repository.findRoleById(record.roleId);
+        if (!role) {
+          throw new Error(`User "${record.id}" references a missing role`);
+        }
+        return { ...toSafeUser(record), role: role.name };
+      }),
+    );
     const last = items.at(-1);
     return {
       items,
@@ -544,7 +572,7 @@ export class AuthService {
     if (targetUserId === actor.id) {
       throw new AppError("FORBIDDEN", 403, "Users cannot change their own status");
     }
-    const user = this.repository.findUserById(targetUserId);
+    const user = await this.repository.findUserById(targetUserId);
     if (!user) throw new NotFoundError();
     if (user.status === status) return toSafeUser(user);
     const updated = await this.repository.updateUser(user.id, (record) => ({
@@ -578,7 +606,7 @@ export class AuthService {
     if (targetUserId === actor.id) {
       throw new AppError("FORBIDDEN", 403, "Users cannot reset their own password");
     }
-    const user = this.repository.findUserById(targetUserId);
+    const user = await this.repository.findUserById(targetUserId);
     if (!user) throw new NotFoundError();
     const resetToken = randomBytes(32).toString("hex");
     const resetTokenHash = createHash("sha256").update(resetToken).digest("hex");
@@ -607,8 +635,10 @@ export class AuthService {
   /**
    * Returns a safe current-user profile and dynamically resolved permissions.
    */
-  public getCurrentUser(actor: AuthenticatedUser): AuthenticatedUser {
-    const user = this.repository.findUserById(actor.id);
+  public async getCurrentUser(
+    actor: AuthenticatedUser,
+  ): Promise<AuthenticatedUser> {
+    const user = await this.repository.findUserById(actor.id);
     if (!user || user.status !== "active") throw invalidToken();
     return this.toAuthenticatedUser(user);
   }
@@ -638,8 +668,10 @@ export class AuthService {
   /**
    * Resolves one user into the authorization context used by route policies.
    */
-  private toAuthenticatedUser(user: UserRecord): AuthenticatedUser {
-    const role = this.repository.findRoleById(user.roleId);
+  private async toAuthenticatedUser(
+    user: UserRecord,
+  ): Promise<AuthenticatedUser> {
+    const role = await this.repository.findRoleById(user.roleId);
     if (!role) throw new Error("User role is not initialized");
     const permsVersion = user.permsVersion ?? 1;
     return {
@@ -649,7 +681,7 @@ export class AuthService {
       role: role.name,
       status: user.status,
       mustChangePassword: user.mustChangePassword,
-      permissions: this.permissions.resolve(user.id, user.roleId),
+      permissions: await this.permissions.resolve(user.id, user.roleId),
       permsVersion,
     };
   }
@@ -659,7 +691,9 @@ export class AuthService {
    */
   private async issueTokenPair(user: UserRecord): Promise<TokenPair> {
     const familyId = randomUUID();
-    return (await this.createTokenPair(user, familyId)).pair;
+    const tokens = await this.createTokenPair(user, familyId);
+    await this.repository.createRefreshToken(tokens.refreshToken);
+    return tokens.pair;
   }
 
   /**
@@ -668,8 +702,11 @@ export class AuthService {
   private async createTokenPair(
     user: UserRecord,
     familyId: string,
-  ): Promise<{ pair: TokenPair; refreshTokenId: string }> {
-    const role = this.repository.findRoleById(user.roleId);
+  ): Promise<{
+    pair: TokenPair;
+    refreshToken: Omit<RefreshTokenRecord, "id">;
+  }> {
+    const role = await this.repository.findRoleById(user.roleId);
     if (!role) throw new Error("User role is not initialized");
     if (!this.config.jwtAccessSecret || !this.config.jwtRefreshSecret) {
       throw new Error("Authentication secrets are not configured");
@@ -691,7 +728,7 @@ export class AuthService {
     );
     const rawRefreshToken = randomBytes(32).toString("base64url");
     const now = new Date();
-    const refreshRecord = await this.repository.createRefreshToken({
+    const refreshToken: Omit<RefreshTokenRecord, "id"> = {
       userId: user.id,
       familyId,
       tokenHash: hashRefreshToken(rawRefreshToken),
@@ -702,14 +739,14 @@ export class AuthService {
       usedAt: null,
       revokedAt: null,
       replacedByTokenId: null,
-    });
+    };
     return {
       pair: {
         accessToken,
         refreshToken: rawRefreshToken,
         accessTokenExpiresIn: expiresIn,
       },
-      refreshTokenId: refreshRecord.id,
+      refreshToken,
     };
   }
 
@@ -744,7 +781,9 @@ export class AuthService {
    */
   private async revokeFamily(familyId: string): Promise<void> {
     const revokedAt = new Date().toISOString();
-    for (const token of this.repository.findRefreshTokensByFamily(familyId)) {
+    for (const token of await this.repository.findRefreshTokensByFamily(
+      familyId,
+    )) {
       if (token.revokedAt) continue;
       await this.repository.updateRefreshToken(token.id, (record) => ({
         ...record,
@@ -758,7 +797,7 @@ export class AuthService {
    */
   private async revokeUserTokens(userId: string): Promise<void> {
     const revokedAt = new Date().toISOString();
-    for (const token of this.repository.findRefreshTokensByUser(userId)) {
+    for (const token of await this.repository.findRefreshTokensByUser(userId)) {
       if (token.revokedAt) continue;
       await this.repository.updateRefreshToken(token.id, (record) => ({
         ...record,

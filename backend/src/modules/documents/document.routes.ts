@@ -77,26 +77,34 @@ export function createDocumentRouter(dependencies: DocumentRouteDependencies): R
       .send(file.bytes);
   });
 
-  router.get("/documents/:documentId/status", authenticate, (request, response) => {
-    const document = dependencies.documentService.getStatus(
-      requireAuthContext(request),
-      requireUuidParam(request, "documentId"),
-    );
-    response.status(200).json({ data: document });
-  });
+  router.get(
+    "/documents/:documentId/status",
+    authenticate,
+    async (request, response) => {
+      const document = await dependencies.documentService.getStatus(
+        requireAuthContext(request),
+        requireUuidParam(request, "documentId"),
+      );
+      response.status(200).json({ data: document });
+    },
+  );
 
-  router.get("/courses/:courseId/documents", authenticate, (request, response) => {
-    const query = documentListQuerySchema.parse(request.query);
-    const page = dependencies.documentService.listForCourse(
-      requireAuthContext(request),
-      requireUuidParam(request, "courseId"),
-      query,
-    );
-    response.status(200).json({
-      data: page.items,
-      ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
-    });
-  });
+  router.get(
+    "/courses/:courseId/documents",
+    authenticate,
+    async (request, response) => {
+      const query = documentListQuerySchema.parse(request.query);
+      const page = await dependencies.documentService.listForCourse(
+        requireAuthContext(request),
+        requireUuidParam(request, "courseId"),
+        query,
+      );
+      response.status(200).json({
+        data: page.items,
+        ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
+      });
+    },
+  );
 
   router.post(
     "/documents/:documentId/retry",

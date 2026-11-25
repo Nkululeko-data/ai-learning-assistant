@@ -27,7 +27,7 @@ function restoreSession(): Promise<AuthenticatedUser> {
     sessionBootstrap = refresh()
       .then((result) => {
         setAccessToken(result.accessToken);
-        return getCurrentUser();
+        return result.authenticatedUser ?? getCurrentUser();
       })
       .finally(() => {
         sessionBootstrap = null;
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await loginRequest(input);
     setAccessToken(result.accessToken);
     try {
-      const currentUser = await getCurrentUser();
+      const currentUser = result.authenticatedUser ?? (await getCurrentUser());
       setUser(currentUser);
       setBootstrapError(null);
     } catch (error) {

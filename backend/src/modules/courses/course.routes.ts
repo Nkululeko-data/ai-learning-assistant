@@ -35,9 +35,9 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("user:manage"),
-    (request, response) => {
+    async (request, response) => {
       const query = paginationQuerySchema.parse(request.query);
-      const page = dependencies.courseService.listCourseApprovalQueue(
+      const page = await dependencies.courseService.listCourseApprovalQueue(
         requireAuthContext(request),
         query,
       );
@@ -65,18 +65,18 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     },
   );
 
-  router.get("/courses", authenticate, (request, response) => {
+  router.get("/courses", authenticate, async (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
-    const page = dependencies.courseService.listCourses(requireAuthContext(request), query);
+    const page = await dependencies.courseService.listCourses(requireAuthContext(request), query);
     response.status(200).json({
       data: page.items,
       ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
     });
   });
 
-  router.get("/me/courses", authenticate, (request, response) => {
+  router.get("/me/courses", authenticate, async (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
-    const page = dependencies.courseService.listMyCourses(
+    const page = await dependencies.courseService.listMyCourses(
       requireAuthContext(request),
       query,
     );
@@ -102,24 +102,24 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     },
   );
 
-  router.get("/courses/:courseId", authenticate, (request, response) => {
-    const course = dependencies.courseService.getCourse(
+  router.get("/courses/:courseId", authenticate, async (request, response) => {
+    const course = await dependencies.courseService.getCourse(
       requireAuthContext(request),
       requireRouteParam(request, "courseId"),
     );
     response.status(200).json({ data: course });
   });
 
-  router.get("/courses/:courseId/preview", authenticate, (request, response) => {
-    const preview = dependencies.courseService.getCoursePreview(
+  router.get("/courses/:courseId/preview", authenticate, async (request, response) => {
+    const preview = await dependencies.courseService.getCoursePreview(
       requireAuthContext(request),
       requireRouteParam(request, "courseId"),
     );
     response.status(200).json({ data: preview });
   });
 
-  router.get("/courses/:courseId/lessons", authenticate, (request, response) => {
-    const lessons = dependencies.courseService.getCourseLessons(
+  router.get("/courses/:courseId/lessons", authenticate, async (request, response) => {
+    const lessons = await dependencies.courseService.getCourseLessons(
       requireAuthContext(request),
       requireRouteParam(request, "courseId"),
     );
@@ -182,9 +182,9 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     });
   });
 
-  router.get("/me/enrolments", authenticate, (request, response) => {
+  router.get("/me/enrolments", authenticate, async (request, response) => {
     const query = paginationQuerySchema.parse(request.query);
-    const page = dependencies.courseService.listMyEnrolments(requireAuthContext(request), query);
+    const page = await dependencies.courseService.listMyEnrolments(requireAuthContext(request), query);
     response.status(200).json({
       data: page.items,
       ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
@@ -196,9 +196,9 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("enrolment:approve"),
-    (request, response) => {
+    async (request, response) => {
       const query = enrolmentListQuerySchema.parse(request.query);
-      const page = dependencies.courseService.listJoinRequests(
+      const page = await dependencies.courseService.listJoinRequests(
         requireAuthContext(request),
         requireRouteParam(request, "courseId"),
         query.status,
@@ -215,9 +215,9 @@ export function createCourseRouter(dependencies: CourseRouteDependencies): Route
     "/courses/:courseId/learners",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = paginationQuerySchema.parse(request.query);
-      const page = dependencies.courseService.listCourseLearners(
+      const page = await dependencies.courseService.listCourseLearners(
         requireAuthContext(request),
         requireRouteParam(request, "courseId"),
         query,

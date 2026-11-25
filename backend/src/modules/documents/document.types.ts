@@ -12,10 +12,47 @@ export interface DocumentPage {
   nextCursor: string | null;
 }
 
+export type Awaitable<T> = T | Promise<T>;
+
+export interface DocumentRepository {
+  withCourseContentMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+  withDocumentLock<T>(
+    documentId: string,
+    operation: () => Promise<T>,
+  ): Promise<T>;
+  findCourse(id: string): Awaitable<CourseRecord | null>;
+  findEnrolment(
+    courseId: string,
+    userId: string,
+  ): Awaitable<EnrolmentRecord | null>;
+  findDocument(id: string): Awaitable<DocumentRecord | null>;
+  isCourseLessonMediaReferenced(documentId: string): Awaitable<boolean>;
+  findDuplicate(
+    courseId: string,
+    scope: DocumentRecord["scope"],
+    ownerId: string,
+    contentHash: string,
+  ): Awaitable<DocumentRecord | null>;
+  createDocument(input: Omit<DocumentRecord, "id">): Promise<DocumentRecord>;
+  updateDocument(
+    id: string,
+    update: (document: DocumentRecord) => DocumentRecord,
+  ): Promise<DocumentRecord>;
+  removeDocument(id: string): Promise<void>;
+  listDocumentsByCourse(courseId: string): Awaitable<DocumentRecord[]>;
+  listPersonalDocumentsByOwner(ownerId: string): Awaitable<DocumentRecord[]>;
+  listPage(
+    records: DocumentRecord[],
+    limit: number,
+    cursor?: string,
+  ): Awaitable<DocumentPage>;
+}
+
 /**
  * Provides document, course and enrolment access through validated JSON collections.
  */
-export class JsonDocumentRepository {
+export class JsonDocumentRepository implements DocumentRepository {
   private readonly mutationMutex = new AsyncMutex();
   private readonly documentMutexes = new Map<string, AsyncMutex>();
 
@@ -124,6 +161,12 @@ export class JsonDocumentRepository {
    */
   public listDocumentsByCourse(courseId: string): DocumentRecord[] {
     return this.collections.documents.findByIndex("courseId", courseId);
+  }
+
+  public listPersonalDocumentsByOwner(ownerId: string): DocumentRecord[] {
+    return this.collections.documents.list(
+      (document) => document.scope === "personal" && document.ownerId === ownerId,
+    );
   }
 
   /**

@@ -47,8 +47,10 @@ import {
 } from "./modules/admin/admin.routes";
 
 export interface ReadinessStatus {
-  neonOpen: boolean;
-  mongoOpen: boolean;
+  jsonStoreOpen: boolean;
+  sqliteOpen: boolean;
+  postgresReady: boolean;
+  mongoReady: boolean;
   schemaVersion: number;
   expectedSchemaVersion: number;
   providerConfigurationPresent: boolean;
@@ -57,7 +59,7 @@ export interface ReadinessStatus {
 export interface AppDependencies {
   logger: Logger;
   corsOrigins: string[];
-  getReadiness: () => ReadinessStatus;
+  getReadiness: () => ReadinessStatus | Promise<ReadinessStatus>;
   auth?: AuthRouteDependencies;
   courses?: CourseRouteDependencies;
   jobs?: JobRouteDependencies;
@@ -185,14 +187,16 @@ const openApiHandler: RequestHandler = (_request, response, next) => {
  * Creates a readiness handler that reports failed checks without exposing secrets.
  */
 function createReadinessHandler(
-  getReadiness: () => ReadinessStatus,
+  getReadiness: () => ReadinessStatus | Promise<ReadinessStatus>,
 ): RequestHandler {
-  return (request, response, next) => {
+  return async (_request, response, next) => {
     try {
-      const readiness = getReadiness();
+      const readiness = await getReadiness();
       const ready =
-        readiness.neonOpen &&
-        readiness.mongoOpen &&
+        readiness.jsonStoreOpen &&
+        readiness.sqliteOpen &&
+        readiness.postgresReady &&
+        readiness.mongoReady &&
         readiness.schemaVersion === readiness.expectedSchemaVersion &&
         readiness.providerConfigurationPresent;
       if (!ready) {
@@ -202,8 +206,10 @@ function createReadinessHandler(
             503,
             "One or more service dependencies are not ready",
             {
-              neonOpen: readiness.neonOpen,
-              mongoOpen: readiness.mongoOpen,
+              jsonStoreOpen: readiness.jsonStoreOpen,
+              sqliteOpen: readiness.sqliteOpen,
+              postgresReady: readiness.postgresReady,
+              mongoReady: readiness.mongoReady,
               schemaVersionMatches:
                 readiness.schemaVersion === readiness.expectedSchemaVersion,
               providerConfigurationPresent:

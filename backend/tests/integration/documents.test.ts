@@ -2,6 +2,7 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
+import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
 import { createApp } from "../../src/app";
 import { createLogger } from "../../src/common/logging/logger";
 import type { AppConfig } from "../../src/config/config";
@@ -18,7 +19,6 @@ import type { DocumentEmbeddingProvider } from "../../src/modules/documents/mist
 import { JobRunner } from "../../src/modules/jobs/job.runner";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
-import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async (buffer: Uint8Array) => {
@@ -68,7 +68,7 @@ afterEach(async () => {
 async function createContext(): Promise<DocumentTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-documents-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
+  await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -76,6 +76,9 @@ async function createContext(): Promise<DocumentTestContext> {
     environment: "test",
     port: 3000,
     dataDir: dataDirectory,
+    databaseUrl: undefined,
+    mongodbUri: undefined,
+    mongodbDbName: undefined,
     logLevel: "silent",
     corsOrigins: [],
     passwordMinLength: 12,
@@ -152,8 +155,10 @@ async function createContext(): Promise<DocumentTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      neonOpen: true,
-      mongoOpen: true,
+      jsonStoreOpen: true,
+      sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -168,7 +173,7 @@ async function createContext(): Promise<DocumentTestContext> {
   });
 
   const firstLogin = await authService.login("admin@example.test", adminPassword);
-  const firstAdmin = authService.authenticateAccessToken(firstLogin.tokens.accessToken);
+  const firstAdmin = await authService.authenticateAccessToken(firstLogin.tokens.accessToken);
   await authService.changePassword(firstAdmin, adminPassword, changedAdminPassword, "b6-test-password-change");
   const adminLogin = await authService.login("admin@example.test", changedAdminPassword);
   runner = new JobRunner(

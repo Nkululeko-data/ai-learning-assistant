@@ -98,9 +98,9 @@ export function createLearningRouter(
     "/courses/:courseId/summaries",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = learningListQuerySchema.parse(request.query);
-      const page = dependencies.learningService.listSummaries(
+      const page = await dependencies.learningService.listSummaries(
         requireAuthContext(request),
         requireUuidParam(request, "courseId"),
         query.limit,
@@ -117,8 +117,8 @@ export function createLearningRouter(
     "/summaries/:summaryId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
-      const summary = dependencies.learningService.getSummary(
+    async (request, response) => {
+      const summary = await dependencies.learningService.getSummary(
         requireAuthContext(request),
         requireUuidParam(request, "summaryId"),
       );
@@ -147,9 +147,9 @@ export function createLearningRouter(
     "/courses/:courseId/flashcards",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = learningListQuerySchema.parse(request.query);
-      const page = dependencies.learningService.listFlashcards(
+      const page = await dependencies.learningService.listFlashcards(
         requireAuthContext(request),
         requireUuidParam(request, "courseId"),
         query.limit,
@@ -166,8 +166,8 @@ export function createLearningRouter(
     "/flashcards/:flashcardId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
-      const flashcards = dependencies.learningService.getFlashcards(
+    async (request, response) => {
+      const flashcards = await dependencies.learningService.getFlashcards(
         requireAuthContext(request),
         requireUuidParam(request, "flashcardId"),
       );
@@ -228,9 +228,9 @@ export function createLearningRouter(
     "/courses/:courseId/quizzes",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = learningListQuerySchema.parse(request.query);
-      const page = dependencies.learningService.listQuizzes(
+      const page = await dependencies.learningService.listQuizzes(
         requireAuthContext(request),
         requireUuidParam(request, "courseId"),
         query.limit,
@@ -247,8 +247,8 @@ export function createLearningRouter(
     "/quizzes/:quizId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
-      const quiz = dependencies.learningService.getQuiz(
+    async (request, response) => {
+      const quiz = await dependencies.learningService.getQuiz(
         requireAuthContext(request),
         requireUuidParam(request, "quizId"),
       );

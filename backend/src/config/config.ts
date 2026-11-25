@@ -110,10 +110,14 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: z.coerce.number().int().min(1).max(65535),
   DATA_DIR: z.string().trim().min(1),
-  DATABASE_URL: optionalValue,
-  MONGODB_URI: optionalValue,
+  DATABASE_URL: optionalSecret,
+  MONGODB_URI: optionalSecret,
   MONGODB_DATABASE: optionalValue,
-  MONGODB_DB_NAME: optionalValue,
+  MONGODB_DB_NAME: z.preprocess(
+    (value: unknown) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().trim().min(1).optional(),
+  ),
   LOG_LEVEL: z.enum([
     "fatal",
     "error",
@@ -173,8 +177,9 @@ export interface AppConfig {
   environment: "development" | "test" | "production";
   port: number;
   dataDir: string;
-  databaseUrl?: string | undefined;
-  mongodbUri?: string | undefined;
+  databaseUrl: string | undefined;
+  mongodbUri: string | undefined;
+  mongodbDbName: string | undefined;
   mongodbDatabase?: string | undefined;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   corsOrigins: string[];
@@ -225,6 +230,7 @@ export interface AppConfig {
 
 export interface LoadConfigOptions {
   requireJwtSecrets?: boolean;
+  requireMongoConfiguration?: boolean;
   requireDatabases?: boolean;
 }
 
@@ -342,6 +348,32 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   }
 
   const values = parsed.data;
+  if (values.DATABASE_URL) {
+    const databaseUrl = z.string().url().safeParse(values.DATABASE_URL);
+    if (!databaseUrl.success) {
+      throw new Error("DATABASE_URL must be a valid PostgreSQL connection URL");
+    }
+    const parsedDatabaseUrl = new URL(values.DATABASE_URL);
+    if (
+      parsedDatabaseUrl.protocol !== "postgres:" &&
+      parsedDatabaseUrl.protocol !== "postgresql:"
+    ) {
+      throw new Error("DATABASE_URL must use the PostgreSQL protocol");
+    }
+    if (
+      !["require", "verify-ca", "verify-full"].includes(
+        parsedDatabaseUrl.searchParams.get("sslmode")?.toLowerCase() ?? "",
+      )
+    ) {
+      throw new Error("DATABASE_URL must require TLS with sslmode");
+    }
+  }
+  if (
+    values.MONGODB_URI &&
+    !/^mongodb(?:\+srv)?:\/\//i.test(values.MONGODB_URI)
+  ) {
+    throw new Error("MONGODB_URI must use the MongoDB protocol");
+  }
   if (values.MAX_DOCX_EXPANDED_SIZE_MB < values.MAX_UPLOAD_SIZE_MB) {
     throw new Error(
       "MAX_DOCX_EXPANDED_SIZE_MB must be at least MAX_UPLOAD_SIZE_MB",
@@ -356,36 +388,45 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   if (corsOrigins.includes("*")) {
     throw new Error("CORS_ORIGINS cannot contain '*' when credentials are enabled");
   }
-  const missingSecrets: string[] = [];
-  if (options.requireJwtSecrets !== false) {
-    if (!values.JWT_ACCESS_SECRET) missingSecrets.push("JWT_ACCESS_SECRET");
-    if (!values.JWT_REFRESH_SECRET) missingSecrets.push("JWT_REFRESH_SECRET");
+  const missingConfiguration: string[] = [];
+  if (values.NODE_ENV !== "test") {
+    if (!values.DATABASE_URL) missingConfiguration.push("DATABASE_URL");
+    if (options.requireMongoConfiguration !== false) {
+      if (!values.MONGODB_URI) missingConfiguration.push("MONGODB_URI");
+      if (!values.MONGODB_DB_NAME && !values.MONGODB_DATABASE) {
+        missingConfiguration.push("MONGODB_DB_NAME");
+      }
+    }
   }
-  if (missingSecrets.length > 0) {
+  if (options.requireJwtSecrets !== false) {
+    if (!values.JWT_ACCESS_SECRET) missingConfiguration.push("JWT_ACCESS_SECRET");
+    if (!values.JWT_REFRESH_SECRET) missingConfiguration.push("JWT_REFRESH_SECRET");
+  }
+  if (missingConfiguration.length > 0) {
     throw new Error(
-      `Missing required configuration: ${missingSecrets.join(", ")}`,
+      `Missing required configuration: ${missingConfiguration.join(", ")}`,
     );
   }
-  const missingDatabases: string[] = [];
   if (options.requireDatabases === true) {
+    const missingDatabases: string[] = [];
     if (!values.DATABASE_URL) missingDatabases.push("DATABASE_URL");
     if (!values.MONGODB_URI) missingDatabases.push("MONGODB_URI");
     if (!values.MONGODB_DATABASE && !values.MONGODB_DB_NAME) {
       missingDatabases.push("MONGODB_DATABASE");
     }
+    if (missingDatabases.length > 0) {
+      throw new Error(
+        `Missing required configuration: ${missingDatabases.join(", ")}`,
+      );
+    }
   }
-  if (missingDatabases.length > 0) {
-    throw new Error(
-      `Missing required configuration: ${missingDatabases.join(", ")}`,
-    );
-  }
-
   return {
     environment: values.NODE_ENV,
     port: values.PORT,
     dataDir: resolve(values.DATA_DIR),
     databaseUrl: values.DATABASE_URL,
     mongodbUri: values.MONGODB_URI,
+    mongodbDbName: values.MONGODB_DB_NAME ?? values.MONGODB_DATABASE,
     mongodbDatabase: values.MONGODB_DATABASE ?? values.MONGODB_DB_NAME,
     logLevel: values.LOG_LEVEL,
     corsOrigins,

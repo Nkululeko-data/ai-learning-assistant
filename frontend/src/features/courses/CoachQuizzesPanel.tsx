@@ -26,6 +26,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { z } from "zod";
 import {
   createManualQuiz,
   generateQuiz,
@@ -37,7 +38,7 @@ import {
   type CourseQuiz,
 } from "../../api/learning";
 import { listCourseDocuments } from "../../api/documents";
-import { friendlyMessage } from "../../api/client";
+import { ApiError, friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
 
 type CoachQuizQuestion = CoachQuiz["questions"][number];
@@ -52,6 +53,23 @@ interface CoachQuizzesPanelProps {
   courseId: string;
   canGenerate: boolean;
 }
+
+const quizProviderFailureDetailsSchema = z
+  .object({
+    provider: z.literal("mistral").optional(),
+    providerErrorCode: z.string().optional(),
+    providerFailures: z
+      .array(
+        z
+          .object({
+            provider: z.enum(["inception", "groq"]),
+            code: z.string(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .passthrough();
 
 function isCoachQuiz(quiz: CourseQuiz): quiz is CoachQuiz {
   return "createdBy" in quiz;
@@ -161,6 +179,54 @@ function isQuestionValid(question: CoachQuizQuestion): boolean {
     Boolean(question.correctOptionId) &&
     optionIds.includes(question.correctOptionId ?? "")
   );
+}
+
+function quizGenerationErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === "PROVIDER_UNAVAILABLE") {
+      const details = quizProviderFailureDetailsSchema.safeParse(error.details);
+      if (details.success && details.data.provider === "mistral") {
+        switch (details.data.providerErrorCode) {
+          case "EMBEDDING_PROVIDER_NOT_CONFIGURED":
+            return "Mistral embeddings are not configured. Set MISTRAL_API_KEY in the backend environment and restart the backend.";
+          case "EMBEDDING_PROVIDER_AUTH_FAILED":
+            return "Mistral rejected MISTRAL_API_KEY. Verify the key and its account access.";
+          case "EMBEDDING_PROVIDER_RATE_LIMITED":
+            return "Mistral rate-limited the embedding request. Wait a little, then try again.";
+          case "EMBEDDING_PROVIDER_REJECTED":
+            return "Mistral rejected the embedding request. Verify the configured embedding model and account access.";
+          default:
+            return "The Mistral embedding service could not be reached. Check its status and backend network access.";
+        }
+      }
+
+      const failures = details.success ? (details.data.providerFailures ?? []) : [];
+      const providers = [
+        ...new Set(
+          failures.map(({ provider }) =>
+            provider === "inception" ? "Inception" : "Groq",
+          ),
+        ),
+      ].join(" and ");
+      if (failures.some(({ code }) => code === "LLM_PROVIDER_AUTH_FAILED")) {
+        return `${providers} rejected an API key. Verify the configured provider credentials and account access.`;
+      }
+      if (failures.some(({ code }) => code === "LLM_PROVIDER_REJECTED")) {
+        return `${providers} rejected the generation request. Verify the configured model names and account access.`;
+      }
+      if (failures.some(({ code }) => code === "LLM_PROVIDER_RATE_LIMITED")) {
+        return `${providers} rate-limited generation. Wait a little, then try again.`;
+      }
+      if (failures.length > 0) {
+        return `The ${providers} language-model provider${failures.length === 1 ? "" : "s"} could not be reached. Check provider status, credentials, and backend network access.`;
+      }
+      return "The AI provider is unavailable. Try again shortly; if it continues, check the backend provider configuration.";
+    }
+    if (error.code === "GENERATION_FAILED") {
+      return "The generated quiz did not meet the requested format. Try fewer questions, one question type, or a different source document.";
+    }
+  }
+  return friendlyMessage(error);
 }
 
 export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelProps) {
@@ -602,7 +668,17 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                 {generateMutation.isPending ? "Generating draft..." : "Generate draft"}
               </Button>
               {generateMutation.error && (
-                <ErrorNotice message={friendlyMessage(generateMutation.error)} />
+                <Stack spacing={0.75} alignItems="flex-start">
+                  <ErrorNotice
+                    message={quizGenerationErrorMessage(generateMutation.error)}
+                  />
+                  {generateMutation.error instanceof ApiError &&
+                    generateMutation.error.requestId && (
+                      <Typography variant="caption" color="text.secondary">
+                        Request ID: {generateMutation.error.requestId}
+                      </Typography>
+                    )}
+                </Stack>
               )}
             </Stack>
           </CardContent>

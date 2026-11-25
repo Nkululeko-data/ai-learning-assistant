@@ -6,9 +6,13 @@ import { createApp } from "../../src/app";
 import type { AppConfig } from "../../src/config/config";
 import { createLogger } from "../../src/common/logging/logger";
 import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
-import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
+import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
+
+jest.mock("file-type", () => ({
+  fileTypeFromBuffer: async () => undefined,
+}));
 
 const adminPassword = "B3-test-admin-passphrase-2026!";
 const changedAdminPassword = "B3-changed-admin-passphrase-2026!";
@@ -36,7 +40,11 @@ afterEach(cleanupTemporaryDirectory);
 async function createAuthTestContext(): Promise<AuthTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-auth-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
+  await bootstrapJsonTestData(
+    dataDirectory,
+    "admin@example.test",
+    adminPassword,
+  );
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -44,6 +52,9 @@ async function createAuthTestContext(): Promise<AuthTestContext> {
     environment: "test",
     port: 3000,
     dataDir: dataDirectory,
+    databaseUrl: undefined,
+    mongodbUri: undefined,
+    mongodbDbName: undefined,
     logLevel: "silent",
     corsOrigins: ["https://ui.example.test"],
     passwordMinLength: 12,
@@ -99,8 +110,10 @@ async function createAuthTestContext(): Promise<AuthTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-      neonOpen: true,
-      mongoOpen: true,
+      jsonStoreOpen: true,
+      sqliteOpen: true,
+      postgresReady: true,
+      mongoReady: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -156,6 +169,11 @@ async function verifiesRegistrationAndLogin(): Promise<void> {
   expect(login.status).toBe(200);
   expect(login.body.data.accessToken).toEqual(expect.any(String));
   expect(login.body.data.refreshToken).toEqual(expect.any(String));
+  expect(login.body.data.authenticatedUser).toMatchObject({
+    email: "learner@example.test",
+    role: "learner",
+    permissions: expect.arrayContaining(["content:generate"]),
+  });
   const cookies = login.headers["set-cookie"] ?? [];
   expect(cookies[0]).toBeDefined();
   const refreshCookie = cookies[0] ?? "";
@@ -211,7 +229,7 @@ async function verifiesCoachRequestApprovalAndRoleGuards(): Promise<void> {
     "admin@example.test",
     adminPassword,
   );
-  const bootstrapAdmin = context.authService.authenticateAccessToken(
+  const bootstrapAdmin = await context.authService.authenticateAccessToken(
     firstAdminLogin.tokens.accessToken,
   );
   const blockedBeforePasswordChange = await request(context.app)
@@ -231,7 +249,7 @@ async function verifiesCoachRequestApprovalAndRoleGuards(): Promise<void> {
     "admin@example.test",
     changedAdminPassword,
   );
-  const adminContext = context.authService.authenticateAccessToken(
+  const adminContext = await context.authService.authenticateAccessToken(
     admin.tokens.accessToken,
   );
 
@@ -270,7 +288,7 @@ async function verifiesCoachRequestApprovalAndRoleGuards(): Promise<void> {
     "applicant@example.test",
     learnerPassword,
   );
-  const newApplicant = context.authService.authenticateAccessToken(
+  const newApplicant = await context.authService.authenticateAccessToken(
     newApplicantLogin.tokens.accessToken,
   );
   expect(newApplicant.role).toBe("coach");
@@ -310,11 +328,11 @@ async function verifiesCoachRequestApprovalAndRoleGuards(): Promise<void> {
     "permission-revoke",
   );
   expect(revokedPermissionUser.permissions).not.toContain("course:create");
-  expect(() =>
+  await expect(
     context.authService.authenticateAccessToken(
       newApplicantLogin.tokens.accessToken,
     ),
-  ).toThrow(expect.objectContaining({ code: "AUTH_TOKEN_INVALID" }));
+  ).rejects.toMatchObject({ code: "AUTH_TOKEN_INVALID" });
 
   const concurrentRegistration = await registerLearner(
     context.app,
@@ -368,6 +386,10 @@ async function verifiesRefreshRotationAndReuseDetection(): Promise<void> {
     .post("/api/v1/auth/refresh")
     .send({ refreshToken: firstRefreshToken });
   expect(rotated.status).toBe(200);
+  expect(rotated.body.data.authenticatedUser).toMatchObject({
+    email: "refresh@example.test",
+    role: "learner",
+  });
   const secondRefreshToken = rotated.body.data.refreshToken as string;
   expect(secondRefreshToken).not.toBe(firstRefreshToken);
 
@@ -379,6 +401,24 @@ async function verifiesRefreshRotationAndReuseDetection(): Promise<void> {
     .post("/api/v1/auth/refresh")
     .send({ refreshToken: secondRefreshToken });
   expect(currentTokenReplay.status).toBe(401);
+  expect(
+    context.collections.refreshTokens.list().every((token) => token.revokedAt),
+  ).toBe(true);
+
+  const concurrentLogin = await context.authService.login(
+    "refresh@example.test",
+    learnerPassword,
+  );
+  const concurrentRotations = await Promise.allSettled([
+    context.authService.refresh(concurrentLogin.tokens.refreshToken),
+    context.authService.refresh(concurrentLogin.tokens.refreshToken),
+  ]);
+  expect(
+    concurrentRotations.filter((result) => result.status === "fulfilled"),
+  ).toHaveLength(1);
+  expect(
+    concurrentRotations.filter((result) => result.status === "rejected"),
+  ).toHaveLength(1);
   expect(
     context.collections.refreshTokens.list().every((token) => token.revokedAt),
   ).toBe(true);
@@ -418,7 +458,7 @@ async function verifiesPasswordChangeRevokesRefreshTokens(): Promise<void> {
     "password-change@example.test",
     learnerPassword,
   );
-  const actor = context.authService.authenticateAccessToken(
+  const actor = await context.authService.authenticateAccessToken(
     login.tokens.accessToken,
   );
   const newPassword = "B3-new-secure-learner-passphrase-2026!";

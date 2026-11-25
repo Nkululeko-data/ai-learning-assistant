@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
-import type { JobType } from "./job.types";
-import { JsonJobRepository } from "./job.types";
+import type { JobRepository, JobType } from "./job.types";
 import { JobService } from "./job.service";
 
 export interface ScheduledJobDefinition {
@@ -18,7 +17,7 @@ export class JobScheduler {
   private loopPromise: Promise<void> | null = null;
 
   public constructor(
-    private readonly repository: JsonJobRepository,
+    private readonly repository: JobRepository,
     private readonly service: JobService,
     private readonly logger: Logger,
     private readonly tasks: ScheduledJobDefinition[],

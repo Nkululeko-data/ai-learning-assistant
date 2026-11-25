@@ -85,17 +85,19 @@ architecture choice.
 extend.
 
 **Work:** Validate configuration; set up structured logging, request IDs, and
-shared error handling; implement JSON collection storage and SQLite
-conversations; add health and readiness endpoints; and provide an idempotent
-bootstrap command for initial roles, permissions, and an administrator.
+shared error handling; establish persistence, health/readiness endpoints, and
+an idempotent bootstrap command. The original implementation used JSON
+collections and SQLite. The approved database migration plan now targets Neon
+PostgreSQL and MongoDB Atlas; that cutover is still in progress.
 
 **Done when:** The service starts from configuration, initializes its stores
 and schema, reports health/readiness correctly, and the foundation and
 bootstrap behavior have automated tests.
 
-**Implementation note:** The B2 foundation includes configuration, logging,
-middleware, JSON storage, SQLite setup, health/readiness, and bootstrap. Check
-the code and tests before treating every B2 requirement as complete.
+**Implementation note:** The current runtime still initializes JSON storage
+and SQLite for modules that have not been migrated. PostgreSQL and MongoDB are
+also wired for selected modules; this is a transitional hybrid, not a completed
+database cutover.
 
 ### B3 — Add accounts and access control
 
@@ -195,7 +197,8 @@ the evidence behind each answer inspectable.
 **Work:** Add provider adapters and test fakes, typed workflow nodes, follow-up
 question rewriting, context construction, an evidence gate, deterministic
 citation validation, grounding states, execution metadata, and the chat API.
-Persist conversations and messages in SQLite. Return or stream a response only
+Conversation persistence currently uses SQLite; the target is Neon PostgreSQL
+as specified by the approved database plan. Return or stream a response only
 after validation is complete.
 
 **Done when:** Supported questions produce answers with verified citations;
@@ -210,9 +213,10 @@ B7 retrieval service, builds a token-bounded context, gates weak evidence, and
 validates citations deterministically. Inception is primary and Groq is the
 fallback; provider calls use documented REST APIs behind adapters, and fakes
 are used in tests. Each graph node has a configured timeout. The API supports
-JSON and post-validation SSE; owned
-conversations, messages, citations, daily quotas, and metadata-only node
-execution records use SQLite. Prompt-injection defenses, user/course
+JSON and post-validation SSE; owned conversations, messages, citations, and
+daily quotas currently use SQLite. Metadata-only node execution records use
+the JSON store. The SQLite-to-PostgreSQL conversation cutover remains pending.
+Prompt-injection defenses, user/course
 authorization, request limits, daily request/token quotas, and disabled
 tracing are covered by implementation and tests. OPEN-16 is resolved using
 Groq's strict-JSON-schema support with `openai/gpt-oss-20b`. **Deployment
@@ -299,9 +303,11 @@ release decisions are approved. Do not claim a check passed unless it was run.
 **Current status:** Complete for the current local backend. The suite,
 typecheck and production build are automated; `/openapi.json` and `/api/docs`
 publish the API contract; Docker and docker-compose provide a one-instance
-persistent deployment; backup and restore scripts operate on JSON, SQLite and
-upload data; the offline AI evaluation fixture checks deterministic citation
-and refusal behavior. [Handover.md](HANDOVER.md) documents operations and known
+persistent single-instance deployment; backup and restore scripts operate on
+the legacy JSON, SQLite and upload data; the offline AI evaluation fixture
+checks deterministic citation and refusal behavior. The Neon/Atlas migration
+is partial and its database-gated integration tests still require isolated
+test services. [Handover.md](HANDOVER.md) documents operations and known
 limitations. Live provider evaluation and deployment approval remain external
 operator decisions.
 
@@ -317,8 +323,10 @@ operator decisions.
 - Use deterministic fakes in ordinary tests; tests must not call real AI
   providers.
 - Treat uploaded and retrieved content as untrusted input.
-- Keep the single-process/single-instance constraint while JSON storage is in
-  use. Do not scale multiple writers against the same data directory.
+- Keep the single-process/single-instance constraint until every active JSON
+  and SQLite repository is migrated and verified. PostgreSQL/Atlas integration
+  alone does not make the hybrid runtime safe to scale; rate limiting and
+  shared upload storage also need deployment-ready multi-instance handling.
 - Respect open decisions listed in
   [`design-decisions (1).md`](../design-decisions%20(1).md) and the
   implementation notes in

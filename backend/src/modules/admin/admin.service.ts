@@ -6,22 +6,49 @@ import type { ConversationRepositoryPort } from "../../infra/mongodb/conversatio
 import type { PrivateFileStorage } from "../../infra/storage/private-file-storage";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
+import {
+  JsonDocumentRepository,
+  type DocumentRepository,
+} from "../documents/document.types";
+import {
+  JsonChunkRepository,
+  type ChunkRepository,
+} from "../documents/chunk.repository";
+import {
+  JsonCourseRepository,
+  type CourseRepository,
+} from "../courses/course.types";
 
 export class AdminService {
+  private readonly documents: DocumentRepository;
+  private readonly chunks: ChunkRepository;
+  private readonly courses: CourseRepository;
+
   public constructor(
     private readonly collections: SystemCollections,
     private readonly conversations: ConversationRepositoryPort,
     private readonly storage: PrivateFileStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
-  ) {}
+    documents?: DocumentRepository,
+    chunks?: ChunkRepository,
+    courses?: CourseRepository,
+  ) {
+    this.documents = documents ?? new JsonDocumentRepository(collections);
+    this.chunks = chunks ?? new JsonChunkRepository(storage);
+    this.courses = courses ?? new JsonCourseRepository(collections);
+  }
 
-  public getSummary() {
+  public async getSummary() {
     const users = this.collections.users.list();
-    const courses = this.collections.courses.list();
-    const enrolments = this.collections.enrolments.list();
+    const courses = await this.courses.listCourses();
+    const approvedEnrolments =
+      await this.courses.countEnrolmentsByStatus("approved");
     const coachRequests = this.collections.coachRequests.list();
-    const jobs = this.collections.jobs.list();
+    const queuedOrRunningJobs = await this.jobs.countByStatuses([
+      "queued",
+      "running",
+    ]);
 
     return {
       activeUsers: users.filter(
@@ -32,18 +59,14 @@ export class AdminService {
           course.status === "active" &&
           (course.approvalStatus ?? "approved") === "approved",
       ).length,
-      approvedEnrolments: enrolments.filter(
-        (enrolment) => enrolment.status === "approved",
-      ).length,
+      approvedEnrolments,
       pendingCoachRequests: coachRequests.filter(
         (request) => request.status === "pending",
       ).length,
       pendingCourseApprovals: courses.filter(
         (course) => (course.approvalStatus ?? "approved") === "pending",
       ).length,
-      queuedOrRunningJobs: jobs.filter(
-        (job) => job.status === "queued" || job.status === "running",
-      ).length,
+      queuedOrRunningJobs,
     };
   }
 
@@ -197,12 +220,12 @@ export class AdminService {
 
     const pseudonymId = randomUUID();
     await this.conversations.deleteByUser(userId);
-    for (const document of this.collections.documents.list(
-      (record) => record.scope === "personal" && record.ownerId === userId,
+    for (const document of await this.documents.listPersonalDocumentsByOwner(
+      userId,
     )) {
-      await this.storage.removeChunks(document.id);
+      await this.chunks.deleteForDocument(document.id);
       await this.storage.removeUpload(document.storageKey);
-      await this.collections.documents.remove(document.id);
+      await this.documents.removeDocument(document.id);
     }
     for (const summary of this.collections.learningSummaries.list(
       (record) => record.visibility === "private" && record.ownerId === userId,

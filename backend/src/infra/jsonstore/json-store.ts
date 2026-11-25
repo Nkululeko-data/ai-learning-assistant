@@ -35,6 +35,14 @@ export interface Collection<T extends { id: string }> {
   remove(id: string): Promise<void>;
 }
 
+export interface RecordCollection<T extends { id: string }> extends Collection<T> {}
+
+export interface CollectionRegistrar {
+  register<T extends { id: string }>(
+    definition: JsonCollectionDefinition<T>,
+  ): RecordCollection<T>;
+}
+
 interface CollectionLifecycle {
   initialize(): Promise<void>;
 }
@@ -59,6 +67,10 @@ export class JsonCollection<T extends { id: string }>
     }
     this.filePath = join(jsonDirectory, `${definition.name}.json`);
     this.initializeIndexes();
+  }
+
+  public get name(): string {
+    return this.definition.name;
   }
 
   /**
