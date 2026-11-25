@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openConversationDatabase } from "../../src/infra/sqlite/database";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import type {
   CourseRecord,
   DocumentRecord,

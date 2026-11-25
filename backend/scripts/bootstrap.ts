@@ -1,12 +1,13 @@
 import argon2 from "argon2";
-import { mkdir, realpath, rm, stat } from "node:fs/promises";
-import { basename, parse, resolve } from "node:path";
-import { homedir } from "node:os";
 import { loadConfig } from "../src/config/config";
 import { createLogger } from "../src/common/logging/logger";
-import { openConversationDatabase } from "../src/infra/sqlite/database";
 import { createSystemStore } from "../src/infra/jsonstore/create-system-store";
 import type { SystemCollections } from "../src/infra/jsonstore/system-collections";
+import { createPostgresPool } from "../src/infra/postgres/connection";
+import {
+  CURRENT_DATABASE_SCHEMA_VERSION,
+  getDatabaseSchemaVersion,
+} from "../src/infra/postgres/migrations/006-runtime-storage";
 
 const roleDefinitions = [
   { name: "learner" as const, description: "Learner account" },
@@ -73,7 +74,8 @@ const weakPasswords = new Set([
 ]);
 
 export interface BootstrapOptions {
-  dataDirectory: string;
+  dataDirectory?: string;
+  databaseUrl?: string | undefined;
   environment: "development" | "test" | "production";
   adminEmail: string | undefined;
   adminPassword: string | undefined;
@@ -103,6 +105,11 @@ export async function bootstrapSystem(
   if (options.reset && !options.yes) {
     throw new Error("The --reset option requires the explicit --yes flag");
   }
+  if (options.reset) {
+    throw new Error(
+      "Database reset is not supported by bootstrap; use a reviewed database maintenance procedure",
+    );
+  }
   if (options.demo) {
     throw new Error(
       "Demo seeding is deferred until the normal document-ingestion pipeline is available",
@@ -110,31 +117,29 @@ export async function bootstrapSystem(
   }
 
   const credentials = validateAdminCredentials(options);
-  if (options.reset) {
-    await assertSafeDataDirectory(options.dataDirectory);
-    await rm(resolve(options.dataDirectory), { recursive: true, force: true });
+  if (!options.databaseUrl) {
+    throw new Error("DATABASE_URL is required for database bootstrap");
   }
-
-  await Promise.all(
-    ["json", "sqlite", "uploads", "backups"].map((directory) =>
-      mkdir(resolve(options.dataDirectory, directory), { recursive: true }),
-    ),
-  );
-  const { store, collections } = createSystemStore(options.dataDirectory);
-  await store.initialize();
-  const database = openConversationDatabase(options.dataDirectory);
-
+  const pool = createPostgresPool(options.databaseUrl);
   try {
+    const schemaVersion = await getDatabaseSchemaVersion(pool);
+    if (schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
+      throw new Error(
+        `Neon schema version ${schemaVersion} is not ready; run npm run db:migrate first`,
+      );
+    }
+    const { store, collections } = createSystemStore(pool);
+    await store.initialize();
     return await seedSystemCollections(collections, credentials);
   } finally {
-    database.close();
+    await pool.end();
   }
 }
 
 /**
  * Seeds roles, permissions, baseline grants, and the initial administrator.
  */
-async function seedSystemCollections(
+export async function seedSystemCollections(
   collections: SystemCollections,
   credentials: { email: string; password: string },
 ): Promise<BootstrapResult> {
@@ -262,56 +267,17 @@ function validateAdminCredentials(
 }
 
 /**
- * Prevents reset from targeting a filesystem root, home directory, or non-data path.
- */
-async function assertSafeDataDirectory(dataDirectory: string): Promise<void> {
-  const resolvedPath = resolve(dataDirectory);
-  const rootPath = parse(resolvedPath).root;
-  const homePath = resolve(homedir());
-  if (
-    resolvedPath === rootPath ||
-    resolvedPath === homePath ||
-    basename(resolvedPath).toLowerCase() !== "data"
-  ) {
-    throw new Error("Refusing to reset an unsafe data directory path");
-  }
-
-  try {
-    await stat(resolvedPath);
-    const realPath = await realpath(resolvedPath);
-    if (
-      realPath === parse(realPath).root ||
-      realPath === homePath ||
-      basename(realPath).toLowerCase() !== "data"
-    ) {
-      throw new Error("Refusing to reset an unsafe resolved data directory");
-    }
-  } catch (error) {
-    if (!isMissingPathError(error)) throw error;
-  }
-}
-
-/**
- * Returns whether a filesystem error indicates that a directory is absent.
- */
-function isMissingPathError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
-/**
  * Runs the bootstrap command and prints a summary without exposing credentials.
  */
 async function main(): Promise<void> {
-  const config = loadConfig({ requireJwtSecrets: false });
+  const config = loadConfig({
+    requireJwtSecrets: false,
+    requireDatabases: true,
+  });
   const logger = createLogger(config.logLevel);
   const flags = new Set(process.argv.slice(2));
   const result = await bootstrapSystem({
-    dataDirectory: config.dataDir,
+    databaseUrl: config.databaseUrl,
     environment: config.environment,
     adminEmail: config.bootstrapAdminEmail,
     adminPassword: config.bootstrapAdminPassword,

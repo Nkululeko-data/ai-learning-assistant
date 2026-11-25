@@ -47,8 +47,8 @@ import {
 } from "./modules/admin/admin.routes";
 
 export interface ReadinessStatus {
-  jsonStoreOpen: boolean;
-  sqliteOpen: boolean;
+  neonOpen: boolean;
+  mongoOpen: boolean;
   schemaVersion: number;
   expectedSchemaVersion: number;
   providerConfigurationPresent: boolean;
@@ -191,8 +191,8 @@ function createReadinessHandler(
     try {
       const readiness = getReadiness();
       const ready =
-        readiness.jsonStoreOpen &&
-        readiness.sqliteOpen &&
+        readiness.neonOpen &&
+        readiness.mongoOpen &&
         readiness.schemaVersion === readiness.expectedSchemaVersion &&
         readiness.providerConfigurationPresent;
       if (!ready) {
@@ -202,8 +202,8 @@ function createReadinessHandler(
             503,
             "One or more service dependencies are not ready",
             {
-              jsonStoreOpen: readiness.jsonStoreOpen,
-              sqliteOpen: readiness.sqliteOpen,
+              neonOpen: readiness.neonOpen,
+              mongoOpen: readiness.mongoOpen,
               schemaVersionMatches:
                 readiness.schemaVersion === readiness.expectedSchemaVersion,
               providerConfigurationPresent:

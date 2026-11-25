@@ -2,6 +2,17 @@
 
 **Review date:** 2026-11-20
 
+## Storage migration update (2026-11-25)
+
+The runtime storage implementation now uses Neon PostgreSQL for structured
+application records and MongoDB for conversations and messages. Daily chat
+quotas are stored in Neon. `npm run db:migrate` applies the additive Neon
+schema migration; `npm run db:import-legacy` imports available JSON and SQLite
+records without deleting source files. Runtime startup requires both
+databases. Private uploads and generated retrieval chunk files remain in
+`DATA_DIR`; JSON/SQLite application stores are retained only as migration
+sources and test fixtures.
+
 ## Current position
 
 **Latest completed backend phase: B10 — Feedback and course insights.** Its

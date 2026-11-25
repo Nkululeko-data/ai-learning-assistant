@@ -5,12 +5,12 @@ import request from "supertest";
 import { createApp } from "../../src/app";
 import type { AppConfig } from "../../src/config/config";
 import { createLogger } from "../../src/common/logging/logger";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
 import { CourseService } from "../../src/modules/courses/course.service";
 import { JsonCourseRepository } from "../../src/modules/courses/course.types";
-import { bootstrapSystem } from "../../scripts/bootstrap";
+import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async () => undefined,
@@ -44,16 +44,7 @@ afterEach(cleanupTemporaryDirectory);
 async function createCourseTestContext(): Promise<CourseTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-courses-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapSystem({
-    dataDirectory,
-    environment: "test",
-    adminEmail: "admin@example.test",
-    adminPassword,
-    passwordMinLength: 12,
-    reset: false,
-    yes: false,
-    demo: false,
-  });
+  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -118,8 +109,8 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-      jsonStoreOpen: true,
-      sqliteOpen: true,
+      neonOpen: true,
+      mongoOpen: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

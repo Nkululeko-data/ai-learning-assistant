@@ -36,6 +36,9 @@ async function main(): Promise<void> {
     "utf8",
   );
   console.log(snapshotDirectory);
+  console.log(
+    "This snapshot contains local files only; back up Neon and MongoDB separately using their provider-supported tools.",
+  );
 }
 
 function isMissing(error: unknown): boolean {

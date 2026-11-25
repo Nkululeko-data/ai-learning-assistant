@@ -24,7 +24,7 @@ import type {
   QuizAttemptRecord,
   QuizRecord,
 } from "../../infra/jsonstore/system-collections";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
+import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 import type { JsonLearningExecutionRepository } from "./learning-execution.repository";
 import { LearningRepository } from "./learning.repository";
 
@@ -90,7 +90,7 @@ export class LearningService {
     private readonly embeddingProvider: DocumentEmbeddingProvider,
     private readonly structuredOutput: StructuredOutputService,
     private readonly executionRecorder: JsonLearningExecutionRepository,
-    private readonly usageRepository: ConversationRepository,
+    private readonly usageRepository: ConversationRepositoryPort,
     private readonly config: AppConfig,
     private readonly promptTemplate: string,
   ) {}
@@ -884,13 +884,13 @@ export class LearningService {
   }> {
     const usageDate = new Date().toISOString().slice(0, 10);
     if (
-      this.usageRepository.dailyTokenUsage(actor.id, usageDate) >=
+      (await this.usageRepository.dailyTokenUsage(actor.id, usageDate)) >=
         this.config.chatDailyTokenLimit ||
-      !this.usageRepository.reserveDailyRequest(
+      !(await this.usageRepository.reserveDailyRequest(
         actor.id,
         usageDate,
         this.config.chatDailyRequestLimit,
-      )
+      ))
     ) {
       throw new AppError(
         "QUOTA_EXCEEDED",

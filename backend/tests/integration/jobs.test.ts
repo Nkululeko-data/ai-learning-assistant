@@ -2,17 +2,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
-import { bootstrapSystem } from "../../scripts/bootstrap";
 import { createApp } from "../../src/app";
 import { createLogger } from "../../src/common/logging/logger";
 import type { AppConfig } from "../../src/config/config";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
 import { JobRunner } from "../../src/modules/jobs/job.runner";
 import { JobScheduler } from "../../src/modules/jobs/job.scheduler";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
+import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 
 const adminPassword = "B5-integration-admin-passphrase-2026!";
 const changedAdminPassword = "B5-changed-admin-passphrase-2026!";
@@ -54,16 +54,7 @@ async function createStorage() {
 async function createAdminContext(): Promise<JobTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-job-api-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapSystem({
-    dataDirectory,
-    environment: "test",
-    adminEmail: "admin@example.test",
-    adminPassword,
-    passwordMinLength: 12,
-    reset: false,
-    yes: false,
-    demo: false,
-  });
+  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -148,8 +139,8 @@ async function createAdminContext(): Promise<JobTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      jsonStoreOpen: true,
-      sqliteOpen: true,
+      neonOpen: true,
+      mongoOpen: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

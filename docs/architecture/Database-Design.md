@@ -1,10 +1,24 @@
 # AI Learning Assistant: Data Design (B1)
 
-**Status:** Approved implementation baseline for B2. This copy is placed in the target `docs/architecture/` structure; the root source document is unchanged.
+**Status:** Original B2 data-model baseline; current runtime mapping is described below.
 
 `docs/architecture/Database-Design.md`. Detailed field-level specification of every collection and table. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
 
-Stores: **JSON file stores** for all data except **conversation history in SQLite**. Real databases are tabled; this design is written so each collection maps cleanly to MongoDB and each relational concept to PostgreSQL later.
+### Current runtime mapping (2026-11)
+
+Neon PostgreSQL is the runtime store for users, roles, permissions, courses,
+enrolments, documents, jobs, learning records, feedback, audit data and other
+structured collections. Existing normalized Neon tables are reused; the
+remaining structured collections use the existing schema's JSONB payload
+tables. MongoDB stores conversations and messages, while daily chat quotas
+remain in Neon. Source uploads and generated retrieval chunk files remain in
+private `DATA_DIR` storage.
+
+The detailed field definitions below remain the logical record contracts.
+References to JSON collections and SQLite describe the legacy import format;
+`npm run db:migrate` applies the additive Neon schema migration and
+`npm run db:import-legacy` copies available JSON/SQLite data without deleting
+the original files.
 
 ---
 

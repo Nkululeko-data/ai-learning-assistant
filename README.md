@@ -3,6 +3,25 @@
 The currently runnable application in this repository is the backend REST API.
 It requires Node.js 22.13 or later.
 
+## Database architecture
+
+Runtime structured data (users, roles, permissions, courses, enrolments,
+documents, jobs, learning content, feedback and audit records) is stored in
+Neon PostgreSQL. Conversations and messages are stored in MongoDB; daily chat
+quotas remain relational data in Neon. MongoDB must be a replica set or
+sharded deployment because conversation writes use transactions.
+
+Uploaded source files and generated retrieval chunk files remain in the
+private `DATA_DIR` filesystem. They are file artifacts rather than the primary
+structured-data store. JSON collections and the old SQLite conversation
+database are read only by the legacy importer; the running API does not fall
+back to either store.
+
+The existing repository API keeps synchronous read operations by loading
+Neon-backed records into process-local indexes at startup. Run a single API
+instance for now; multi-instance deployments need cross-process cache
+invalidation or asynchronous database reads.
+
 ## Start the backend locally
 
 Run these commands from the repository root in PowerShell:
@@ -22,6 +41,25 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 Paste the two results into `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`. Keep
 them private and do not commit `.env`.
+
+Set `DATABASE_URL` to the Neon PostgreSQL connection string, and set
+`MONGODB_URI` and `MONGODB_DATABASE` for the MongoDB replica set or sharded
+deployment. Before starting the application, apply the additive migration and,
+if you have existing JSON/SQLite data, run the idempotent importer:
+
+```powershell
+Set-Location .\backend
+npm run db:migrate
+npm run db:import-legacy
+```
+
+`db:migrate` upgrades the existing Neon schema from version 5 to version 6; it
+does not create the original schema on a brand-new database.
+The importer preserves the source JSON and SQLite files. Run it again safely
+after an interrupted import; conflicting existing records are reported rather
+than overwritten. Back up the source data and both databases before migration.
+`npm run backup` snapshots local files only; use Neon and MongoDB's provider
+backup/restore facilities separately for database data.
 
 To create the initial administrator, also set `BOOTSTRAP_ADMIN_EMAIL` and
 `BOOTSTRAP_ADMIN_PASSWORD` in `.env`. The password must meet the configured
@@ -79,7 +117,7 @@ In another PowerShell window, check that the server is responding:
 Invoke-RestMethod http://localhost:3000/health
 ```
 
-The `/ready` endpoint also checks the data stores, schema version, and provider
+The `/ready` endpoint also checks both databases, schema version, and provider
 configuration. It returns `503` until `MISTRAL_API_KEY` and at least one LLM
 provider key (`INCEPTION_API_KEY` or `GROQ_API_KEY`) are configured in `.env`.
 Configuring both LLM providers enables fallback between them.
@@ -127,7 +165,7 @@ verification and operating artefacts:
 - **B8 — Grounded question answering:** `POST /api/v1/chat/ask` uses the
   caller's permitted course material, gates insufficient evidence, and returns
   only system-validated citations. Conversations and messages are stored in
-  SQLite and are visible only to their owner. JSON is the default response;
+  MongoDB and are visible only to their owner. JSON is the default response;
   `Accept: text/event-stream` replays the complete validated response (not
   model tokens). Test prompt injection handling, evidence threshold behavior,
   citation suppression, access isolation, conversation CRUD, provider failure
@@ -223,8 +261,9 @@ verification and operating artefacts:
   `POST /api/v1/admin/users/{id}/erase` to enqueue erasure.
 - **B12 — Release verification and packaging:** the API contract is published
   at `/openapi.json` and Swagger UI at `/api/docs`. Docker packaging uses one
-  container and a persistent named-volume deployment; the JSON store remains
-  single-writer and must not be horizontally scaled. Offline AI evaluation
+  container and a persistent named-volume deployment; Neon and MongoDB provide
+  runtime records while file artifacts remain on the configured volume.
+  Offline AI evaluation
   checks deterministic citation and refusal behavior and does not call external
   providers. Backup/restore scripts and the handover guide are included.
 
@@ -269,3 +308,6 @@ npm start
 
 API endpoints and request formats are documented in
 [`docs/api/API-Specification.md`](docs/api/API-Specification.md).
+
+Run backend checks from `backend` with `npm run typecheck`, `npm run build`,
+and `npm test`.

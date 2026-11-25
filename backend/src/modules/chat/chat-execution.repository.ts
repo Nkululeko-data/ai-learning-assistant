@@ -1,7 +1,7 @@
 import type { ChatNodeExecutionRecord } from "../../ai/graphs/chat.graph";
 import type { AgentExecutionRecord } from "../../infra/jsonstore/system-collections";
-import type { JsonCollection } from "../../infra/jsonstore/json-store";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
+import type { Collection } from "../../infra/jsonstore/json-store";
+import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 
 export interface ChatExecutionRecorder {
   recordNodeExecution(record: ChatNodeExecutionRecord): Promise<void>;
@@ -9,8 +9,8 @@ export interface ChatExecutionRecorder {
 
 export class JsonAgentExecutionRepository implements ChatExecutionRecorder {
   public constructor(
-    private readonly executions: JsonCollection<AgentExecutionRecord>,
-    private readonly conversations: ConversationRepository,
+    private readonly executions: Collection<AgentExecutionRecord>,
+    private readonly conversations: ConversationRepositoryPort,
   ) {}
 
   public async recordNodeExecution(
@@ -44,7 +44,7 @@ export class JsonAgentExecutionRepository implements ChatExecutionRecorder {
       usageDate: record.usageDate,
       createdAt,
     });
-    this.conversations.recordDailyTokenUsage(
+    await this.conversations.recordDailyTokenUsage(
       record.userId,
       record.usageDate,
       record.promptTokens + record.completionTokens,

@@ -5,10 +5,10 @@ import request from "supertest";
 import { createApp } from "../../src/app";
 import type { AppConfig } from "../../src/config/config";
 import { createLogger } from "../../src/common/logging/logger";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
+import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
-import { bootstrapSystem } from "../../scripts/bootstrap";
 
 const adminPassword = "B3-test-admin-passphrase-2026!";
 const changedAdminPassword = "B3-changed-admin-passphrase-2026!";
@@ -36,16 +36,7 @@ afterEach(cleanupTemporaryDirectory);
 async function createAuthTestContext(): Promise<AuthTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-auth-"));
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapSystem({
-    dataDirectory,
-    environment: "test",
-    adminEmail: "admin@example.test",
-    adminPassword,
-    passwordMinLength: 12,
-    reset: false,
-    yes: false,
-    demo: false,
-  });
+  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -108,8 +99,8 @@ async function createAuthTestContext(): Promise<AuthTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-      jsonStoreOpen: true,
-      sqliteOpen: true,
+      neonOpen: true,
+      mongoOpen: true,
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

@@ -2,8 +2,9 @@ import argon2 from "argon2";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { bootstrapSystem } from "../../scripts/bootstrap";
+import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 
 const password = "B2-safe-test-passphrase-2026";
 let temporaryRoot: string;
@@ -39,7 +40,11 @@ async function createBootstrapOptions() {
  */
 async function verifiesBootstrapIsIdempotent(): Promise<void> {
   const options = await createBootstrapOptions();
-  const first = await bootstrapSystem(options);
+  const first = await bootstrapJsonTestStore(
+    options.dataDirectory,
+    options.adminEmail,
+    options.adminPassword,
+  );
   expect(first).toMatchObject({
     rolesAdded: 3,
     permissionsAdded: 16,
@@ -47,7 +52,11 @@ async function verifiesBootstrapIsIdempotent(): Promise<void> {
     adminAlreadyExists: false,
   });
 
-  const second = await bootstrapSystem(options);
+  const second = await bootstrapJsonTestStore(
+    options.dataDirectory,
+    options.adminEmail,
+    options.adminPassword,
+  );
   expect(second).toMatchObject({
     rolesAdded: 0,
     permissionsAdded: 0,

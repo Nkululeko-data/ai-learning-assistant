@@ -1,6 +1,16 @@
 # AI Learning Assistant Architecture
 
-**Status:** Approved baseline for B2. This document consolidates the supplied backend architecture and design decisions. Remaining open items below remain gated.
+**Status:** Original B2 design baseline with the current runtime storage update recorded below.
+
+### Current runtime storage (2026-11)
+
+The deployed backend uses Neon PostgreSQL for structured application data and
+MongoDB for conversations and messages. Chat quota counters remain in Neon.
+`backend/scripts/migrate-legacy-data.ts` imports JSON collections and SQLite
+conversation history idempotently; it does not delete the source files.
+Private uploads and generated retrieval chunk files remain in `DATA_DIR`.
+The original JSON/SQLite storage decisions below describe the initial design,
+not the current runtime.
 
 ## Authority and scope
 
@@ -14,7 +24,7 @@ The application is a full-stack project, delivered in stages: backend APIs and A
 
 ## Proposed architecture
 
-Use a modular monolith with a Node.js/TypeScript backend and a React/TypeScript frontend. The backend runs as one process and one instance while the JSON store is in use. Express exposes REST APIs under `/api/v1`; all request and response contracts use Zod.
+Use a modular monolith with a Node.js/TypeScript backend and a React/TypeScript frontend. The current backend runs as one process and one instance because repository reads use process-local indexes and background work is in-process. Express exposes REST APIs under `/api/v1`; all request and response contracts use Zod.
 
 ### Backend layers
 
@@ -23,7 +33,7 @@ Use a modular monolith with a Node.js/TypeScript backend and a React/TypeScript 
 | HTTP | Express routes, controllers, middleware, request/response shaping | Controllers call application services only |
 | Application | Use cases, orchestration, policies, transactions across repository ports | Depends on domain types and repository/service interfaces |
 | Domain | Entities, invariants, value objects and pure business rules | No infrastructure imports |
-| Infrastructure | JSON repositories, SQLite repositories, file storage and external provider adapters | Implements application/domain ports |
+| Infrastructure | Neon repositories, MongoDB repositories, file storage and external provider adapters | Implements application/domain ports |
 | AI | LangGraph graphs, typed nodes, prompts and deterministic validation | Invoked through an application `GraphRunner`; data access is injected |
 
 Modules communicate through their exported `index.ts` service surface. Repositories are the only layer that touches persistence.
@@ -35,13 +45,13 @@ Modules communicate through their exported `index.ts` service surface. Repositor
 | Runtime | Node.js current LTS, TypeScript strict mode |
 | API | Express REST, `/api/v1` |
 | Validation | Zod for environment, request, response and AI schemas |
-| Primary data | JSON file collections behind repository interfaces |
-| Conversations | SQLite, limited to conversations and messages |
+| Primary data | Neon PostgreSQL for relational and other structured application records |
+| Conversations | MongoDB conversations and messages; Neon chat quota counters |
 | Retrieval | Access-filtered in-process BM25 keyword and cosine-vector search, combined with weighted reciprocal-rank fusion |
 | Orchestration | LangGraph.js with stateless graphs |
 | LLM | Inception Labs primary, Groq fallback |
 | Embeddings | Mistral only; no embedding fallback |
-| Background work | JSON-backed in-process job runner and scheduler |
+| Background work | Neon-backed in-process job runner and scheduler |
 | Auth | Short-lived JWT access tokens, rotating opaque refresh tokens, argon2 password hashes |
 | Files | Local disk outside the web root; PDF, DOCX and TXT ingestion |
 | Tests | Jest, Supertest, isolated integration tests and an on-demand AI evaluation suite |
@@ -60,7 +70,11 @@ The detailed field-level data model is in [Database-Design.md](./Database-Design
 
 ## Runtime and scaling constraints
 
-The JSON store is single-writer. Run one backend process against a data directory and mount `data/` on persistent storage. Do not horizontally scale this implementation or share the same data directory across instances. Repository interfaces preserve a later database migration path; real database work is tabled.
+Run one backend process for now and mount `data/` on persistent storage for
+uploads and generated chunks. The Neon adapter hydrates synchronous
+process-local read indexes at startup, and job ownership is in-process; do not
+run multiple API instances until cache invalidation and distributed job
+ownership are addressed.
 
 LangChain/LangSmith tracing is forced off. Provider calls are made only through adapters. Non-evaluation tests use deterministic fakes and never call external providers.
 
@@ -68,7 +82,7 @@ LangChain/LangSmith tracing is forced off. Provider calls are made only through 
 
 The following decisions are incorporated from the supplied design decisions and their recommendations:
 
-- SQLite for conversation history; active-course discovery shows only name and description.
+- MongoDB for conversation history; active-course discovery shows only name and description.
 - Topic clustering uses embeddings, clustering and LLM labels; coach summaries are theme-level.
 - `minCohortSize` defaults to 3 and is configurable.
 - Pending coach applicants retain learner access.
@@ -78,14 +92,14 @@ The following decisions are incorporated from the supplied design decisions and 
 
 | Item | Status before implementation |
 |---|---|
-| JSON + SQLite instead of MongoDB/Atlas | Proposed; coach approval and written rationale required |
-| Single instance and in-process jobs | Proposed consequence of JSON storage; approve with the storage choice |
+| JSON + SQLite instead of MongoDB/Atlas | Superseded: Neon and MongoDB are runtime stores |
+| Single instance and in-process jobs | Current limitation from process-local indexes and in-process workers |
 | Inception/Groq and Mistral instead of the brief's provider choices | Proposed; coach approval and privacy notice required |
 | LangGraph.js | Proposed; coach approval and written rationale required |
 | Admin handling of a deactivated coach's courses | Resolved for B4: reassign to an active coach or archive |
 | Groq structured-output support | Must be verified before the chat graph; use the documented JSON-mode fallback if unsupported |
 | AWS or Azure | Open; decide before deployment |
-| Real database migration timing | Tabled until separately approved |
+| Real database migration timing | Implemented via Neon/MongoDB adapters and legacy import scripts |
 
 Do not implement an open item until its decision is recorded. Do not start application coding until this architecture/contracts phase is reviewed and approved.
 

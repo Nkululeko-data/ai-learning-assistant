@@ -1,19 +1,19 @@
 import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
+import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 import type { FeedbackRepository } from "./feedback.repository";
 import type { FeedbackRecord } from "../../infra/jsonstore/system-collections";
 
 export interface FeedbackServiceDependencies {
   feedback: FeedbackRepository;
-  conversations: ConversationRepository;
+  conversations: ConversationRepositoryPort;
   courses: Array<{ id: string }>;
 }
 
 export class FeedbackService {
   public constructor(
     private readonly repository: FeedbackRepository,
-    private readonly conversations: ConversationRepository,
+    private readonly conversations: ConversationRepositoryPort,
   ) {}
 
   public async submit(
@@ -26,7 +26,9 @@ export class FeedbackService {
       comment?: string | null | undefined;
     },
   ): Promise<FeedbackRecord> {
-    const conversation = this.conversations.findConversation(input.conversationId);
+    const conversation = await this.conversations.findConversation(
+      input.conversationId,
+    );
     if (
       !conversation ||
       conversation.userId !== actor.id ||
@@ -34,7 +36,7 @@ export class FeedbackService {
     ) {
       throw new NotFoundError("Conversation not found");
     }
-    const message = this.conversations.findMessage(input.messageId);
+    const message = await this.conversations.findMessage(input.messageId);
     if (
       !message ||
       message.conversationId !== input.conversationId ||

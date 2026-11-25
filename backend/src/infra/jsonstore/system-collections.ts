@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JsonCollection, JsonStore } from "./json-store";
+import type { Collection, JsonStore } from "./json-store";
 
 const idSchema = z.string().uuid();
 const timestampSchema = z.string().datetime();
@@ -558,28 +558,28 @@ export type JobRecord = z.infer<typeof jobSchema>;
 export type SchedulerStateRecord = z.infer<typeof schedulerStateSchema>;
 
 export interface SystemCollections {
-  users: JsonCollection<UserRecord>;
-  roles: JsonCollection<RoleRecord>;
-  permissions: JsonCollection<PermissionRecord>;
-  rolePermissions: JsonCollection<RolePermissionRecord>;
-  userPermissionOverrides: JsonCollection<UserPermissionOverrideRecord>;
-  refreshTokens: JsonCollection<RefreshTokenRecord>;
-  coachRequests: JsonCollection<CoachRequestRecord>;
-  courses: JsonCollection<CourseRecord>;
-  enrolments: JsonCollection<EnrolmentRecord>;
-  documents: JsonCollection<DocumentRecord>;
-  learningSummaries: JsonCollection<LearningSummaryRecord>;
-  flashcards: JsonCollection<FlashcardRecord>;
-  quizzes: JsonCollection<QuizRecord>;
-  quizAttempts: JsonCollection<QuizAttemptRecord>;
-  auditLogs: JsonCollection<AuditLogRecord>;
-  feedback: JsonCollection<FeedbackRecord>;
-  activityEvents: JsonCollection<ActivityEventRecord>;
-  gapReports: JsonCollection<GapReportRecord>;
-  configVersions: JsonCollection<ConfigVersionRecord>;
-  agentExecutions: JsonCollection<AgentExecutionRecord>;
-  jobs: JsonCollection<JobRecord>;
-  schedulerState: JsonCollection<SchedulerStateRecord>;
+  users: Collection<UserRecord>;
+  roles: Collection<RoleRecord>;
+  permissions: Collection<PermissionRecord>;
+  rolePermissions: Collection<RolePermissionRecord>;
+  userPermissionOverrides: Collection<UserPermissionOverrideRecord>;
+  refreshTokens: Collection<RefreshTokenRecord>;
+  coachRequests: Collection<CoachRequestRecord>;
+  courses: Collection<CourseRecord>;
+  enrolments: Collection<EnrolmentRecord>;
+  documents: Collection<DocumentRecord>;
+  learningSummaries: Collection<LearningSummaryRecord>;
+  flashcards: Collection<FlashcardRecord>;
+  quizzes: Collection<QuizRecord>;
+  quizAttempts: Collection<QuizAttemptRecord>;
+  auditLogs: Collection<AuditLogRecord>;
+  feedback: Collection<FeedbackRecord>;
+  activityEvents: Collection<ActivityEventRecord>;
+  gapReports: Collection<GapReportRecord>;
+  configVersions: Collection<ConfigVersionRecord>;
+  agentExecutions: Collection<AgentExecutionRecord>;
+  jobs: Collection<JobRecord>;
+  schedulerState: Collection<SchedulerStateRecord>;
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { AgentExecutionRecord } from "../../infra/jsonstore/system-collections";
-import type { JsonCollection } from "../../infra/jsonstore/json-store";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
+import type { Collection } from "../../infra/jsonstore/json-store";
+import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 
 export interface LearningExecutionInput {
   executionId: string;
@@ -22,8 +22,8 @@ export interface LearningExecutionInput {
 
 export class JsonLearningExecutionRepository {
   public constructor(
-    private readonly executions: JsonCollection<AgentExecutionRecord>,
-    private readonly usage: ConversationRepository,
+    private readonly executions: Collection<AgentExecutionRecord>,
+    private readonly usage: ConversationRepositoryPort,
   ) {}
 
   public async record(input: LearningExecutionInput): Promise<void> {
@@ -49,7 +49,7 @@ export class JsonLearningExecutionRepository {
       createdAt: new Date().toISOString(),
     });
     if (input.tokenUsage) {
-      this.usage.recordDailyTokenUsage(
+      await this.usage.recordDailyTokenUsage(
         input.userId,
         input.usageDate,
         input.tokenUsage.input + input.tokenUsage.output,

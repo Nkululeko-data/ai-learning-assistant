@@ -110,6 +110,10 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: z.coerce.number().int().min(1).max(65535),
   DATA_DIR: z.string().trim().min(1),
+  DATABASE_URL: optionalValue,
+  MONGODB_URI: optionalValue,
+  MONGODB_DATABASE: optionalValue,
+  MONGODB_DB_NAME: optionalValue,
   LOG_LEVEL: z.enum([
     "fatal",
     "error",
@@ -169,6 +173,9 @@ export interface AppConfig {
   environment: "development" | "test" | "production";
   port: number;
   dataDir: string;
+  databaseUrl?: string | undefined;
+  mongodbUri?: string | undefined;
+  mongodbDatabase?: string | undefined;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   corsOrigins: string[];
   passwordMinLength: number;
@@ -218,6 +225,7 @@ export interface AppConfig {
 
 export interface LoadConfigOptions {
   requireJwtSecrets?: boolean;
+  requireDatabases?: boolean;
 }
 
 /**
@@ -229,6 +237,10 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     NODE_ENV: process.env.NODE_ENV ?? defaults.environment,
     PORT: process.env.PORT ?? String(defaults.port),
     DATA_DIR: process.env.DATA_DIR ?? defaults.dataDir,
+    DATABASE_URL: process.env.DATABASE_URL,
+    MONGODB_URI: process.env.MONGODB_URI,
+    MONGODB_DATABASE: process.env.MONGODB_DATABASE,
+    MONGODB_DB_NAME: process.env.MONGODB_DB_NAME,
     LOG_LEVEL: process.env.LOG_LEVEL ?? defaults.logLevel,
     CORS_ORIGINS:
       process.env.CORS_ORIGINS ?? defaults.corsOrigins.join(","),
@@ -354,11 +366,27 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       `Missing required configuration: ${missingSecrets.join(", ")}`,
     );
   }
+  const missingDatabases: string[] = [];
+  if (options.requireDatabases === true) {
+    if (!values.DATABASE_URL) missingDatabases.push("DATABASE_URL");
+    if (!values.MONGODB_URI) missingDatabases.push("MONGODB_URI");
+    if (!values.MONGODB_DATABASE && !values.MONGODB_DB_NAME) {
+      missingDatabases.push("MONGODB_DATABASE");
+    }
+  }
+  if (missingDatabases.length > 0) {
+    throw new Error(
+      `Missing required configuration: ${missingDatabases.join(", ")}`,
+    );
+  }
 
   return {
     environment: values.NODE_ENV,
     port: values.PORT,
     dataDir: resolve(values.DATA_DIR),
+    databaseUrl: values.DATABASE_URL,
+    mongodbUri: values.MONGODB_URI,
+    mongodbDatabase: values.MONGODB_DATABASE ?? values.MONGODB_DB_NAME,
     logLevel: values.LOG_LEVEL,
     corsOrigins,
     passwordMinLength: values.PASSWORD_MIN_LENGTH,

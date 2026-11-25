@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
 import type { SystemCollections } from "../../infra/jsonstore/system-collections";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
+import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 import type { PrivateFileStorage } from "../../infra/storage/private-file-storage";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
@@ -10,7 +10,7 @@ import type { JobService } from "../jobs/job.service";
 export class AdminService {
   public constructor(
     private readonly collections: SystemCollections,
-    private readonly conversations: ConversationRepository,
+    private readonly conversations: ConversationRepositoryPort,
     private readonly storage: PrivateFileStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
@@ -196,7 +196,7 @@ export class AdminService {
     if (user.erasedAt) return { erased: true };
 
     const pseudonymId = randomUUID();
-    this.conversations.deleteByUser(userId);
+    await this.conversations.deleteByUser(userId);
     for (const document of this.collections.documents.list(
       (record) => record.scope === "personal" && record.ownerId === userId,
     )) {
