@@ -154,8 +154,9 @@ artifacts, not runtime functions.
 
 - [`learning.service.ts`](../backend/src/modules/learning/learning.service.ts):
   `LearningService.generateSummary()`, `generateFlashcards()`,
-  `generateQuiz()`, `createCoachQuiz()`, `publishQuiz()`, and
-  `submitQuizAttempt()` handle generation, publishing, and scoring.
+  `generateQuiz()`, `createCoachQuiz()`, `createManualCoachQuiz()`,
+  `publishQuiz()`, and `submitQuizAttempt()` handle AI and manual drafts,
+  publishing, and single- or multiple-answer scoring.
 - [`learning-content.graph.ts`](../backend/src/ai/graphs/learning-content.graph.ts):
   `runLearningContentGraph()` runs the content-generation workflow.
 - [`learning.repository.ts`](../backend/src/modules/learning/learning.repository.ts):

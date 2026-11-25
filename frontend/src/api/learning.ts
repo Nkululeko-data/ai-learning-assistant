@@ -87,7 +87,7 @@ export const flashcardSetSchema = z
 const learnerQuestionSchema = z
   .object({
     id: z.string(),
-    type: z.enum(["mcq", "true_false"]),
+    type: z.enum(["mcq", "multiple_choice", "true_false"]),
     prompt: z.string(),
     options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
   })
@@ -103,6 +103,7 @@ export const learnerQuizSchema = z
     visibility: z.enum(["course", "private"]),
     status: z.enum(["draft", "published", "superseded"]),
     title: z.string(),
+    description: z.string().optional(),
     questions: z.array(learnerQuestionSchema),
     sourceDocumentIds: z.array(idSchema),
     sourceChunkIds: z.array(z.string()),
@@ -111,11 +112,37 @@ export const learnerQuizSchema = z
   })
   .strict();
 
-const coachQuizQuestionSchema = learnerQuestionSchema.extend({
-  correctOptionId: z.string(),
-  explanation: z.string(),
+const coachQuizQuestionBase = {
+  id: z.string(),
+  prompt: z.string(),
+  options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+  explanation: z.string().optional(),
   sourceChunkIds: z.array(z.string()),
-});
+};
+
+const coachQuizQuestionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...coachQuizQuestionBase,
+      type: z.literal("mcq"),
+      correctOptionId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...coachQuizQuestionBase,
+      type: z.literal("multiple_choice"),
+      correctOptionIds: z.array(z.string()),
+    })
+    .strict(),
+  z
+    .object({
+      ...coachQuizQuestionBase,
+      type: z.literal("true_false"),
+      correctOptionId: z.string().optional(),
+    })
+    .strict(),
+]);
 
 export const coachQuizSchema = z
   .object({
@@ -129,6 +156,7 @@ export const coachQuizSchema = z
     ownerId: idSchema.nullable(),
     status: z.enum(["draft", "published", "superseded"]),
     title: z.string(),
+    description: z.string().optional(),
     questions: z.array(coachQuizQuestionSchema),
     sourceDocumentIds: z.array(idSchema),
     sourceChunkIds: z.array(z.string()),
@@ -140,19 +168,87 @@ export const coachQuizSchema = z
   })
   .strict();
 
-const coachQuizQuestionContentSchema = coachQuizQuestionSchema.omit({
-  id: true,
-});
+const coachQuizQuestionContentSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("mcq"),
+      prompt: z.string().min(1).max(2000),
+      options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+      correctOptionId: z.string().min(1).max(40),
+      explanation: z.string().min(1).max(2000),
+      sourceChunkIds: z.array(z.string().min(1)),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("true_false"),
+      prompt: z.string().min(1).max(2000),
+      options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+      correctOptionId: z.string().min(1).max(40),
+      explanation: z.string().min(1).max(2000),
+      sourceChunkIds: z.array(z.string().min(1)),
+    })
+    .strict(),
+]);
+
+const manualQuizQuestionContentSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      id: z.string().min(1).max(100).optional(),
+      type: z.literal("mcq"),
+      prompt: z.string().max(2000),
+      options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+      correctOptionId: z.string().max(40).optional(),
+      explanation: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().min(1).max(100).optional(),
+      type: z.literal("multiple_choice"),
+      prompt: z.string().max(2000),
+      options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+      correctOptionIds: z.array(z.string()),
+      explanation: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().min(1).max(100).optional(),
+      type: z.literal("true_false"),
+      prompt: z.string().max(2000),
+      options: z.array(z.object({ id: z.string(), text: z.string() }).strict()),
+      correctOptionId: z.string().max(40).optional(),
+      explanation: z.string().optional(),
+    })
+    .strict(),
+]);
+
+const createManualQuizRequestSchema = z
+  .object({
+    courseId: idSchema,
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
+    questions: z.array(manualQuizQuestionContentSchema).max(50),
+  })
+  .strict();
 
 const updateCoachQuizRequestSchema = z
   .object({
     version: z.number().int().positive(),
     title: z.string().trim().min(1).max(200).optional(),
-    questions: z.array(coachQuizQuestionContentSchema).min(1).max(50).optional(),
+    description: z.string().max(2000).optional(),
+    questions: z
+      .array(z.union([coachQuizQuestionContentSchema, manualQuizQuestionContentSchema]))
+      .max(50)
+      .optional(),
   })
   .strict()
   .refine(
-    (request) => request.title !== undefined || request.questions !== undefined,
+    (request) =>
+      request.title !== undefined ||
+      request.description !== undefined ||
+      request.questions !== undefined,
     "At least one editable quiz field is required",
   );
 
@@ -169,13 +265,22 @@ export const quizAttemptResultSchema = z
         courseId: idSchema,
         userId: idSchema,
         answers: z.array(
-          z
-            .object({
-              questionId: z.string(),
-              selectedOptionId: z.string(),
-              correct: z.boolean(),
-            })
-            .strict(),
+          z.union([
+            z
+              .object({
+                questionId: z.string(),
+                selectedOptionId: z.string(),
+                correct: z.boolean(),
+              })
+              .strict(),
+            z
+              .object({
+                questionId: z.string(),
+                selectedOptionIds: z.array(z.string()),
+                correct: z.boolean(),
+              })
+              .strict(),
+          ]),
         ),
         score: z.number().int().nonnegative(),
         maxScore: z.number().int().positive(),
@@ -184,15 +289,26 @@ export const quizAttemptResultSchema = z
       })
       .strict(),
     results: z.array(
-      z
-        .object({
-          questionId: z.string(),
-          selectedOptionId: z.string(),
-          correctOptionId: z.string(),
-          explanation: z.string(),
-          correct: z.boolean(),
-        })
-        .strict(),
+      z.union([
+        z
+          .object({
+            questionId: z.string(),
+            selectedOptionId: z.string(),
+            correctOptionId: z.string(),
+            explanation: z.string(),
+            correct: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            questionId: z.string(),
+            selectedOptionIds: z.array(z.string()),
+            correctOptionIds: z.array(z.string()),
+            explanation: z.string(),
+            correct: z.boolean(),
+          })
+          .strict(),
+      ]),
     ),
   })
   .strict();
@@ -206,13 +322,22 @@ export const quizAttemptSchema = z
     courseId: idSchema,
     userId: idSchema,
     answers: z.array(
-      z
-        .object({
-          questionId: z.string().min(1).max(100),
-          selectedOptionId: z.string().min(1).max(40),
-          correct: z.boolean(),
-        })
-        .strict(),
+      z.union([
+        z
+          .object({
+            questionId: z.string().min(1).max(100),
+            selectedOptionId: z.string().min(1).max(40),
+            correct: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            questionId: z.string().min(1).max(100),
+            selectedOptionIds: z.array(z.string().min(1).max(40)).min(1).max(5),
+            correct: z.boolean(),
+          })
+          .strict(),
+      ]),
     ),
     score: z.number().int().nonnegative(),
     maxScore: z.number().int().positive(),
@@ -228,6 +353,7 @@ export type CoachQuiz = z.infer<typeof coachQuizSchema>;
 export type CourseQuiz = z.infer<typeof courseQuizSchema>;
 export type QuizAttemptResult = z.infer<typeof quizAttemptResultSchema>;
 export type QuizAttempt = z.infer<typeof quizAttemptSchema>;
+export type ManualQuizQuestionContent = z.infer<typeof manualQuizQuestionContentSchema>;
 
 function listQuery(input: { limit?: number; cursor?: string }): URLSearchParams {
   const query = new URLSearchParams({ limit: String(input.limit ?? 50) });
@@ -369,27 +495,65 @@ export async function generateQuiz(input: {
   });
 }
 
+export async function createManualQuiz(input: {
+  courseId: string;
+  title: string;
+  description?: string;
+  questions?: ManualQuizQuestionContent[];
+}) {
+  const parsedInput = createManualQuizRequestSchema.parse({
+    courseId: input.courseId,
+    title: input.title,
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    questions: input.questions ?? [],
+  });
+  return apiRequest("/quizzes/manual", coachQuizSchema, {
+    method: "POST",
+    body: JSON.stringify(parsedInput),
+  });
+}
+
 export async function updateCoachQuiz(
   quizId: string,
   input: {
     version: number;
     title?: string;
+    description?: string;
     questions?: Array<CoachQuiz["questions"][number]>;
   },
 ) {
   const parsedInput = updateCoachQuizRequestSchema.parse({
     version: input.version,
     ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.questions !== undefined
       ? {
-          questions: input.questions.map((question) => ({
-            type: question.type,
-            prompt: question.prompt,
-            options: question.options.map(({ id, text }) => ({ id, text })),
-            correctOptionId: question.correctOptionId,
-            explanation: question.explanation,
-            sourceChunkIds: question.sourceChunkIds,
-          })),
+          questions: input.questions.map((question) => {
+            const common = {
+              ...(question.sourceChunkIds.length === 0 ? { id: question.id } : {}),
+              type: question.type,
+              prompt: question.prompt,
+              options: question.options.map(({ id, text }) => ({ id, text })),
+              ...(question.explanation !== undefined
+                ? { explanation: question.explanation }
+                : {}),
+            };
+            if (question.type === "multiple_choice") {
+              return {
+                ...common,
+                correctOptionIds: question.correctOptionIds,
+              };
+            }
+            return {
+              ...common,
+              ...(question.correctOptionId !== undefined
+                ? { correctOptionId: question.correctOptionId }
+                : {}),
+              ...(question.sourceChunkIds.length > 0
+                ? { sourceChunkIds: question.sourceChunkIds }
+                : {}),
+            };
+          }),
         }
       : {}),
   });
@@ -408,7 +572,10 @@ export async function publishQuiz(quizId: string, version: number) {
 
 export async function submitQuizAttempt(
   quizId: string,
-  answers: Array<{ questionId: string; selectedOptionId: string }>,
+  answers: Array<
+    | { questionId: string; selectedOptionId: string }
+    | { questionId: string; selectedOptionIds: string[] }
+  >,
 ) {
   return apiRequest(
     `/quizzes/${encodeURIComponent(quizId)}/attempts`,

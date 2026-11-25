@@ -9,6 +9,7 @@ import {
   Chip,
   FormControl,
   FormControlLabel,
+  FormGroup,
   InputLabel,
   LinearProgress,
   MenuItem,
@@ -431,7 +432,7 @@ export function QuizPanel({
   const [types, setTypes] = useState<Array<"mcq" | "true_false">>(["mcq"]);
   const [quizState, setQuizState] = useState<{
     quizId: string;
-    answers: Record<string, string>;
+    answers: Record<string, string[]>;
     result: QuizAttemptResult | null;
   } | null>(null);
   const quizzesQuery = useInfiniteQuery({
@@ -470,7 +471,10 @@ export function QuizPanel({
   const attemptMutation = useMutation({
     mutationFn: (input: {
       quizId: string;
-      answers: Array<{ questionId: string; selectedOptionId: string }>;
+      answers: Array<
+        | { questionId: string; selectedOptionId: string }
+        | { questionId: string; selectedOptionIds: string[] }
+      >;
     }) => submitQuizAttempt(input.quizId, input.answers),
     onSuccess: (result, input) =>
       setQuizState((current) =>
@@ -495,7 +499,9 @@ export function QuizPanel({
     quiz &&
     quiz.status === "published" &&
     quiz.questions.length > 0 &&
-    quiz.questions.every((question) => currentState.answers[question.id]) &&
+    quiz.questions.every(
+      (question) => (currentState.answers[question.id] ?? []).length > 0,
+    ) &&
     !attemptMutation.isPending,
   );
   const resultsByQuestion = new Map(
@@ -639,6 +645,11 @@ export function QuizPanel({
             <Typography variant="body2" color="text.secondary">
               {quiz.questions.length} questions
             </Typography>
+            {quiz.description && (
+              <Typography sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
+                {quiz.description}
+              </Typography>
+            )}
           </Box>
           {currentState.result && (
             <Alert severity="success" role="status">
@@ -668,37 +679,78 @@ export function QuizPanel({
                   sx={{ mb: 1 }}
                 >
                   Question {index + 1} ·{" "}
-                  {question.type === "mcq" ? "Multiple choice" : "True or false"}
+                  {question.type === "mcq"
+                    ? "Single choice"
+                    : question.type === "multiple_choice"
+                      ? "Multiple choice"
+                      : "True or false"}
                 </Typography>
                 <Typography fontWeight={650} sx={{ mb: 1 }}>
                   {question.prompt}
                 </Typography>
-                <RadioGroup
-                  aria-label={`Answer for question ${index + 1}`}
-                  value={currentState.answers[question.id] ?? ""}
-                  onChange={(event) =>
-                    setQuizState({
-                      quizId: quiz.id,
-                      answers: {
-                        ...currentState.answers,
-                        [question.id]: event.target.value,
-                      },
-                      result: null,
-                    })
-                  }
-                >
-                  {question.options.map((option) => (
-                    <FormControlLabel
-                      key={option.id}
-                      value={option.id}
-                      control={<Radio />}
-                      disabled={
-                        Boolean(currentState.result) || quiz.status !== "published"
-                      }
-                      label={option.text}
-                    />
-                  ))}
-                </RadioGroup>
+                {question.type === "multiple_choice" ? (
+                  <FormGroup aria-label={`Answers for question ${index + 1}`}>
+                    {question.options.map((option) => (
+                      <FormControlLabel
+                        key={option.id}
+                        control={
+                          <Checkbox
+                            checked={(currentState.answers[question.id] ?? []).includes(
+                              option.id,
+                            )}
+                            onChange={(event) => {
+                              const selected = new Set(
+                                currentState.answers[question.id] ?? [],
+                              );
+                              if (event.target.checked) selected.add(option.id);
+                              else selected.delete(option.id);
+                              setQuizState({
+                                quizId: quiz.id,
+                                answers: {
+                                  ...currentState.answers,
+                                  [question.id]: [...selected],
+                                },
+                                result: null,
+                              });
+                            }}
+                            disabled={
+                              Boolean(currentState.result) ||
+                              quiz.status !== "published"
+                            }
+                          />
+                        }
+                        label={option.text}
+                      />
+                    ))}
+                  </FormGroup>
+                ) : (
+                  <RadioGroup
+                    aria-label={`Answer for question ${index + 1}`}
+                    value={(currentState.answers[question.id] ?? [])[0] ?? ""}
+                    onChange={(event) =>
+                      setQuizState({
+                        quizId: quiz.id,
+                        answers: {
+                          ...currentState.answers,
+                          [question.id]: [event.target.value],
+                        },
+                        result: null,
+                      })
+                    }
+                  >
+                    {question.options.map((option) => (
+                      <FormControlLabel
+                        key={option.id}
+                        value={option.id}
+                        control={<Radio />}
+                        disabled={
+                          Boolean(currentState.result) || quiz.status !== "published"
+                        }
+                        label={option.text}
+                      />
+                    ))}
+                  </RadioGroup>
+                )}
                 {result && (
                   <Stack spacing={0.5} sx={{ mt: 1 }}>
                     <Chip
@@ -709,10 +761,17 @@ export function QuizPanel({
                     />
                     {!result.correct && (
                       <Typography variant="body2">
-                        Correct answer:{" "}
-                        {question.options.find(
-                          (option) => option.id === result.correctOptionId,
-                        )?.text ?? "Unavailable"}
+                        Correct answer{question.type === "multiple_choice" ? "s" : ""}:{" "}
+                        {"correctOptionIds" in result
+                          ? question.options
+                              .filter((option) =>
+                                result.correctOptionIds.includes(option.id),
+                              )
+                              .map((option) => option.text)
+                              .join(", ") || "Unavailable"
+                          : (question.options.find(
+                              (option) => option.id === result.correctOptionId,
+                            )?.text ?? "Unavailable")}
                       </Typography>
                     )}
                     <Typography variant="body2">{result.explanation}</Typography>
@@ -739,10 +798,18 @@ export function QuizPanel({
                 if (!quiz) return;
                 attemptMutation.mutate({
                   quizId: quiz.id,
-                  answers: quiz.questions.map((question) => ({
-                    questionId: question.id,
-                    selectedOptionId: currentState.answers[question.id] ?? "",
-                  })),
+                  answers: quiz.questions.map((question) =>
+                    question.type === "multiple_choice"
+                      ? {
+                          questionId: question.id,
+                          selectedOptionIds: currentState.answers[question.id] ?? [],
+                        }
+                      : {
+                          questionId: question.id,
+                          selectedOptionId:
+                            (currentState.answers[question.id] ?? [])[0] ?? "",
+                        },
+                  ),
                 });
               }}
               sx={{ alignSelf: "flex-start" }}

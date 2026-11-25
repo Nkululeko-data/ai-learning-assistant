@@ -14,9 +14,7 @@ import { StructuredOutputService } from "../../src/ai/providers/structured-outpu
 import { loadConfig } from "../../src/config/config";
 import { ConversationRepository } from "../../src/infra/sqlite/conversation.repository";
 import type { AuthenticatedUser } from "../../src/modules/auth/auth.types";
-import {
-  LearningService,
-} from "../../src/modules/learning/learning.service";
+import { LearningService } from "../../src/modules/learning/learning.service";
 import { LearningRepository } from "../../src/modules/learning/learning.repository";
 import { JsonLearningExecutionRepository } from "../../src/modules/learning/learning-execution.repository";
 import {
@@ -98,9 +96,7 @@ afterEach(async () => {
   if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
 });
 
-async function createLearningService(
-  llmResponse: string | string[],
-): Promise<{
+async function createLearningService(llmResponse: string | string[]): Promise<{
   service: LearningService;
   collections: ReturnType<typeof createSystemStore>["collections"];
   primary: FakeLlmProvider;
@@ -198,7 +194,8 @@ describe("LearningService", () => {
         },
       ],
     });
-    const { service, collections, primary } = await createLearningService(response);
+    const { service, collections, primary } =
+      await createLearningService(response);
     const input = generateSummaryRequestSchema.parse({
       courseId,
       selection: { documentIds: [documentId] },
@@ -339,7 +336,8 @@ describe("LearningService", () => {
             { id: "b", text: "A programming language" },
           ],
           correctOptionId: "a",
-          explanation: "The source defines a database as an organized collection of data.",
+          explanation:
+            "The source defines a database as an organized collection of data.",
           sourceChunkIds: [chunkId],
         },
       ],
@@ -432,7 +430,8 @@ describe("LearningService", () => {
               { id: "b", text: "A programming language" },
             ],
             correctOptionId: "a",
-            explanation: "The source defines a database as an organized collection of data.",
+            explanation:
+              "The source defines a database as an organized collection of data.",
             sourceChunkIds: [chunkId],
           },
         ],
@@ -462,7 +461,8 @@ describe("LearningService", () => {
     });
     expect(result.results[0]).toMatchObject({
       correctOptionId: "a",
-      explanation: "The source defines a database as an organized collection of data.",
+      explanation:
+        "The source defines a database as an organized collection of data.",
       correct: true,
     });
 
@@ -479,6 +479,147 @@ describe("LearningService", () => {
       publishedAt: null,
     });
     expect(newDraft.id).not.toBe(published.id);
-    expect(collections.quizzes.getById(published.id)?.status).toBe("superseded");
+    expect(collections.quizzes.getById(published.id)?.status).toBe(
+      "superseded",
+    );
+  });
+
+  test("creates source-free manual drafts and scores multiple answers exactly", async () => {
+    const { service, primary } = await createLearningService("{}");
+    const draft = await service.createManualCoachQuiz(
+      coach,
+      {
+        courseId,
+        title: "Database assessment",
+        description: "Select every correct answer.",
+        questions: [],
+      },
+      "request-manual-create",
+    );
+
+    expect(draft).toMatchObject({
+      status: "draft",
+      origin: "coach",
+      description: "Select every correct answer.",
+      sourceDocumentIds: [],
+      sourceChunkIds: [],
+      questions: [],
+    });
+    expect(primary.calls).toHaveLength(0);
+    await expect(
+      service.createManualCoachQuiz(
+        { ...coach, id: "00000000-0000-4000-8000-000000000099" },
+        { courseId, title: "Not owned", questions: [] },
+        "request-manual-unauthorized",
+      ),
+    ).rejects.toThrow("Course not found");
+    await expect(
+      service.publishQuiz(
+        coach,
+        draft.id,
+        draft.version,
+        "request-manual-publish",
+      ),
+    ).rejects.toThrow("Add at least one valid question before publishing");
+
+    const incomplete = await service.updateQuiz(
+      coach,
+      draft.id,
+      {
+        version: draft.version,
+        questions: [
+          {
+            type: "mcq",
+            prompt: "",
+            options: [],
+            correctOptionId: "",
+          },
+        ],
+      },
+      "request-manual-incomplete",
+    );
+    await expect(
+      service.publishQuiz(
+        coach,
+        incomplete.id,
+        incomplete.version,
+        "request-manual-publish-incomplete",
+      ),
+    ).rejects.toThrow("Every question needs text and at least two unique");
+
+    const validDraft = await service.updateQuiz(
+      coach,
+      incomplete.id,
+      {
+        version: incomplete.version,
+        questions: [
+          {
+            type: "multiple_choice",
+            prompt: "Which are database technologies?",
+            options: [
+              { id: "postgres", text: "PostgreSQL" },
+              { id: "mongo", text: "MongoDB" },
+              { id: "html", text: "HTML" },
+            ],
+            correctOptionIds: ["postgres", "mongo"],
+            explanation: "PostgreSQL and MongoDB are database technologies.",
+          },
+          {
+            type: "true_false",
+            prompt: "A database stores organized data.",
+            options: [
+              { id: "true", text: "True" },
+              { id: "false", text: "False" },
+            ],
+            correctOptionId: "true",
+          },
+        ],
+      },
+      "request-manual-valid",
+    );
+    const published = await service.publishQuiz(
+      coach,
+      validDraft.id,
+      validDraft.version,
+      "request-manual-publish-valid",
+    );
+    expect(published).toMatchObject({
+      status: "published",
+      sourceDocumentIds: [],
+      questions: [
+        { type: "multiple_choice", correctOptionIds: ["postgres", "mongo"] },
+        { type: "true_false", correctOptionId: "true" },
+      ],
+    });
+    expect(
+      JSON.stringify(service.getQuiz(learner, published.id)),
+    ).not.toContain("correctOptionIds");
+
+    const questionId = published.questions[0]?.id;
+    const trueFalseQuestionId = published.questions[1]?.id;
+    if (!questionId || !trueFalseQuestionId)
+      throw new Error("Expected manual quiz questions");
+    const correctAttempt = await service.submitQuizAttempt(
+      learner,
+      published.id,
+      [
+        { questionId, selectedOptionIds: ["mongo", "postgres"] },
+        { questionId: trueFalseQuestionId, selectedOptionId: "true" },
+      ],
+    );
+    expect(correctAttempt.attempt).toMatchObject({ score: 2, maxScore: 2 });
+    expect(correctAttempt.results[0]).toMatchObject({ correct: true });
+
+    const partialAttempt = await service.submitQuizAttempt(
+      learner,
+      published.id,
+      [
+        { questionId, selectedOptionIds: ["postgres"] },
+        { questionId: trueFalseQuestionId, selectedOptionId: "true" },
+      ],
+    );
+    expect(partialAttempt.attempt).toMatchObject({ score: 1, maxScore: 2 });
+    expect(partialAttempt.results[0]).toMatchObject({ correct: false });
+    expect(primary.calls).toHaveLength(0);
   });
 });

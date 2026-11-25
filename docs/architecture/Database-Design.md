@@ -285,7 +285,7 @@ Chunk (array `chunks[]`):
 
 ## 6. Learning content collections
 
-All generated content links back to its sources through `sourceChunkIds`, which must be a subset of the context set sent to the model (rule V1/V2).
+AI-generated content links back to its sources through `sourceChunkIds`, which must be a subset of the context set sent to the model (rule V1/V2). Manual coach quizzes are source-free and do not call retrieval or a model.
 
 ### 6.1 Generation request (shared shape, stored as `generationParams`)
 `{ selection: { documentIds: uuid[] (required, 1-10), sections: string[] (O), topic: string (O, max 200) }, count: integer (quiz questions / flashcards), types: enum[] (O), difficulty: enum(easy,medium,hard) (O) }`.
@@ -305,9 +305,10 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | ownerId | uuid \| null | O | Required when `visibility=private` |
 | status | enum(`draft`,`published`,`superseded`) | R | Learner quizzes are created `published` (private) |
 | title | string | R | |
-| questions | array of **Question** | R | Min 1 |
-| sourceDocumentIds | uuid[] | R | |
-| sourceChunkIds | string[] | R | Union of question sources |
+| description | string | O | Quiz instructions |
+| questions | array of **Question** | R | May be empty or incomplete while a coach draft is being edited |
+| sourceDocumentIds | uuid[] | R | Empty for manual coach quizzes |
+| sourceChunkIds | string[] | R | Union of question sources; empty for manual coach quizzes |
 | generationParams | object \| null | O | 6.1; null if hand-written |
 | generatedBy | object \| null | O | `{ executionId, provider, model, promptVersion }` |
 | publishedAt | iso8601 \| null | O | |
@@ -317,12 +318,13 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | Field | Type | Req | Notes |
 |---|---|---|---|
 | id | string | R | Stable within the lineage |
-| type | enum(`mcq`,`true_false`) | R | |
+| type | enum(`mcq`,`multiple_choice`,`true_false`) | R | |
 | prompt | string | R | |
-| options | array `{id, text}` | R | `mcq`: 2-5 options. `true_false`: ids `true`,`false` |
-| correctOptionId | string | R | **Never sent to learners before submission** |
-| explanation | string | R | **Never sent to learners before submission** |
-| sourceChunkIds | string[] | R | Min 1 |
+| options | array `{id, text}` | R | Up to 5 options. `true_false`: ids `true`,`false` |
+| correctOptionId | string | O | Used by `mcq` and `true_false`; **never sent to learners before submission** |
+| correctOptionIds | string[] | O | Used by `multiple_choice`; **never sent to learners before submission** |
+| explanation | string | O | **Never sent to learners before submission** |
+| sourceChunkIds | string[] | R | Empty for manual questions |
 
 **Indexes:** `id` U; (`lineageId`,`version`) U; (`courseId`,`visibility`,`status`) N; `ownerId` N.
 **Scope (after the enrolment check):** `visibility=course AND status=published` for approved members, plus the owner's own private quizzes. Coach (owner) sees drafts and all versions of their course's quizzes. **Learner responses use the learner view (no key).** **Retention:** coach quizzes stashed via `superseded`/archive with the course; private quizzes deleted by their owner (hard delete) or by erasure.
@@ -349,7 +351,7 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | quizVersion | integer | R | |
 | courseId | uuid | R | |
 | userId | uuid | R | Pseudonymised after erasure |
-| answers | array `{questionId, selectedOptionId, correct: boolean}` | R | Scored server-side |
+| answers | array `{questionId, selectedOptionId?, selectedOptionIds?, correct: boolean}` | R | Scored server-side; multiple-choice answers require an exact set match |
 | score | integer | R | |
 | maxScore | integer | R | |
 | startedAt, submittedAt | iso8601 | R | |

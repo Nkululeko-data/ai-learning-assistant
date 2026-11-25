@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { AppError, ConflictError, NotFoundError } from "../../common/errors/app-error";
+import {
+  AppError,
+  ConflictError,
+  NotFoundError,
+} from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
 import { runLearningContentGraph } from "../../ai/graphs/learning-content.graph";
 import type { DocumentEmbeddingProvider } from "../documents/mistral-embedding.provider";
 import { EmbeddingProviderError } from "../documents/mistral-embedding.provider";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import type { RetrievedChunk, RetrievalService } from "../retrieval/retrieval.service";
+import type {
+  RetrievedChunk,
+  RetrievalService,
+} from "../retrieval/retrieval.service";
 import {
   flashcardGenerationOutputSchema,
   quizGenerationOutputSchema,
@@ -15,9 +22,15 @@ import {
   type GenerateFlashcardsRequest,
   type GenerateQuizRequest,
   type GenerateSummaryRequest,
+  type ManualQuizQuestion,
+  type QuizAttemptAnswer,
   type QuizQuestionContent,
+  type UpdateQuizQuestion,
 } from "./learning.schemas";
-import { StructuredOutputError, StructuredOutputService } from "../../ai/providers/structured-output.service";
+import {
+  StructuredOutputError,
+  StructuredOutputService,
+} from "../../ai/providers/structured-output.service";
 import type {
   FlashcardRecord,
   LearningSummaryRecord,
@@ -51,7 +64,7 @@ interface GenerationExecution {
 
 interface QuizLearnerQuestion {
   id: string;
-  type: "mcq" | "true_false";
+  type: "mcq" | "multiple_choice" | "true_false";
   prompt: string;
   options: Array<{ id: string; text: string }>;
 }
@@ -65,6 +78,7 @@ export interface QuizLearnerView {
   visibility: QuizRecord["visibility"];
   status: QuizRecord["status"];
   title: string;
+  description?: string;
   questions: QuizLearnerQuestion[];
   sourceDocumentIds: string[];
   sourceChunkIds: string[];
@@ -76,8 +90,10 @@ export interface QuizAttemptResult {
   attempt: QuizAttemptRecord;
   results: Array<{
     questionId: string;
-    selectedOptionId: string;
-    correctOptionId: string;
+    selectedOptionId?: string;
+    selectedOptionIds?: string[];
+    correctOptionId?: string;
+    correctOptionIds?: string[];
     explanation: string;
     correct: boolean;
   }>;
@@ -341,7 +357,9 @@ export class LearningService {
         );
         if (
           parsed.some((question) => !question.success) ||
-          output.questions.some((question) => !input.types.includes(question.type))
+          output.questions.some(
+            (question) => !input.types.includes(question.type),
+          )
         ) {
           throw invalidGeneratedContent(
             "Generated quiz questions do not satisfy the requested question types",
@@ -431,13 +449,56 @@ export class LearningService {
     return quiz;
   }
 
+  public async createManualCoachQuiz(
+    actor: AuthenticatedUser,
+    input: {
+      courseId: string;
+      title: string;
+      description?: string | undefined;
+      questions: ManualQuizQuestion[];
+    },
+    requestId: string,
+  ): Promise<QuizRecord> {
+    this.requireCourseOwner(actor, input.courseId);
+    const timestamp = new Date().toISOString();
+    const quiz = await this.repository.createQuiz({
+      lineageId: randomUUID(),
+      version: 1,
+      courseId: input.courseId,
+      createdBy: actor.id,
+      origin: "coach",
+      visibility: "course",
+      ownerId: null,
+      status: "draft",
+      title: input.title,
+      ...(input.description !== undefined
+        ? { description: input.description }
+        : {}),
+      questions: manualQuestionsToRecords(input.questions),
+      sourceDocumentIds: [],
+      sourceChunkIds: [],
+      generationParams: null,
+      generatedBy: null,
+      publishedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await this.audit(actor, "quiz.created", "quiz", quiz.id, requestId, {
+      version: quiz.version,
+      status: quiz.status,
+      creationMethod: "manual",
+    });
+    return quiz;
+  }
+
   public async updateQuiz(
     actor: AuthenticatedUser,
     quizId: string,
     input: {
       version: number;
       title?: string;
-      questions?: QuizQuestionContent[];
+      description?: string;
+      questions?: UpdateQuizQuestion[];
     },
     requestId: string,
   ): Promise<QuizRecord> {
@@ -450,15 +511,38 @@ export class LearningService {
       if (quiz.status === "superseded") {
         throw new ConflictError("A superseded quiz cannot be edited");
       }
-      const questions = input.questions
-        ? await this.validateAndAssignQuestionIds(
+      let questions = quiz.questions;
+      if (input.questions !== undefined) {
+        if (quiz.sourceDocumentIds.length === 0) {
+          questions = manualQuestionsToRecords(
+            input.questions.map((question) => {
+              if ("sourceChunkIds" in question) {
+                throw new AppError(
+                  "VALIDATION_FAILED",
+                  422,
+                  "Manual quiz questions cannot reference source chunks",
+                );
+              }
+              return question;
+            }),
+            quiz.questions,
+          );
+        } else {
+          const sourceQuestions = input.questions.map((question) =>
+            quizQuestionContentSchema.parse(question),
+          );
+          questions = await this.validateAndAssignQuestionIds(
             actor,
             quiz,
-            input.questions,
-          )
-        : quiz.questions;
+            sourceQuestions,
+          );
+        }
+      }
       const updatedFields = {
         title: input.title ?? quiz.title,
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
         questions,
         sourceChunkIds: unique(
           questions.flatMap((question) => question.sourceChunkIds),
@@ -524,6 +608,7 @@ export class LearningService {
       if (quiz.status !== "draft" || quiz.origin !== "coach") {
         throw new ConflictError("Only a coach quiz draft can be published");
       }
+      validateQuizForPublishing(quiz);
       const publishedAt = new Date().toISOString();
       const updated = await this.repository.updateQuiz(quiz.id, (current) => {
         if (current.version !== version) {
@@ -569,14 +654,15 @@ export class LearningService {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
     this.retrievalService.assertCourseAccess(actor, quiz.courseId);
-    if (!this.canViewQuiz(actor, quiz)) throw new NotFoundError("Quiz not found");
+    if (!this.canViewQuiz(actor, quiz))
+      throw new NotFoundError("Quiz not found");
     return this.quizView(actor, quiz);
   }
 
   public async submitQuizAttempt(
     actor: AuthenticatedUser,
     quizId: string,
-    answers: Array<{ questionId: string; selectedOptionId: string }>,
+    answers: QuizAttemptAnswer[],
   ): Promise<QuizAttemptResult> {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
@@ -596,26 +682,76 @@ export class LearningService {
       );
     }
     const answersByQuestion = new Map(
-      answers.map((answer) => [answer.questionId, answer.selectedOptionId]),
+      answers.map((answer) => [answer.questionId, answer]),
     );
     const results = quiz.questions.map((question) => {
-      const selectedOptionId = answersByQuestion.get(question.id);
-      if (
-        selectedOptionId === undefined ||
-        !question.options.some((option) => option.id === selectedOptionId)
-      ) {
+      const answer = answersByQuestion.get(question.id);
+      if (!answer) {
+        throw new AppError(
+          "VALIDATION_FAILED",
+          422,
+          "Answers must be supplied for every quiz question",
+        );
+      }
+      if (question.type === "multiple_choice") {
+        if (!("selectedOptionIds" in answer)) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "Multiple-choice questions require a selection for every correct answer",
+          );
+        }
+        const selectedOptionIds = answer.selectedOptionIds;
+        if (
+          selectedOptionIds.some(
+            (selectedId) =>
+              !question.options.some((option) => option.id === selectedId),
+          )
+        ) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "An answer references an unknown question or option",
+          );
+        }
+        const correctOptionIds = question.correctOptionIds;
+        return {
+          questionId: question.id,
+          selectedOptionIds,
+          correctOptionIds,
+          explanation: question.explanation ?? "",
+          correct: sameStringSet(selectedOptionIds, correctOptionIds),
+        };
+      }
+      if (!("selectedOptionId" in answer)) {
+        throw new AppError(
+          "VALIDATION_FAILED",
+          422,
+          "Single-answer questions require exactly one selected option",
+        );
+      }
+      const selectedOptionId = answer.selectedOptionId;
+      if (!question.options.some((option) => option.id === selectedOptionId)) {
         throw new AppError(
           "VALIDATION_FAILED",
           422,
           "An answer references an unknown question or option",
         );
       }
+      const correctOptionId = question.correctOptionId;
+      if (!correctOptionId) {
+        throw new AppError(
+          "VALIDATION_FAILED",
+          422,
+          "The quiz contains an invalid question",
+        );
+      }
       return {
         questionId: question.id,
         selectedOptionId,
-        correctOptionId: question.correctOptionId,
-        explanation: question.explanation,
-        correct: selectedOptionId === question.correctOptionId,
+        correctOptionId,
+        explanation: question.explanation ?? "",
+        correct: selectedOptionId === correctOptionId,
       };
     });
     if (answersByQuestion.size !== quiz.questions.length) {
@@ -633,11 +769,19 @@ export class LearningService {
       quizVersion: quiz.version,
       courseId: quiz.courseId,
       userId: actor.id,
-      answers: results.map(({ questionId, selectedOptionId, correct }) => ({
-        questionId,
-        selectedOptionId,
-        correct,
-      })),
+      answers: results.map((result) =>
+        "selectedOptionIds" in result
+          ? {
+              questionId: result.questionId,
+              selectedOptionIds: result.selectedOptionIds,
+              correct: result.correct,
+            }
+          : {
+              questionId: result.questionId,
+              selectedOptionId: result.selectedOptionId,
+              correct: result.correct,
+            },
+      ),
       score,
       maxScore: quiz.questions.length,
       startedAt: submittedAt,
@@ -683,10 +827,17 @@ export class LearningService {
         },
         undefined,
       );
-      await this.audit(actor, "summary.published", "learning_summary", summary.id, requestId, {
-        version: published.version,
-        status: published.status,
-      });
+      await this.audit(
+        actor,
+        "summary.published",
+        "learning_summary",
+        summary.id,
+        requestId,
+        {
+          version: published.version,
+          status: published.status,
+        },
+      );
       return published;
     });
   }
@@ -705,7 +856,9 @@ export class LearningService {
         throw new ConflictError("Flashcard version is stale");
       }
       if (flashcards.status !== "draft" || flashcards.visibility !== "course") {
-        throw new ConflictError("Only a course flashcard draft can be published");
+        throw new ConflictError(
+          "Only a course flashcard draft can be published",
+        );
       }
       const published = await this.repository.updateFlashcardSet(
         flashcards.id,
@@ -717,10 +870,17 @@ export class LearningService {
         },
         undefined,
       );
-      await this.audit(actor, "flashcards.published", "flashcards", flashcards.id, requestId, {
-        version: published.version,
-        status: published.status,
-      });
+      await this.audit(
+        actor,
+        "flashcards.published",
+        "flashcards",
+        flashcards.id,
+        requestId,
+        {
+          version: published.version,
+          status: published.status,
+        },
+      );
       return published;
     });
   }
@@ -827,7 +987,8 @@ export class LearningService {
     let usedTokens = 0;
     for (const chunk of retrieved) {
       const tokenEstimate = Math.max(1, chunk.tokenEstimate);
-      if (usedTokens + tokenEstimate > this.config.chatMaxContextTokens) continue;
+      if (usedTokens + tokenEstimate > this.config.chatMaxContextTokens)
+        continue;
       chunks.push(chunk);
       usedTokens += tokenEstimate;
     }
@@ -1013,7 +1174,10 @@ export class LearningService {
     if (actor.role !== "coach") throw new NotFoundError("Course not found");
   }
 
-  private requireQuizOwner(actor: AuthenticatedUser, quizId: string): QuizRecord {
+  private requireQuizOwner(
+    actor: AuthenticatedUser,
+    quizId: string,
+  ): QuizRecord {
     const quiz = this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
     this.requireCourseOwner(actor, quiz.courseId);
@@ -1045,6 +1209,9 @@ export class LearningService {
       visibility: quiz.visibility,
       status: quiz.status,
       title: quiz.title,
+      ...(quiz.description !== undefined
+        ? { description: quiz.description }
+        : {}),
       questions: quiz.questions.map(({ id, type, prompt, options }) => ({
         id,
         type,
@@ -1080,6 +1247,96 @@ export class LearningService {
   }
 }
 
+function validateQuizForPublishing(quiz: QuizRecord): void {
+  if (quiz.questions.length === 0) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      422,
+      "Add at least one valid question before publishing",
+    );
+  }
+  for (const question of quiz.questions) {
+    const optionIds = question.options.map((option) => option.id);
+    if (
+      question.prompt.trim().length === 0 ||
+      question.options.length < 2 ||
+      question.options.some((option) => option.text.trim().length === 0) ||
+      new Set(optionIds).size !== optionIds.length
+    ) {
+      throw new AppError(
+        "VALIDATION_FAILED",
+        422,
+        "Every question needs text and at least two unique, non-empty answer options",
+      );
+    }
+    if (question.type === "multiple_choice") {
+      if (
+        question.correctOptionIds.length === 0 ||
+        new Set(question.correctOptionIds).size !==
+          question.correctOptionIds.length ||
+        question.correctOptionIds.some((id) => !optionIds.includes(id))
+      ) {
+        throw new AppError(
+          "VALIDATION_FAILED",
+          422,
+          "Every multiple-choice question needs at least one valid correct answer",
+        );
+      }
+    } else if (
+      !question.correctOptionId ||
+      !optionIds.includes(question.correctOptionId)
+    ) {
+      throw new AppError(
+        "VALIDATION_FAILED",
+        422,
+        "Every single-answer question needs exactly one valid correct answer",
+      );
+    }
+    if (
+      question.type === "true_false" &&
+      (optionIds.length !== 2 ||
+        !optionIds.includes("true") ||
+        !optionIds.includes("false"))
+    ) {
+      throw new AppError(
+        "VALIDATION_FAILED",
+        422,
+        "True/false questions must have exactly the True and False options",
+      );
+    }
+  }
+}
+
+function manualQuestionsToRecords(
+  questions: ManualQuizQuestion[],
+  existing: QuizRecord["questions"] = [],
+): QuizRecord["questions"] {
+  const usedIds = new Set<string>();
+  return questions.map((question, index) => {
+    const id = question.id ?? existing[index]?.id ?? randomUUID();
+    if (usedIds.has(id)) {
+      throw new AppError(
+        "VALIDATION_FAILED",
+        422,
+        "Question IDs must be unique",
+      );
+    }
+    usedIds.add(id);
+    return {
+      ...question,
+      id,
+      explanation: question.explanation ?? "",
+      sourceChunkIds: [],
+    };
+  });
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length && left.every((value) => right.includes(value))
+  );
+}
+
 function visibilityFor(actor: AuthenticatedUser): LearningVisibility {
   return actor.role === "coach" ? "course" : "private";
 }
@@ -1090,7 +1347,11 @@ function ownerFor(actor: AuthenticatedUser): string | null {
 
 function canViewLearning(
   actor: AuthenticatedUser,
-  item: { visibility: LearningVisibility; status: "draft" | "published"; ownerId: string | null },
+  item: {
+    visibility: LearningVisibility;
+    status: "draft" | "published";
+    ownerId: string | null;
+  },
 ): boolean {
   return (
     (item.visibility === "course" &&
@@ -1101,12 +1362,14 @@ function canViewLearning(
   );
 }
 
-function findReusable<T extends {
-  sourceHash: string;
-  ownerId: string | null;
-  visibility: LearningVisibility;
-  version: number;
-}>(
+function findReusable<
+  T extends {
+    sourceHash: string;
+    ownerId: string | null;
+    visibility: LearningVisibility;
+    version: number;
+  },
+>(
   records: T[],
   sourceHash: string,
   ownerId: string | null,
@@ -1129,9 +1392,8 @@ function validateQuestionReferences(
   allowedChunkIds: ReadonlySet<string>,
 ): void {
   if (
-    questions.some(
-      (question) =>
-        question.sourceChunkIds.some((chunkId) => !allowedChunkIds.has(chunkId)),
+    questions.some((question) =>
+      question.sourceChunkIds.some((chunkId) => !allowedChunkIds.has(chunkId)),
     )
   ) {
     throw new AppError(
@@ -1214,5 +1476,7 @@ function toApiError(error: unknown): Error {
       "The embedding provider is unavailable",
     );
   }
-  return error instanceof Error ? error : new Error("Learning generation failed");
+  return error instanceof Error
+    ? error
+    : new Error("Learning generation failed");
 }

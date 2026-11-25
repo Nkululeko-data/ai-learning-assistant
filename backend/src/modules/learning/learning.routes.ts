@@ -10,6 +10,7 @@ import {
 import type { AuthService } from "../auth/auth.service";
 import {
   createQuizRequestSchema,
+  createManualQuizRequestSchema,
   generateFlashcardsRequestSchema,
   generateQuizRequestSchema,
   generateSummaryRequestSchema,
@@ -207,6 +208,22 @@ export function createLearningRouter(
     },
   );
 
+  router.post(
+    "/quizzes/manual",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("quiz:create"),
+    async (request, response) => {
+      const input = createManualQuizRequestSchema.parse(request.body);
+      const quiz = await dependencies.learningService.createManualCoachQuiz(
+        requireAuthContext(request),
+        input,
+        request.requestId,
+      );
+      response.status(201).json({ data: quiz });
+    },
+  );
+
   router.get(
     "/courses/:courseId/quizzes",
     authenticate,
@@ -249,6 +266,9 @@ export function createLearningRouter(
       const update = {
         version: input.version,
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
         ...(input.questions !== undefined
           ? { questions: input.questions }
           : {}),
@@ -333,8 +353,15 @@ function requireAuthContext(request: Request) {
 
 function requireUuidParam(request: Request, name: string): string {
   const value = request.params[name];
-  if (typeof value !== "string" || !z.string().uuid().safeParse(value).success) {
-    throw new AppError("VALIDATION_FAILED", 422, `Invalid route parameter: ${name}`);
+  if (
+    typeof value !== "string" ||
+    !z.string().uuid().safeParse(value).success
+  ) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      422,
+      `Invalid route parameter: ${name}`,
+    );
   }
   return value;
 }

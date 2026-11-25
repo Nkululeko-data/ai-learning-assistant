@@ -152,4 +152,104 @@ describe("QuizPanel", () => {
       });
     });
   });
+
+  it("submits every selected option for multiple-choice questions", async () => {
+    const user = userEvent.setup();
+    const submitHandler = vi.fn();
+    const quiz = {
+      id: quizId,
+      lineageId,
+      version: 1,
+      courseId,
+      origin: "coach",
+      visibility: "course",
+      status: "published",
+      title: "Database quiz",
+      description: "Select all that apply.",
+      questions: [
+        {
+          id: "question-multiple",
+          type: "multiple_choice",
+          prompt: "Which are databases?",
+          options: [
+            { id: "postgres", text: "PostgreSQL" },
+            { id: "mongo", text: "MongoDB" },
+            { id: "html", text: "HTML" },
+          ],
+        },
+      ],
+      sourceDocumentIds: [],
+      sourceChunkIds: [],
+      publishedAt: "2026-11-20T06:00:00.000Z",
+      createdAt: "2026-11-20T06:00:00.000Z",
+    };
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
+        HttpResponse.json({ data: [quiz] }),
+      ),
+      http.get(`http://localhost:3000/api/v1/quizzes/${quizId}`, () =>
+        HttpResponse.json({ data: quiz }),
+      ),
+      http.post(
+        `http://localhost:3000/api/v1/quizzes/${quizId}/attempts`,
+        async ({ request }) => {
+          submitHandler(await request.json());
+          return HttpResponse.json({
+            data: {
+              attempt: {
+                id: attemptId,
+                quizId,
+                lineageId,
+                quizVersion: 1,
+                courseId,
+                userId: learnerId,
+                answers: [
+                  {
+                    questionId: "question-multiple",
+                    selectedOptionIds: ["postgres", "mongo"],
+                    correct: true,
+                  },
+                ],
+                score: 1,
+                maxScore: 1,
+                startedAt: "2026-11-20T06:00:00.000Z",
+                submittedAt: "2026-11-20T06:00:01.000Z",
+              },
+              results: [
+                {
+                  questionId: "question-multiple",
+                  selectedOptionIds: ["postgres", "mongo"],
+                  correctOptionIds: ["postgres", "mongo"],
+                  explanation: "Both are databases.",
+                  correct: true,
+                },
+              ],
+            },
+          });
+        },
+      ),
+    );
+
+    renderQuizPanel();
+    await user.click(
+      await screen.findByRole("combobox", { name: "Available quizzes" }),
+    );
+    await user.click(await screen.findByRole("option", { name: /Database quiz/ }));
+    expect(await screen.findByText("Select all that apply.")).toBeVisible();
+    await user.click(screen.getByRole("checkbox", { name: "PostgreSQL" }));
+    await user.click(screen.getByRole("checkbox", { name: "MongoDB" }));
+    await user.click(screen.getByRole("button", { name: "Submit answers" }));
+
+    expect(await screen.findByText("Score: 1 of 1")).toBeVisible();
+    await waitFor(() => {
+      expect(submitHandler).toHaveBeenCalledWith({
+        answers: [
+          {
+            questionId: "question-multiple",
+            selectedOptionIds: ["postgres", "mongo"],
+          },
+        ],
+      });
+    });
+  });
 });

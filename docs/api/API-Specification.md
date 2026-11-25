@@ -54,17 +54,17 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Courses       | `GET /courses`                                                 | List active course cards and accessible courses                                         |
 | Courses       | `GET /me/courses`                                              | List paginated courses owned by the authenticated coach                                 |
 | Courses       | `GET /courses/{id}`                                            | Get course details allowed to the caller                                                |
-| Courses       | `GET /courses/{id}/preview`                                    | Preview ordered lesson titles without accessing lesson content                           |
+| Courses       | `GET /courses/{id}/preview`                                    | Preview ordered lesson titles without accessing lesson content                          |
 | Courses       | `GET /courses/{id}/lessons`                                    | List ordered lesson topics and available course media for the owner or approved learner |
 | Courses       | `PUT /courses/{id}/lessons`                                    | Replace an owned course's ordered lessons using optimistic versioning                   |
 | Documents     | `POST /courses/{id}/lesson-videos`                             | Store an MP4 in the course library without document ingestion                           |
 | Courses       | `PATCH /courses/{id}`                                          | Update or archive an owned course using optimistic version                              |
 | Enrolments    | `POST /courses/{id}/join`                                      | Request to join course                                                                  |
 | Enrolments    | `GET /me/enrolments`                                           | List current user's enrolments                                                          |
-| Enrolments    | `GET /courses/{id}/learners`                                   | List active learners visible to the course owner and approved class members               |
+| Enrolments    | `GET /courses/{id}/learners`                                   | List active learners visible to the course owner and approved class members             |
 | Enrolments    | `GET /courses/{id}/join-requests`                              | List join requests for owned course                                                     |
 | Enrolments    | `PATCH /enrolments/{id}`                                       | Approve/reject request                                                                  |
-| Enrolments    | `POST /enrolments/{id}/remove`                                  | Remove an enrolled learner with a required reason                                       |
+| Enrolments    | `POST /enrolments/{id}/remove`                                 | Remove an enrolled learner with a required reason                                       |
 | Enrolments    | `DELETE /courses/{id}/enrolment`                               | Remove learner enrolment                                                                |
 | Admin         | `PATCH /admin/courses/{id}/owner`                              | Reassign a course to an active coach                                                    |
 | Admin         | `PATCH /admin/courses/{id}`                                    | Archive a course when its owner cannot be retained                                      |
@@ -89,6 +89,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Learning      | `POST /flashcards/{id}/publish`                                | Publish an owned coach flashcard draft                                                  |
 | Quizzes       | `POST /quizzes/generate`                                       | Generate private learner quiz or coach draft                                            |
 | Quizzes       | `POST /quizzes`                                                | Create coach quiz draft                                                                 |
+| Quizzes       | `POST /quizzes/manual`                                         | Create a source-free coach quiz draft without AI                                        |
 | Quizzes       | `PATCH /quizzes/{id}`                                          | Edit draft or create new version when required                                          |
 | Quizzes       | `POST /quizzes/{id}/publish`                                   | Publish coach quiz                                                                      |
 | Quizzes       | `GET /courses/{id}/quizzes`                                    | List visible quizzes using caller-specific view                                         |
@@ -340,21 +341,32 @@ RATE_LIMITED` indicates the short-window limit.
   from the supplied accessible `sourceDocumentIds`. `PATCH /quizzes/{id}`
   requires the current `version`; editing a published quiz with attempts
   creates a new draft version and supersedes the old one.
+- `POST /quizzes/manual` creates an unpublished, course-scoped coach draft
+  without source documents, retrieval, embeddings, or LLM calls. The course is
+  selected by opening its quiz-management page. Drafts may be incomplete;
+  publishing requires at least one valid question. Supported types are
+  single-choice (`mcq`), multiple-choice (`multiple_choice`), and
+  true/false. Single-answer questions use `correctOptionId`; multiple-choice
+  questions use a non-empty `correctOptionIds` array. Quiz instructions are
+  stored as the optional `description`.
 - Quiz reads and course lists always use a caller-specific view. Before an
   attempt, learner views omit `correctOptionId` and `explanation`, including
-  for the learner's own generated quizzes. `POST /quizzes/{id}/attempts`
-  requires one selected option for every question; the server scores and
-  stores the attempt, then returns correct answers and explanations. The
-  attempt records the exact quiz version. Learners can list only their own
-  attempts with `GET /me/quiz-attempts`.
+  `correctOptionIds` for multiple-choice questions. `POST /quizzes/{id}/attempts`
+  accepts `selectedOptionId` for single-answer questions and
+  `selectedOptionIds` for multiple-answer questions. The server requires the
+  exact correct set for a multiple-answer point, stores the attempt, then
+  returns correct answers and explanations. Attempts record the exact quiz
+  version. Learners can list only their own attempts with
+  `GET /me/quiz-attempts`.
 - Content-generation requests are subject to the configured per-user
   short-window and shared daily AI request/token quotas. `INSUFFICIENT_MATERIAL`
   means the selected source set could not support generation;
   `GENERATION_FAILED` means output or source references failed validation.
+  Manual quiz creation does not consume AI-generation quota.
 
 ## Critical response contracts
 
-- **Quiz learner view:** includes prompt and options only; never `correctOptionId` or `explanation` until after attempt submission.
+- **Quiz learner view:** includes title, instructions, prompts, and options only; never answer keys or explanations until after attempt submission.
 - **Chat response:** includes `groundingStatus`, validated answer (or null for insufficient/unverified), and citations whose metadata is resolved from chunk records.
 - **Document status:** includes status and actionable diagnostics, never extracted document text.
 - **Insights:** includes cohort-qualified themes and counts only; no question examples or verbatim text.

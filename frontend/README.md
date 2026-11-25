@@ -89,11 +89,14 @@ generated and published quizzes. The workspace links to the document library to
 upload personal PDF, DOCX, or TXT notes; those notes are private to the learner
 and become selectable after processing. Uploading requires the `document:upload`
 permission. Quiz answer keys and explanations are shown only after submission.
-Course owners with quiz-management permission can generate quiz drafts from ready
-course documents in the course details page, review and edit questions, then
-publish them for learners. Document-processing status remains on the learner
-dashboard; coaches manage materials from each course's document library. The
-current course reports do not provide a ranked list of all queried topics.
+Course owners with quiz-management permission can choose AI generation from ready
+course documents or create a manual quiz draft from the course details page.
+Manual drafts do not require documents or AI; coaches can add, edit, reorder, and
+remove single-choice, multiple-choice, and true/false questions, preview, save,
+and publish. Learners can select multiple answers where appropriate. Document
+processing status remains on the learner dashboard; coaches manage materials
+from each course's document library. The current course reports do not provide
+a ranked list of all queried topics.
 
 ## Authentication foundation
 

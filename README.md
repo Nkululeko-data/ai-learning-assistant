@@ -53,8 +53,8 @@ npm run db:migrate
 npm run db:import-legacy
 ```
 
-`db:migrate` upgrades the existing Neon schema from version 5 to version 6; it
-does not create the original schema on a brand-new database.
+`db:migrate` upgrades the existing Neon schema from version 5 through version 7;
+it does not create the original schema on a brand-new database.
 The importer preserves the source JSON and SQLite files. Run it again safely
 after an interrupted import; conflicting existing records are reported rather
 than overwritten. Back up the source data and both databases before migration.
@@ -191,14 +191,17 @@ verification and operating artefacts:
   retrieved evidence to the configured LLM provider. The default limits are
   10 requests/minute, 100 requests/UTC day, and 100,000 provider tokens/UTC
   day; they are configurable.
-- **B9 — Learning content and quizzes:** summaries, flashcards, and quizzes
-  are generated only from selected, accessible, ready course documents.
+
+- **B9 — Learning content and quizzes:** summaries, flashcards, and AI-generated
+  quizzes use selected, accessible, ready course documents.
   Learner-generated content is private; coach summaries, flashcards, and
-  quizzes remain drafts until the course owner publishes them. Learner quiz
-  views omit answer keys before submission; the server scores attempts and
-  returns explanations afterward. Test source selection/isolation, invalid
-  citation rejection, coach publish permissions, learner answer-key privacy,
-  attempt scoring, and quiz versioning. Focused offline tests:
+  AI-generated quizzes remain drafts until the course owner publishes them.
+  Coaches can also create source-free manual quizzes without AI; drafts support
+  single-choice, multiple-choice, and true/false questions. Learner quiz views
+  omit answer keys before submission; the server scores attempts and returns
+  explanations afterward. Test source selection/isolation, invalid citation
+  rejection, manual draft validation, coach publish permissions, learner
+  answer-key privacy, attempt scoring, and quiz versioning. Focused offline tests:
 
   ```powershell
   npm test -- --runTestsByPath tests/unit/learning.service.test.ts tests/unit/retrieval.service.test.ts tests/unit/structured-output.service.test.ts
@@ -222,6 +225,7 @@ verification and operating artefacts:
   coaches can read their drafts and publish with `{ "version": 1 }` to the
   corresponding `/summaries/{id}/publish` or `/flashcards/{id}/publish`
   endpoint. See the API specification for flashcard, quiz, and attempt bodies.
+
 - **B10 — Feedback and course insights:** learners can submit or update feedback
   for an owned assistant answer with `POST /api/v1/feedback`. Coach insight
   endpoints are owner-only and use `insights:view`; aggregates are withheld
@@ -240,6 +244,7 @@ verification and operating artefacts:
     "comment": "The explanation was clear"
   }
   ```
+
 - **B11 — Administration and privacy erasure:** admins can review submitted
   courses, group safe user metadata by role, change roles and coach permission
   overrides, suspend or restore accounts, issue one-time password reset
@@ -259,6 +264,7 @@ verification and operating artefacts:
 
   Use `PATCH /api/v1/admin/users/{id}/status` for the body above, and
   `POST /api/v1/admin/users/{id}/erase` to enqueue erasure.
+
 - **B12 — Release verification and packaging:** the API contract is published
   at `/openapi.json` and Swagger UI at `/api/docs`. Docker packaging uses one
   container and a persistent named-volume deployment; Neon and MongoDB provide

@@ -267,54 +267,44 @@ export const flashcardSchema = z
   })
   .strict();
 
-const quizQuestionSchema = z
+const quizQuestionOptionSchema = z
   .object({
-    id: z.string().min(1).max(100),
-    type: z.enum(["mcq", "true_false"]),
-    prompt: z.string().trim().min(1).max(2000),
-    options: z
-      .array(
-        z
-          .object({
-            id: z.string().trim().min(1).max(40),
-            text: z.string().trim().min(1).max(500),
-          })
-          .strict(),
-      )
-      .min(2)
-      .max(5),
-    correctOptionId: z.string().min(1).max(40),
-    explanation: z.string().trim().min(1).max(2000),
-    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+    id: z.string().trim().min(1).max(40),
+    text: z.string().trim().max(500),
   })
-  .strict()
-  .superRefine((question, context) => {
-    const optionIds = question.options.map((option) => option.id);
-    if (new Set(optionIds).size !== optionIds.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["options"],
-        message: "Option IDs must be unique",
-      });
-    }
-    if (!optionIds.includes(question.correctOptionId)) {
-      context.addIssue({
-        code: "custom",
-        path: ["correctOptionId"],
-        message: "The correct option must exist",
-      });
-    }
-    if (
-      question.type === "true_false" &&
-      (optionIds.length !== 2 || !optionIds.includes("true") || !optionIds.includes("false"))
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["options"],
-        message: "True/false questions require true and false options",
-      });
-    }
-  });
+  .strict();
+
+const quizQuestionBase = {
+  id: z.string().min(1).max(100),
+  prompt: z.string().trim().max(2000),
+  options: z.array(quizQuestionOptionSchema).max(5),
+  explanation: z.string().trim().max(2000).optional(),
+  sourceChunkIds: z.array(z.string().min(1).max(100)),
+};
+
+const quizQuestionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...quizQuestionBase,
+      type: z.literal("mcq"),
+      correctOptionId: z.string().max(40).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...quizQuestionBase,
+      type: z.literal("multiple_choice"),
+      correctOptionIds: z.array(z.string().min(1).max(40)).max(5),
+    })
+    .strict(),
+  z
+    .object({
+      ...quizQuestionBase,
+      type: z.literal("true_false"),
+      correctOptionId: z.string().max(40).optional(),
+    })
+    .strict(),
+]);
 
 export const quizSchema = z
   .object({
@@ -328,16 +318,93 @@ export const quizSchema = z
     ownerId: idSchema.nullable(),
     status: z.enum(["draft", "published", "superseded"]),
     title: z.string().trim().min(1).max(200),
-    questions: z.array(quizQuestionSchema).min(1).max(50),
-    sourceDocumentIds: z.array(idSchema).min(1).max(10),
-    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+    description: z.string().trim().max(2000).optional(),
+    questions: z.array(quizQuestionSchema).max(50),
+    sourceDocumentIds: z.array(idSchema).max(10),
+    sourceChunkIds: z.array(z.string().min(1).max(100)),
     generationParams: generationParamsSchema.nullable(),
     generatedBy: generatedBySchema.nullable(),
     publishedAt: timestampSchema.nullable(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((quiz, context) => {
+    if (quiz.status !== "published") return;
+    if (quiz.questions.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["questions"],
+        message: "Published quizzes require at least one valid question",
+      });
+    }
+    quiz.questions.forEach((question, questionIndex) => {
+      const optionIds = question.options.map((option) => option.id);
+      if (question.prompt.trim().length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "prompt"],
+          message: "Published questions require question text",
+        });
+      }
+      if (question.options.length < 2) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "options"],
+          message: "Published questions require at least two answer options",
+        });
+      }
+      if (new Set(optionIds).size !== optionIds.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "options"],
+          message: "Answer option IDs must be unique",
+        });
+      }
+      if (question.options.some((option) => option.text.trim().length === 0)) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "options"],
+          message: "Published answer options require text",
+        });
+      }
+      if (question.type === "multiple_choice") {
+        const correctIds = question.correctOptionIds;
+        if (
+          correctIds.length === 0 ||
+          new Set(correctIds).size !== correctIds.length ||
+          correctIds.some((id) => !optionIds.includes(id))
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["questions", questionIndex, "correctOptionIds"],
+            message: "Multiple-choice questions require valid correct answers",
+          });
+        }
+      } else if (
+        !question.correctOptionId ||
+        !optionIds.includes(question.correctOptionId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "correctOptionId"],
+          message: "Single-answer questions require one valid correct answer",
+        });
+      }
+      if (
+        question.type === "true_false" &&
+        (optionIds.length !== 2 ||
+          !optionIds.includes("true") ||
+          !optionIds.includes("false"))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["questions", questionIndex, "options"],
+          message: "True/false questions require true and false options",
+        });
+      }
+    });
+  });
 
 export const quizAttemptSchema = z
   .object({
@@ -348,13 +415,22 @@ export const quizAttemptSchema = z
     courseId: idSchema,
     userId: idSchema,
     answers: z.array(
-      z
-        .object({
-          questionId: z.string().min(1).max(100),
-          selectedOptionId: z.string().min(1).max(40),
-          correct: z.boolean(),
-        })
-        .strict(),
+      z.union([
+        z
+          .object({
+            questionId: z.string().min(1).max(100),
+            selectedOptionId: z.string().min(1).max(40),
+            correct: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            questionId: z.string().min(1).max(100),
+            selectedOptionIds: z.array(z.string().min(1).max(40)).min(1).max(5),
+            correct: z.boolean(),
+          })
+          .strict(),
+      ]),
     ),
     score: z.number().int().nonnegative(),
     maxScore: z.number().int().positive(),
@@ -399,8 +475,17 @@ export const activityEventSchema = z
     dedupeKey: z.string().min(1).max(128),
     courseId: idSchema,
     userId: idSchema,
-    type: z.enum(["question", "summary", "flashcards", "quiz_generated", "quiz_attempt", "document_upload"]),
-    groundingStatus: z.enum(["grounded", "insufficient", "unverified"]).nullable(),
+    type: z.enum([
+      "question",
+      "summary",
+      "flashcards",
+      "quiz_generated",
+      "quiz_attempt",
+      "document_upload",
+    ]),
+    groundingStatus: z
+      .enum(["grounded", "insufficient", "unverified"])
+      .nullable(),
     usedPersonalScope: z.boolean(),
     citedCourseDocumentIds: z.array(idSchema).max(50),
     createdAt: timestampSchema,
@@ -497,7 +582,17 @@ const jobDataSchema = z.record(
 export const jobSchema = z
   .object({
     id: idSchema,
-    type: z.enum(["ingest", "reembed", "generate", "cluster", "cleanup", "reconcile", "backup", "erase", "prune"]),
+    type: z.enum([
+      "ingest",
+      "reembed",
+      "generate",
+      "cluster",
+      "cleanup",
+      "reconcile",
+      "backup",
+      "erase",
+      "prune",
+    ]),
     status: z.enum(["queued", "running", "done", "failed", "dead"]),
     attempts: z.number().int().nonnegative(),
     maxAttempts: z.number().int().min(1).max(10),
@@ -537,7 +632,9 @@ export type UserRecord = z.infer<typeof userSchema>;
 export type RoleRecord = z.infer<typeof roleSchema>;
 export type PermissionRecord = z.infer<typeof permissionSchema>;
 export type RolePermissionRecord = z.infer<typeof rolePermissionSchema>;
-export type UserPermissionOverrideRecord = z.infer<typeof userPermissionOverrideSchema>;
+export type UserPermissionOverrideRecord = z.infer<
+  typeof userPermissionOverrideSchema
+>;
 export type RefreshTokenRecord = z.infer<typeof refreshTokenSchema>;
 export type CoachRequestRecord = z.infer<typeof coachRequestSchema>;
 export type CourseRecord = z.infer<typeof courseSchema>;
@@ -658,7 +755,8 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "status", key: (record) => record.status },
         {
           name: "pendingUserId",
-          key: (record) => (record.status === "pending" ? record.userId : undefined),
+          key: (record) =>
+            record.status === "pending" ? record.userId : undefined,
           unique: true,
         },
       ],
@@ -706,7 +804,8 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "courseId", key: (record) => record.courseId },
         {
           name: "courseScopeOwner",
-          key: (record) => `${record.courseId}:${record.scope}:${record.ownerId}`,
+          key: (record) =>
+            `${record.courseId}:${record.scope}:${record.ownerId}`,
         },
         {
           name: "courseScopeOwnerHash",
@@ -727,7 +826,8 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "sourceHash", key: (record) => record.sourceHash },
         {
           name: "sourceHashVersion",
-          key: (record) => `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          key: (record) =>
+            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
           unique: true,
         },
         { name: "courseId", key: (record) => record.courseId },
@@ -742,7 +842,8 @@ export function registerSystemCollections(store: JsonStore): SystemCollections {
         { name: "sourceHash", key: (record) => record.sourceHash },
         {
           name: "sourceHashVersion",
-          key: (record) => `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
+          key: (record) =>
+            `${record.courseId}:${record.ownerId ?? "course"}:${record.sourceHash}:${record.version}`,
           unique: true,
         },
         { name: "courseId", key: (record) => record.courseId },

@@ -1,8 +1,9 @@
 import type { Pool } from "pg";
+import { repairApplicationRecordsMigrationSql } from "./007-repair-application-records";
 
-export const CURRENT_DATABASE_SCHEMA_VERSION = 6;
+export const CURRENT_DATABASE_SCHEMA_VERSION = 7;
 
-const migrationSql = `
+const runtimeStorageMigrationSql = `
 CREATE TABLE IF NOT EXISTS user_id_aliases (
   legacy_id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -103,6 +104,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS config_versions_version_unique
   ON config_versions (((payload->>'version')::integer));
 `;
 
+const migrations = [
+{ version: 6, sql: runtimeStorageMigrationSql },
+{ version: 7, sql: repairApplicationRecordsMigrationSql },
+];
+
 export async function runDatabaseMigrations(pool: Pool): Promise<number> {
   const client = await pool.connect();
   let transactionOpen = false;
@@ -125,17 +131,38 @@ export async function runDatabaseMigrations(pool: Pool): Promise<number> {
       );
     }
 
-    const applied = await client.query(
-      "SELECT 1 FROM schema_migrations WHERE version = $1",
-      [CURRENT_DATABASE_SCHEMA_VERSION],
+    const appliedResult = await client.query<{ version: number }>(
+      "SELECT version FROM schema_migrations WHERE version IN ($1, $2, $3)",
+      [5, 6, 7],
     );
-    if (applied.rowCount === 0) {
-      await client.query(migrationSql);
+    const appliedVersions = new Set(
+      appliedResult.rows.map((row) => row.version),
+    );
+    for (const version of [5, 6, 7]) {
+      if (currentVersion >= version && !appliedVersions.has(version)) {
+        throw new Error(
+          `Neon migration history is inconsistent; version ${version} is missing`,
+        );
+      }
+    }
+
+    for (const migration of migrations) {
+      if (appliedVersions.has(migration.version)) {
+        continue;
+      }
+      if (!appliedVersions.has(migration.version - 1)) {
+        throw new Error(
+          `Neon schema version ${migration.version - 1} is required before migration ${migration.version}`,
+        );
+      }
+      await client.query(migration.sql);
       await client.query(
         "INSERT INTO schema_migrations (version, applied_at) VALUES ($1, now())",
-        [CURRENT_DATABASE_SCHEMA_VERSION],
+        [migration.version],
       );
+      appliedVersions.add(migration.version);
     }
+
     await client.query("COMMIT");
     transactionOpen = false;
     return CURRENT_DATABASE_SCHEMA_VERSION;

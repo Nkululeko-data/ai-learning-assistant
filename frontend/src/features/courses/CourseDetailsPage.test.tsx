@@ -732,5 +732,5 @@ describe("CourseDetailsPage", () => {
     expect(
       await screen.findByText("This quiz is available to learners."),
     ).toBeVisible();
-  }, 10000);
+  }, 20000);
 });

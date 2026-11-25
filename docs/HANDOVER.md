@@ -36,8 +36,8 @@ npm run db:import-legacy
 npm run bootstrap
 ```
 
-The checked-in migration upgrades an existing Neon schema from version 5 to
-version 6; provisioning a new Neon database still requires the earlier schema.
+The checked-in migrations upgrade an existing Neon schema from version 5
+through version 7; provisioning a new Neon database still requires the earlier schema.
 The import is idempotent and preserves the source files. Skip it only when no
 legacy files need importing.
 

@@ -15,7 +15,10 @@ export const learningSelectionSchema = z
         message: "Document IDs must be unique",
       });
     }
-    if (selection.sections && new Set(selection.sections).size !== selection.sections.length) {
+    if (
+      selection.sections &&
+      new Set(selection.sections).size !== selection.sections.length
+    ) {
       context.addIssue({
         code: "custom",
         path: ["sections"],
@@ -58,7 +61,11 @@ export const generateQuizRequestSchema = z
     courseId: z.string().uuid(),
     selection: learningSelectionSchema,
     count: z.number().int().min(1).max(50).default(10),
-    types: z.array(z.enum(["mcq", "true_false"])).min(1).max(2).default(["mcq"]),
+    types: z
+      .array(z.enum(["mcq", "true_false"]))
+      .min(1)
+      .max(2)
+      .default(["mcq"]),
     difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
   })
   .strict()
@@ -93,8 +100,8 @@ const quizQuestionOutputSchema = z
   })
   .strict();
 
-export const quizQuestionContentSchema = quizQuestionOutputSchema
-  .superRefine((question, context) => {
+export const quizQuestionContentSchema = quizQuestionOutputSchema.superRefine(
+  (question, context) => {
     const optionIds = question.options.map((option) => option.id);
     if (new Set(optionIds).size !== optionIds.length) {
       context.addIssue({
@@ -122,6 +129,66 @@ export const quizQuestionContentSchema = quizQuestionOutputSchema
         message: "True/false questions require true and false options",
       });
     }
+  },
+);
+
+const manualQuizQuestionOptionSchema = z
+  .object({
+    id: z.string().trim().min(1).max(40),
+    text: z.string().trim().max(500),
+  })
+  .strict();
+
+const manualQuizQuestionBase = {
+  id: z.string().min(1).max(100).optional(),
+  prompt: z.string().trim().max(2000),
+  options: z.array(manualQuizQuestionOptionSchema).max(5),
+  explanation: z.string().trim().max(2000).optional(),
+};
+
+export const manualQuizQuestionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...manualQuizQuestionBase,
+      type: z.literal("mcq"),
+      correctOptionId: z.string().max(40).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...manualQuizQuestionBase,
+      type: z.literal("multiple_choice"),
+      correctOptionIds: z.array(z.string().min(1).max(40)).max(5),
+    })
+    .strict(),
+  z
+    .object({
+      ...manualQuizQuestionBase,
+      type: z.literal("true_false"),
+      correctOptionId: z.string().max(40).optional(),
+    })
+    .strict(),
+]);
+
+export const createManualQuizRequestSchema = z
+  .object({
+    courseId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
+    questions: z.array(manualQuizQuestionSchema).max(50),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const ids = request.questions
+      .map((question) => question.id)
+      .filter((id): id is string => id !== undefined);
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["questions"],
+        message: "Question IDs must be unique",
+      });
+    }
   });
 
 export const createQuizRequestSchema = z
@@ -134,7 +201,8 @@ export const createQuizRequestSchema = z
   .strict()
   .superRefine((request, context) => {
     if (
-      new Set(request.sourceDocumentIds).size !== request.sourceDocumentIds.length
+      new Set(request.sourceDocumentIds).size !==
+      request.sourceDocumentIds.length
     ) {
       context.addIssue({
         code: "custom",
@@ -148,13 +216,32 @@ export const updateQuizRequestSchema = z
   .object({
     version: z.number().int().positive(),
     title: z.string().trim().min(1).max(200).optional(),
-    questions: z.array(quizQuestionContentSchema).min(1).max(50).optional(),
+    description: z.string().trim().max(2000).optional(),
+    questions: z
+      .array(z.union([quizQuestionContentSchema, manualQuizQuestionSchema]))
+      .max(50)
+      .optional(),
   })
   .strict()
   .refine(
-    (request) => request.title !== undefined || request.questions !== undefined,
+    (request) =>
+      request.title !== undefined ||
+      request.description !== undefined ||
+      request.questions !== undefined,
     "At least one editable quiz field is required",
-  );
+  )
+  .superRefine((request, context) => {
+    const ids = (request.questions ?? []).flatMap((question) =>
+      "id" in question && question.id ? [question.id] : [],
+    );
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["questions"],
+        message: "Question IDs must be unique",
+      });
+    }
+  });
 
 export const publishContentRequestSchema = z
   .object({ version: z.number().int().positive() })
@@ -164,12 +251,23 @@ export const quizAttemptRequestSchema = z
   .object({
     answers: z
       .array(
-        z
-          .object({
-            questionId: z.string().min(1).max(100),
-            selectedOptionId: z.string().min(1).max(40),
-          })
-          .strict(),
+        z.union([
+          z
+            .object({
+              questionId: z.string().min(1).max(100),
+              selectedOptionId: z.string().min(1).max(40),
+            })
+            .strict(),
+          z
+            .object({
+              questionId: z.string().min(1).max(100),
+              selectedOptionIds: z
+                .array(z.string().min(1).max(40))
+                .min(1)
+                .max(5),
+            })
+            .strict(),
+        ]),
       )
       .min(1)
       .max(50),
@@ -184,12 +282,28 @@ export const quizAttemptRequestSchema = z
         message: "Each question may be answered only once",
       });
     }
+    request.answers.forEach((answer, index) => {
+      if (
+        "selectedOptionIds" in answer &&
+        new Set(answer.selectedOptionIds).size !==
+          answer.selectedOptionIds.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["answers", index, "selectedOptionIds"],
+          message: "Selected option IDs must be unique",
+        });
+      }
+    });
   });
 
 export const learningListQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(20),
-    cursor: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+    cursor: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/)
+      .optional(),
   })
   .strict();
 
@@ -245,3 +359,8 @@ export type GenerateFlashcardsRequest = z.infer<
 >;
 export type GenerateQuizRequest = z.infer<typeof generateQuizRequestSchema>;
 export type QuizQuestionContent = z.infer<typeof quizQuestionContentSchema>;
+export type ManualQuizQuestion = z.infer<typeof manualQuizQuestionSchema>;
+export type UpdateQuizQuestion = QuizQuestionContent | ManualQuizQuestion;
+export type QuizAttemptAnswer = z.infer<
+  typeof quizAttemptRequestSchema
+>["answers"][number];
