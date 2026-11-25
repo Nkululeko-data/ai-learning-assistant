@@ -71,7 +71,7 @@ test("B10 hides aggregate insights below the minimum cohort size", async () => {
     citedCourseDocumentIds: [],
   });
 
-  const insights = service.getInsights(coach, course.id);
+  const insights = await service.getInsights(coach, course.id);
   expect(insights.cohortQualified).toBe(false);
   expect(insights.questionCount).toBeNull();
   expect(insights.insufficientQuestionCount).toBeNull();

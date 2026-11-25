@@ -3,6 +3,7 @@ import { JobExecutionError } from "../jobs/job.service";
 import type { JobRecord } from "../../infra/jsonstore/system-collections";
 import type { DocumentRepository } from "./document.types";
 import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import type { UploadStorage } from "../../infra/storage/upload-storage";
 import { chunkDocumentPages } from "./document.chunker";
 import { extractDocumentText, type ExtractionResult } from "./document.extractors";
 import {
@@ -25,15 +26,25 @@ const minimumPdfTextCharacters = 50;
  * Runs extraction, chunking, embedding and idempotent document cleanup jobs.
  */
 export class DocumentIngestionService {
+  private readonly chunks: ChunkRepository;
+
   public constructor(
     private readonly repository: DocumentRepository,
-    private readonly storage: PrivateFileStorage,
+    private readonly storage: UploadStorage,
     private readonly embeddings: DocumentEmbeddingProvider,
     private readonly chunkSizeTokens: number,
     private readonly chunkOverlapTokens: number,
     private readonly maxExtractedTextBytes: number,
-    private readonly chunks: ChunkRepository = new JsonChunkRepository(storage),
-  ) {}
+    chunks?: ChunkRepository,
+  ) {
+    if (chunks) {
+      this.chunks = chunks;
+    } else if (storage instanceof PrivateFileStorage) {
+      this.chunks = new JsonChunkRepository(storage);
+    } else {
+      throw new Error("A chunk repository is required with remote upload storage");
+    }
+  }
 
   /**
    * Processes a document and persists ready metadata only after atomic chunk storage.

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { AsyncMutex } from "../../infra/jsonstore/async-mutex";
-import { withCourseContentMutationLock } from "../../infra/jsonstore/course-content-mutex";
 import {
   courseSchema,
   enrolmentSchema,
@@ -72,15 +71,23 @@ interface RoleRow extends QueryResultRow {
  */
 export class PgCourseRepository implements CourseRepository {
   private readonly mutationMutex = new AsyncMutex();
+  private readonly findDocument: (
+    id: string,
+  ) => Promise<DocumentRecord | null>;
 
   public constructor(
     private readonly pool: Pool,
-    private readonly collections: SystemCollections,
-    private readonly findDocument: (
-      id: string,
-    ) => Promise<DocumentRecord | null> = async (id) =>
-      collections.documents.getById(id),
-  ) {}
+    collectionsOrFindDocument?:
+      | SystemCollections
+      | ((id: string) => Promise<DocumentRecord | null>),
+    findDocument?: (id: string) => Promise<DocumentRecord | null>,
+  ) {
+    this.findDocument =
+      typeof collectionsOrFindDocument === "function"
+        ? collectionsOrFindDocument
+        : findDocument ??
+          (async (id) => collectionsOrFindDocument?.documents.getById(id) ?? null);
+  }
 
   public withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
     return this.mutationMutex.runExclusive(operation);
@@ -89,7 +96,47 @@ export class PgCourseRepository implements CourseRepository {
   public withCourseContentMutationLock<T>(
     operation: () => Promise<T>,
   ): Promise<T> {
-    return withCourseContentMutationLock(this.collections, operation);
+    return this.withSharedCourseContentLock(operation);
+  }
+
+  private async withSharedCourseContentLock<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    let acquired = false;
+    let succeeded = false;
+    let result!: T;
+    let operationError: unknown;
+    let unlockError: unknown;
+    try {
+      await client.query("SELECT pg_advisory_lock($1, $2)", [1_094_853_441, 5]);
+      acquired = true;
+      result = await operation();
+      succeeded = true;
+    } catch (error) {
+      operationError = error;
+    }
+    if (acquired) {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1, $2)", [
+          1_094_853_441,
+          5,
+        ]);
+      } catch (error) {
+        unlockError = error;
+      }
+    }
+    client.release(unlockError instanceof Error ? unlockError : undefined);
+    if (operationError !== undefined && unlockError !== undefined) {
+      throw new AggregateError(
+        [operationError, unlockError],
+        "Course content mutation failed and its shared lock could not be released",
+      );
+    }
+    if (operationError !== undefined) throw operationError;
+    if (unlockError !== undefined) throw unlockError;
+    if (!succeeded) throw new Error("Course content mutation did not complete");
+    return result;
   }
 
   public async findCourseById(id: string): Promise<CourseRecord | null> {

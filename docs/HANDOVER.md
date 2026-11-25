@@ -2,13 +2,16 @@
 
 ## Deployment target
 
-The approved release target is a **single Node.js 22 container** with one
-persistent volume mounted at `/app/backend/data`. This target is intentional:
-the JSON store is a single-writer implementation and must not be horizontally
-scaled or shared by multiple backend processes.
+The backend runs in a Node.js 22 container and connects to PostgreSQL and
+MongoDB Atlas. Multiple backend instances can use the same databases, but
+multi-instance operation still needs deployment-level validation. Rate limits
+and effective admin insight settings are process-local. The container's
+`/app/backend/data` volume is for legacy migration inputs and backups, not
+shared runtime persistence.
 
-AWS or Azure container deployment is acceptable only if the volume remains
-private, persistent, and attached to one backend instance.
+Configure every instance with the same `DATABASE_URL`, `MONGODB_URI`,
+`MONGODB_DB_NAME`, `JWT_ACCESS_SECRET`, and `JWT_REFRESH_SECRET`. Keep provider
+keys in each deployment's secret manager.
 
 ## Build and run
 
@@ -20,11 +23,10 @@ docker compose up -d
 docker compose logs -f backend
 ```
 
-The container expects `backend/.env` to contain distinct JWT secrets and all
-provider keys needed by the deployment. It also requires
-`BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`.
+The container expects `backend/.env` to contain the shared database targets,
+JWT secrets, and provider keys needed by the deployment.
 
-Before first start, seed the initial system:
+For a new, empty database only, seed the initial system once:
 
 ```powershell
 Set-Location backend
@@ -35,12 +37,27 @@ npm run bootstrap
 The API health endpoint is `/health`. Readiness is `/ready`. Swagger UI is
 served at `/api/docs`, with the published contract at `/openapi.json`.
 
-## Data and backup
+## Data migration and backup
 
-The persistent volume contains JSON collections, SQLite conversations, private
-uploads and backups. Stop writers before restoring an offline snapshot.
+Choose one device as the source for legacy data. Stop all backend instances,
+then run the JSON-to-Neon and JSON-to-Mongo dry runs and imports from that
+device only:
 
-Create a snapshot:
+```powershell
+Set-Location backend
+npm run migrate:json-to-neon -- --dry-run
+npm run migrate:json-to-mongo -- --dry-run
+npm run migrate:json-to-neon
+npm run migrate:json-to-mongo
+```
+
+The migration scripts keep source data and create local backups. The generic
+`npm run backup` and `npm run restore` scripts snapshot/restore only legacy
+`json`, `sqlite`, and `uploads` directories; they do **not** back up or restore
+PostgreSQL or MongoDB. Use Neon and Atlas backup/restore facilities for shared
+runtime data.
+
+Create a legacy-source snapshot if needed:
 
 ```powershell
 Set-Location backend
@@ -55,16 +72,17 @@ Restore an explicit snapshot:
 npm run restore -- "C:\absolute\path\to\snapshot" --yes
 ```
 
-Restore replaces only `json`, `sqlite`, and `uploads` under `DATA_DIR`. It does
-not erase the configured `.env` or unrelated files. Backups contain learner
-content and credentials-derived data; they must be encrypted and access
-controlled by the deployment platform.
+Restore replaces only legacy `json`, `sqlite`, and `uploads` under `DATA_DIR`.
+It does not restore the shared databases or erase `.env`. Backups contain
+learner content and credential-derived data; encrypt them and restrict access.
 
 ## Operations
 
-- Run exactly one backend instance against each data directory.
-- Mount persistent storage before bootstrap or the first start.
-- Do not copy or share `data/` across instances.
+- Do not run imports independently from multiple devices into the same shared
+  database. Use one authoritative source.
+- Keep each instance's `DATA_DIR` local; do not share it between instances.
+- Apply admin insight-setting changes on every running instance.
+- Rate limits are per instance, not aggregated across backends.
 - Do not enable LangSmith/LangChain tracing in production.
 - Prune or retain backups according to the privacy notice. Erased users remain
   represented in older backups until those snapshots expire.
@@ -84,13 +102,12 @@ controlled by the deployment platform.
 
 ## Known limitations
 
-- JSON storage is one-process, single-writer storage.
-- No horizontal scaling is supported until storage is migrated.
+- Multi-instance database usage is wired but not yet validated under deployment
+  load; test concurrent job workers and database connection limits.
+- Rate limits and effective admin insight settings are process-local.
 - Inception API support is scheduled to end December 28, 2026; test a replacement
   provider before that date.
 - The offline AI evaluation suite verifies deterministic citation and grounding
   behavior only. Semantic faithfulness requires a separately approved live
   evaluation dataset.
-- Docker image builds are verified, but this Windows Docker Desktop host showed
-  a native `better-sqlite3` crash during container startup. Re-test
-  `/health` and `/ready` on the deployment Linux host before release.
+- Re-test `/health` and `/ready` on the target deployment host before release.

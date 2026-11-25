@@ -51,9 +51,9 @@ describeWithTestDatabase("PostgreSQL migrations", () => {
   test("applies migrations idempotently and rejects duplicate pending coach requests", async () => {
     const migrationsDirectory = resolve(__dirname, "../../migrations");
     expect(await runMigrations(migrationPool, migrationsDirectory)).toEqual([
-      1, 2, 3, 4,
+      1, 2, 3, 4, 5,
     ]);
-    expect(await getSchemaVersion(migrationPool)).toBe(4);
+    expect(await getSchemaVersion(migrationPool)).toBe(5);
     expect(await runMigrations(migrationPool, migrationsDirectory)).toEqual([]);
 
     const roleId = randomUUID();

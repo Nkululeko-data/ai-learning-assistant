@@ -47,6 +47,14 @@ export async function ensureMongoIndexes(database: Db): Promise<void> {
       { taskName: 1 },
       { name: "scheduler_task_name", unique: true },
     ),
+    database.collection("uploads.files").createIndex(
+      { "metadata.storageKey": 1 },
+      {
+        name: "uploads_storage_key",
+        unique: true,
+        partialFilterExpression: { "metadata.storageKey": { $type: "string" } },
+      },
+    ),
   ]);
 }
 

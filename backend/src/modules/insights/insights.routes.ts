@@ -23,9 +23,9 @@ export function createInsightsRouter(dependencies: InsightsRouteDependencies): R
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("insights:view"),
-    (request, response) => {
+    async (request, response) => {
       response.status(200).json({
-        data: dependencies.insightsService.getInsights(
+        data: await dependencies.insightsService.getInsights(
           requireAuthContext(request),
           requireUuidParam(request, "courseId"),
         ),
@@ -38,9 +38,9 @@ export function createInsightsRouter(dependencies: InsightsRouteDependencies): R
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("insights:view"),
-    (request, response) => {
+    async (request, response) => {
       response.status(200).json({
-        data: dependencies.insightsService.getLatestGapReport(
+        data: await dependencies.insightsService.getLatestGapReport(
           requireAuthContext(request),
           requireUuidParam(request, "courseId"),
         ),

@@ -20,7 +20,7 @@ import type { DocumentEmbeddingProvider } from "../documents/mistral-embedding.p
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { RetrievalService } from "../retrieval/retrieval.service";
 import {
-  ConversationRepository,
+  type ConversationStore,
   type ConversationMessageRecord,
   type ConversationRecord,
 } from "../../infra/sqlite/conversation.repository";
@@ -47,7 +47,7 @@ export interface AskChatResult {
 
 export class ChatService {
   public constructor(
-    private readonly repository: ConversationRepository,
+    private readonly repository: ConversationStore,
     private readonly executionRecorder: ChatExecutionRecorder,
     private readonly retrievalService: RetrievalService,
     private readonly embeddingProvider: DocumentEmbeddingProvider,
@@ -66,7 +66,7 @@ export class ChatService {
   ): Promise<AskChatResult> {
     await this.retrievalService.assertCourseAccess(actor, input.courseId);
     const existingConversation = input.conversationId
-      ? this.requireOwnedConversation(actor.id, input.conversationId)
+      ? await this.requireOwnedConversation(actor.id, input.conversationId)
       : null;
     if (
       existingConversation &&
@@ -77,13 +77,13 @@ export class ChatService {
 
     const usageDate = new Date().toISOString().slice(0, 10);
     if (
-      this.repository.dailyTokenUsage(actor.id, usageDate) >=
+      (await this.repository.dailyTokenUsage(actor.id, usageDate)) >=
         this.config.chatDailyTokenLimit ||
-      !this.repository.reserveDailyRequest(
+      !(await this.repository.reserveDailyRequest(
         actor.id,
         usageDate,
         this.config.chatDailyRequestLimit,
-      )
+      ))
     ) {
       throw new AppError(
         "QUOTA_EXCEEDED",
@@ -95,7 +95,7 @@ export class ChatService {
     const conversationId = existingConversation?.id ?? randomUUID();
     const executionId = randomUUID();
     const historyMessages = existingConversation
-      ? this.repository.getRecentMessages(
+      ? await this.repository.getRecentMessages(
           conversationId,
           this.config.chatHistoryWindow * 2,
         )
@@ -144,7 +144,7 @@ export class ChatService {
       ? "Use the corresponding learning-content endpoint for this request."
       : result.message;
     const storedAnswer = result.answer ?? message ?? "";
-    const savedMessages = this.repository.saveExchange({
+    const savedMessages = await this.repository.saveExchange({
       conversationId,
       userId: actor.id,
       courseId: input.courseId,
@@ -192,12 +192,12 @@ export class ChatService {
     };
   }
 
-  public listConversations(
+  public async listConversations(
     actor: AuthenticatedUser,
     courseId: string | undefined,
     limit: number,
     cursor: string | undefined,
-  ): { items: ConversationRecord[]; nextCursor?: string } {
+  ): Promise<{ items: ConversationRecord[]; nextCursor?: string }> {
     const cursorId = cursor ? decodeConversationCursor(cursor) : undefined;
     return this.repository.listConversations(
       actor.id,
@@ -207,44 +207,44 @@ export class ChatService {
     );
   }
 
-  public getConversation(
+  public async getConversation(
     actor: AuthenticatedUser,
     conversationId: string,
-  ): { conversation: ConversationRecord; messages: ConversationMessageRecord[] } {
-    const conversation = this.requireOwnedConversation(actor.id, conversationId);
+  ): Promise<{ conversation: ConversationRecord; messages: ConversationMessageRecord[] }> {
+    const conversation = await this.requireOwnedConversation(actor.id, conversationId);
     return {
       conversation,
-      messages: this.repository.listMessages(conversationId),
+      messages: await this.repository.listMessages(conversationId),
     };
   }
 
-  public updateConversationTitle(
+  public async updateConversationTitle(
     actor: AuthenticatedUser,
     conversationId: string,
     title: string,
-  ): ConversationRecord {
-    this.requireOwnedConversation(actor.id, conversationId);
-    if (!this.repository.updateTitle(conversationId, actor.id, title)) {
+  ): Promise<ConversationRecord> {
+    await this.requireOwnedConversation(actor.id, conversationId);
+    if (!(await this.repository.updateTitle(conversationId, actor.id, title))) {
       throw new NotFoundError("Conversation not found");
     }
     return this.requireOwnedConversation(actor.id, conversationId);
   }
 
-  public deleteConversation(
+  public async deleteConversation(
     actor: AuthenticatedUser,
     conversationId: string,
-  ): void {
-    this.requireOwnedConversation(actor.id, conversationId);
-    if (!this.repository.deleteConversation(conversationId, actor.id)) {
+  ): Promise<void> {
+    await this.requireOwnedConversation(actor.id, conversationId);
+    if (!(await this.repository.deleteConversation(conversationId, actor.id))) {
       throw new NotFoundError("Conversation not found");
     }
   }
 
-  private requireOwnedConversation(
+  private async requireOwnedConversation(
     userId: string,
     conversationId: string,
-  ): ConversationRecord {
-    const conversation = this.repository.findConversation(conversationId);
+  ): Promise<ConversationRecord> {
+    const conversation = await this.repository.findConversation(conversationId);
     if (!conversation || conversation.userId !== userId) {
       throw new NotFoundError("Conversation not found");
     }

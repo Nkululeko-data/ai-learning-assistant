@@ -24,9 +24,9 @@ import type {
   QuizAttemptRecord,
   QuizRecord,
 } from "../../infra/jsonstore/system-collections";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
-import type { JsonLearningExecutionRepository } from "./learning-execution.repository";
-import { LearningRepository } from "./learning.repository";
+import type { DailyUsageRepository } from "../../infra/sqlite/conversation.repository";
+import type { LearningExecutionRecorder } from "./learning-execution.repository";
+import type { LearningRepositoryPort } from "./learning.repository";
 
 type LearningVisibility = "course" | "private";
 type LearningContentKind = "summary" | "flashcards" | "quiz";
@@ -85,12 +85,12 @@ export interface QuizAttemptResult {
 
 export class LearningService {
   public constructor(
-    private readonly repository: LearningRepository,
+    private readonly repository: LearningRepositoryPort,
     private readonly retrievalService: RetrievalService,
     private readonly embeddingProvider: DocumentEmbeddingProvider,
     private readonly structuredOutput: StructuredOutputService,
-    private readonly executionRecorder: JsonLearningExecutionRepository,
-    private readonly usageRepository: ConversationRepository,
+    private readonly executionRecorder: LearningExecutionRecorder,
+    private readonly usageRepository: DailyUsageRepository,
     private readonly config: AppConfig,
     private readonly promptTemplate: string,
   ) {}
@@ -117,7 +117,7 @@ export class LearningService {
     const visibility = visibilityFor(actor);
     const ownerId = ownerFor(actor);
     const cached = findReusable(
-      this.repository.listSummaries(input.courseId),
+      await this.repository.listSummaries(input.courseId),
       prepared.sourceHash,
       ownerId,
       visibility,
@@ -148,7 +148,7 @@ export class LearningService {
     return this.repository.withMutationLock(async () => {
       if (!input.regenerate) {
         const concurrent = findReusable(
-          this.repository.listSummaries(input.courseId),
+          await this.repository.listSummaries(input.courseId),
           prepared.sourceHash,
           ownerId,
           visibility,
@@ -158,8 +158,8 @@ export class LearningService {
       const version =
         Math.max(
           0,
-          ...this.repository
-            .listSummaries(input.courseId)
+          ...(await this.repository
+            .listSummaries(input.courseId))
             .filter(
               (summary) =>
                 summary.sourceHash === prepared.sourceHash &&
@@ -213,7 +213,7 @@ export class LearningService {
     const visibility = visibilityFor(actor);
     const ownerId = ownerFor(actor);
     const cached = findReusable(
-      this.repository.listFlashcardSets(input.courseId),
+      await this.repository.listFlashcardSets(input.courseId),
       prepared.sourceHash,
       ownerId,
       visibility,
@@ -249,7 +249,7 @@ export class LearningService {
     return this.repository.withMutationLock(async () => {
       if (!input.regenerate) {
         const concurrent = findReusable(
-          this.repository.listFlashcardSets(input.courseId),
+          await this.repository.listFlashcardSets(input.courseId),
           prepared.sourceHash,
           ownerId,
           visibility,
@@ -259,8 +259,8 @@ export class LearningService {
       const version =
         Math.max(
           0,
-          ...this.repository
-            .listFlashcardSets(input.courseId)
+          ...(await this.repository
+            .listFlashcardSets(input.courseId))
             .filter(
               (set) =>
                 set.sourceHash === prepared.sourceHash &&
@@ -464,7 +464,7 @@ export class LearningService {
         ),
         updatedAt: new Date().toISOString(),
       };
-      const attempts = this.repository.listAttemptsByQuiz(quiz.id);
+      const attempts = await this.repository.listAttemptsByQuiz(quiz.id);
       let updated: QuizRecord;
       if (quiz.status === "published" && attempts.length > 0) {
         const next = await this.repository.createQuiz({
@@ -550,8 +550,8 @@ export class LearningService {
     nextCursor?: string;
   }> {
     await this.retrievalService.assertCourseAccess(actor, courseId);
-    const records = this.repository
-      .listQuizzes(courseId)
+    const records = (await this.repository
+      .listQuizzes(courseId))
       .filter((quiz) => this.canViewQuiz(actor, quiz))
       .sort((left, right) => left.id.localeCompare(right.id));
     const page = paginate(records, limit, cursor);
@@ -565,7 +565,7 @@ export class LearningService {
     actor: AuthenticatedUser,
     quizId: string,
   ): Promise<QuizRecord | QuizLearnerView> {
-    const quiz = this.repository.getQuiz(quizId);
+    const quiz = await this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
     await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
     if (!this.canViewQuiz(actor, quiz))
@@ -578,7 +578,7 @@ export class LearningService {
     quizId: string,
     answers: Array<{ questionId: string; selectedOptionId: string }>,
   ): Promise<QuizAttemptResult> {
-    const quiz = this.repository.getQuiz(quizId);
+    const quiz = await this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
     await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
     if (
@@ -646,13 +646,13 @@ export class LearningService {
     return { attempt, results };
   }
 
-  public listMyQuizAttempts(
+  public async listMyQuizAttempts(
     actor: AuthenticatedUser,
     limit: number,
     cursor?: string,
-  ): { items: QuizAttemptRecord[]; nextCursor?: string } {
-    const records = this.repository
-      .listAttemptsByUser(actor.id)
+  ): Promise<{ items: QuizAttemptRecord[]; nextCursor?: string }> {
+    const records = (await this.repository
+      .listAttemptsByUser(actor.id))
       .sort((left, right) => left.id.localeCompare(right.id));
     return paginate(records, limit, cursor);
   }
@@ -664,7 +664,7 @@ export class LearningService {
     requestId: string,
   ): Promise<LearningSummaryRecord> {
     return this.repository.withMutationLock(async () => {
-      const summary = this.repository.getSummary(summaryId);
+      const summary = await this.repository.getSummary(summaryId);
       if (!summary) throw new NotFoundError("Summary not found");
       await this.requireCourseOwner(actor, summary.courseId);
       if (summary.version !== version) {
@@ -698,7 +698,7 @@ export class LearningService {
     requestId: string,
   ): Promise<FlashcardRecord> {
     return this.repository.withMutationLock(async () => {
-      const flashcards = this.repository.getFlashcardSet(flashcardId);
+      const flashcards = await this.repository.getFlashcardSet(flashcardId);
       if (!flashcards) throw new NotFoundError("Flashcard set not found");
       await this.requireCourseOwner(actor, flashcards.courseId);
       if (flashcards.version !== version) {
@@ -732,8 +732,8 @@ export class LearningService {
     cursor?: string,
   ): Promise<{ items: LearningSummaryRecord[]; nextCursor?: string }> {
     await this.retrievalService.assertCourseAccess(actor, courseId);
-    const records = this.repository
-      .listSummaries(courseId)
+    const records = (await this.repository
+      .listSummaries(courseId))
       .filter((summary) => canViewLearning(actor, summary))
       .sort((left, right) => left.id.localeCompare(right.id));
     return paginate(records, limit, cursor);
@@ -743,7 +743,7 @@ export class LearningService {
     actor: AuthenticatedUser,
     summaryId: string,
   ): Promise<LearningSummaryRecord> {
-    const summary = this.repository.getSummary(summaryId);
+    const summary = await this.repository.getSummary(summaryId);
     if (!summary) throw new NotFoundError("Summary not found");
     await this.retrievalService.assertCourseAccess(actor, summary.courseId);
     if (!canViewLearning(actor, summary)) {
@@ -759,8 +759,8 @@ export class LearningService {
     cursor?: string,
   ): Promise<{ items: FlashcardRecord[]; nextCursor?: string }> {
     await this.retrievalService.assertCourseAccess(actor, courseId);
-    const records = this.repository
-      .listFlashcardSets(courseId)
+    const records = (await this.repository
+      .listFlashcardSets(courseId))
       .filter((flashcards) => canViewLearning(actor, flashcards))
       .sort((left, right) => left.id.localeCompare(right.id));
     return paginate(records, limit, cursor);
@@ -770,7 +770,7 @@ export class LearningService {
     actor: AuthenticatedUser,
     flashcardId: string,
   ): Promise<FlashcardRecord> {
-    const flashcards = this.repository.getFlashcardSet(flashcardId);
+    const flashcards = await this.repository.getFlashcardSet(flashcardId);
     if (!flashcards) throw new NotFoundError("Flashcard set not found");
     await this.retrievalService.assertCourseAccess(actor, flashcards.courseId);
     if (!canViewLearning(actor, flashcards)) {
@@ -886,13 +886,13 @@ export class LearningService {
   }> {
     const usageDate = new Date().toISOString().slice(0, 10);
     if (
-      this.usageRepository.dailyTokenUsage(actor.id, usageDate) >=
+      (await this.usageRepository.dailyTokenUsage(actor.id, usageDate)) >=
         this.config.chatDailyTokenLimit ||
-      !this.usageRepository.reserveDailyRequest(
+      !(await this.usageRepository.reserveDailyRequest(
         actor.id,
         usageDate,
         this.config.chatDailyRequestLimit,
-      )
+      ))
     ) {
       throw new AppError(
         "QUOTA_EXCEEDED",
@@ -1022,7 +1022,7 @@ export class LearningService {
     actor: AuthenticatedUser,
     quizId: string,
   ): Promise<QuizRecord> {
-    const quiz = this.repository.getQuiz(quizId);
+    const quiz = await this.repository.getQuiz(quizId);
     if (!quiz) throw new NotFoundError("Quiz not found");
     await this.requireCourseOwner(actor, quiz.courseId);
     if (quiz.origin !== "coach") throw new NotFoundError("Quiz not found");

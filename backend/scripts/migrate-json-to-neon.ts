@@ -16,10 +16,19 @@ import { runMigrations } from "../src/infra/postgres/migrate";
 import { createPostgresPool } from "../src/infra/postgres/pool";
 import {
   auditLogSchema,
+  activityEventSchema,
+  agentExecutionSchema,
   coachRequestSchema,
+  configVersionSchema,
   courseSchema,
   enrolmentSchema,
+  feedbackSchema,
+  flashcardSchema,
+  gapReportSchema,
+  learningSummarySchema,
   permissionSchema,
+  quizAttemptSchema,
+  quizSchema,
   refreshTokenSchema,
   rolePermissionSchema,
   roleSchema,
@@ -38,9 +47,24 @@ const JSON_COLLECTIONS = [
   "audit_logs",
   "courses",
   "enrolments",
+  "learning_summaries",
+  "flashcards",
+  "quizzes",
+  "quiz_attempts",
+  "feedback",
+  "activity_events",
+  "gap_reports",
+  "config_versions",
+  "agent_executions",
 ] as const;
 const BACKUP_DIRECTORIES = ["json", "sqlite", "uploads"] as const;
-const JSONB_COLUMNS = new Set(["lessons", "before", "after", "citations"]);
+const JSONB_COLUMNS = new Set([
+  "lessons",
+  "before",
+  "after",
+  "citations",
+  "payload",
+]);
 const BATCH_SIZE = 250;
 
 const citationSchema = z
@@ -143,6 +167,15 @@ interface MigrationSource {
   auditLogs: z.infer<typeof auditLogSchema>[];
   courses: z.infer<typeof courseSchema>[];
   enrolments: z.infer<typeof enrolmentSchema>[];
+  learningSummaries: z.infer<typeof learningSummarySchema>[];
+  flashcards: z.infer<typeof flashcardSchema>[];
+  quizzes: z.infer<typeof quizSchema>[];
+  quizAttempts: z.infer<typeof quizAttemptSchema>[];
+  feedback: z.infer<typeof feedbackSchema>[];
+  activityEvents: z.infer<typeof activityEventSchema>[];
+  gapReports: z.infer<typeof gapReportSchema>[];
+  configVersions: z.infer<typeof configVersionSchema>[];
+  agentExecutions: z.infer<typeof agentExecutionSchema>[];
   conversations: ConversationSource[];
   messages: MessageSource[];
 }
@@ -274,6 +307,15 @@ async function readMigrationSource(
     auditLogs,
     courses,
     enrolments,
+    learningSummaries,
+    flashcards,
+    quizzes,
+    quizAttempts,
+    feedback,
+    activityEvents,
+    gapReports,
+    configVersions,
+    agentExecutions,
   ] = await Promise.all([
     readJsonCollection(jsonDirectory, "roles", roleSchema),
     readJsonCollection(jsonDirectory, "permissions", permissionSchema),
@@ -289,6 +331,20 @@ async function readMigrationSource(
     readJsonCollection(jsonDirectory, "audit_logs", auditLogSchema),
     readJsonCollection(jsonDirectory, "courses", courseSchema),
     readJsonCollection(jsonDirectory, "enrolments", enrolmentSchema),
+    readJsonCollection(
+      jsonDirectory,
+      "learning_summaries",
+      learningSummarySchema,
+      false,
+    ),
+    readJsonCollection(jsonDirectory, "flashcards", flashcardSchema, false),
+    readJsonCollection(jsonDirectory, "quizzes", quizSchema, false),
+    readJsonCollection(jsonDirectory, "quiz_attempts", quizAttemptSchema, false),
+    readJsonCollection(jsonDirectory, "feedback", feedbackSchema, false),
+    readJsonCollection(jsonDirectory, "activity_events", activityEventSchema, false),
+    readJsonCollection(jsonDirectory, "gap_reports", gapReportSchema, false),
+    readJsonCollection(jsonDirectory, "config_versions", configVersionSchema, false),
+    readJsonCollection(jsonDirectory, "agent_executions", agentExecutionSchema, false),
   ]);
   const { conversations, messages } = await readSqliteConversations(dataDirectory);
   return {
@@ -302,6 +358,15 @@ async function readMigrationSource(
     auditLogs,
     courses,
     enrolments,
+    learningSummaries,
+    flashcards,
+    quizzes,
+    quizAttempts,
+    feedback,
+    activityEvents,
+    gapReports,
+    configVersions,
+    agentExecutions,
     conversations,
     messages,
   };
@@ -314,12 +379,14 @@ async function readJsonCollection<T extends { id: string }>(
   jsonDirectory: string,
   name: (typeof JSON_COLLECTIONS)[number],
   schema: z.ZodType<T>,
+  required = true,
 ): Promise<T[]> {
   let serialized: string;
   try {
     serialized = await readFile(join(jsonDirectory, `${name}.json`), "utf8");
   } catch (error) {
     if (isMissingPathError(error)) {
+      if (!required) return [];
       throw new Error(`Missing JSON migration collection: ${name}.json`);
     }
     throw error;
@@ -699,6 +766,66 @@ function buildTableMigrations(source: MigrationSource): TableMigration[] {
         row.createdAt,
         row.updatedAt,
       ]),
+    },
+    {
+      table: "learning_summaries",
+      columns: ["id", "payload"],
+      ids: source.learningSummaries.map((row) => row.id),
+      rows: source.learningSummaries.map((row) => [
+        row.id,
+        JSON.stringify(row),
+      ]),
+    },
+    {
+      table: "flashcards",
+      columns: ["id", "payload"],
+      ids: source.flashcards.map((row) => row.id),
+      rows: source.flashcards.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "quizzes",
+      columns: ["id", "payload"],
+      ids: source.quizzes.map((row) => row.id),
+      rows: source.quizzes.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "quiz_attempts",
+      columns: ["id", "payload"],
+      ids: source.quizAttempts.map((row) => row.id),
+      rows: source.quizAttempts.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "feedback",
+      columns: ["id", "payload"],
+      ids: source.feedback.map((row) => row.id),
+      rows: source.feedback.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "activity_events",
+      columns: ["id", "payload"],
+      ids: source.activityEvents.map((row) => row.id),
+      rows: source.activityEvents.map((row) => [
+        row.id,
+        JSON.stringify(row),
+      ]),
+    },
+    {
+      table: "gap_reports",
+      columns: ["id", "payload"],
+      ids: source.gapReports.map((row) => row.id),
+      rows: source.gapReports.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "config_versions",
+      columns: ["id", "payload"],
+      ids: source.configVersions.map((row) => row.id),
+      rows: source.configVersions.map((row) => [row.id, JSON.stringify(row)]),
+    },
+    {
+      table: "agent_executions",
+      columns: ["id", "payload"],
+      ids: source.agentExecutions.map((row) => row.id),
+      rows: source.agentExecutions.map((row) => [row.id, JSON.stringify(row)]),
     },
     {
       table: "audit_logs",

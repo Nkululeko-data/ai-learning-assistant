@@ -299,9 +299,9 @@ export function createLearningRouter(
     "/me/quiz-attempts",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = learningListQuerySchema.parse(request.query);
-      const page = dependencies.learningService.listMyQuizAttempts(
+      const page = await dependencies.learningService.listMyQuizAttempts(
         requireAuthContext(request),
         query.limit,
         query.cursor,

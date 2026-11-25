@@ -3,13 +3,14 @@ import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { writeJsonAtomically } from "../jsonstore/atomic-write";
+import type { UploadStorage } from "./upload-storage";
 
 const storageKeySchema = z.string().uuid();
 
 /**
  * Stores source uploads and per-document chunk files outside the public web root.
  */
-export class PrivateFileStorage {
+export class PrivateFileStorage implements UploadStorage {
   private readonly uploadDirectory: string;
   private readonly chunkDirectory: string;
   private readonly chunkCache = new Map<string, unknown>();

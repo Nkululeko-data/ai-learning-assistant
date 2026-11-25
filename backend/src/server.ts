@@ -6,11 +6,9 @@ import {
   type AppConfig,
 } from "./config/config";
 import { createLogger } from "./common/logging/logger";
-import {
-  isConversationDatabaseReady,
-  openConversationDatabase,
-} from "./infra/sqlite/database";
 import { createPostgresPool, isPostgresReady } from "./infra/postgres/pool";
+import { PgDailyUsageRepository } from "./infra/postgres/daily-usage.repository";
+import { PgConversationRepository } from "./infra/postgres/conversation.repository";
 import {
   EXPECTED_SCHEMA_VERSION,
   getSchemaVersion,
@@ -22,9 +20,7 @@ import {
 } from "./infra/mongo/ensure-indexes";
 import type { Pool } from "pg";
 import type { Db, MongoClient } from "mongodb";
-import { JsonStore } from "./infra/jsonstore/json-store";
-import { registerSystemCollections } from "./infra/jsonstore/system-collections";
-import { JsonAuthRepository } from "./modules/auth/auth.types";
+import { PgAuthRepository } from "./modules/auth/pg-auth.repository";
 import { AuthService } from "./modules/auth/auth.service";
 import { PgCourseRepository } from "./modules/courses/pg-course.repository";
 import { CourseService } from "./modules/courses/course.service";
@@ -47,8 +43,7 @@ import {
 import { DocumentService } from "./modules/documents/document.service";
 import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
 import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
-import { PrivateFileStorage } from "./infra/storage/private-file-storage";
-import { ConversationRepository } from "./infra/sqlite/conversation.repository";
+import { MongoUploadStorage } from "./infra/storage/mongo-upload-storage";
 import { ChatService } from "./modules/chat/chat.service";
 import { RetrievalService } from "./modules/retrieval/retrieval.service";
 import { InceptionProvider } from "./ai/providers/inception.provider";
@@ -56,19 +51,16 @@ import { GroqProvider } from "./ai/providers/groq.provider";
 import { StructuredOutputService } from "./ai/providers/structured-output.service";
 import { loadChatPrompts } from "./ai/prompts/load-chat-prompts";
 import { LangGraphChatRunner } from "./ai/graphs/chat.graph";
-import { JsonAgentExecutionRepository } from "./modules/chat/chat-execution.repository";
-import { LearningRepository } from "./modules/learning/learning.repository";
+import { PgAgentExecutionRepository } from "./modules/chat/pg-agent-execution.repository";
+import { PgLearningRepository } from "./modules/learning/pg-learning.repository";
 import { LearningService } from "./modules/learning/learning.service";
-import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
 import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
-import {
-  initializeSchemaMetadata,
-} from "./infra/jsonstore/schema-metadata";
-import { FeedbackRepository } from "./modules/feedback/feedback.repository";
+import { PgFeedbackRepository } from "./modules/feedback/pg-feedback.repository";
 import { FeedbackService } from "./modules/feedback/feedback.service";
-import { InsightsRepository } from "./modules/insights/insights.repository";
+import { PgInsightsRepository } from "./modules/insights/pg-insights.repository";
 import { InsightsService } from "./modules/insights/insights.service";
 import { AdminService } from "./modules/admin/admin.service";
+import { PgAdminRepository } from "./modules/admin/admin.repository";
 
 /**
  * Initializes storage, builds the API, and starts listening on the configured port.
@@ -114,19 +106,13 @@ export async function startServer(): Promise<Server> {
     }
     throw error;
   }
-  const store = new JsonStore(config.dataDir);
-  const collections = registerSystemCollections(store);
-  await store.initialize();
-  await initializeSchemaMetadata(store.jsonDirectory);
-  const database = openConversationDatabase(config.dataDir);
-  const authRepository = new JsonAuthRepository(collections);
+  const authRepository = new PgAuthRepository(postgresPool);
   const authService = new AuthService(authRepository, config, {
     allowRefreshTokenInBody: config.allowRefreshTokenInBody,
   });
   let documentRepository!: MongoDocumentRepository;
   const courseRepository = new PgCourseRepository(
     postgresPool,
-    collections,
     (id) => documentRepository.findDocument(id),
   );
   const courseService = new CourseService(
@@ -145,11 +131,7 @@ export async function startServer(): Promise<Server> {
   const chunkRepository = new MongoChunkRepository(
     mongoDatabase.collection<ChunkRecordDocument>("document_chunks"),
   );
-  const privateFileStorage = new PrivateFileStorage(
-    config.dataDir,
-    config.chunkCacheMaxDocuments,
-  );
-  await privateFileStorage.initialize();
+  const privateFileStorage = new MongoUploadStorage(mongoDatabase);
   const retrievalService = new RetrievalService(
     documentRepository,
     chunkRepository,
@@ -181,18 +163,19 @@ export async function startServer(): Promise<Server> {
     new GroqProvider(config.groqApiKey, config.groqModel),
     config.chatMaxCompletionTokens,
   );
-  const conversationRepository = new ConversationRepository(database);
+  const conversationRepository = new PgConversationRepository(postgresPool);
+  const usageRepository = new PgDailyUsageRepository(postgresPool);
   const feedbackService = new FeedbackService(
-    new FeedbackRepository(collections),
+    new PgFeedbackRepository(postgresPool),
     conversationRepository,
   );
   const insightsService = new InsightsService(
-    new InsightsRepository(collections),
+    new PgInsightsRepository(postgresPool, courseRepository),
     jobService,
     config,
   );
   const adminService = new AdminService(
-    collections,
+    undefined,
     conversationRepository,
     privateFileStorage,
     jobService,
@@ -200,10 +183,12 @@ export async function startServer(): Promise<Server> {
     documentRepository,
     chunkRepository,
     courseRepository,
+    authRepository,
+    new PgAdminRepository(postgresPool),
   );
-  const executionRepository = new JsonAgentExecutionRepository(
-    collections.agentExecutions,
-    conversationRepository,
+  const executionRepository = new PgAgentExecutionRepository(
+    postgresPool,
+    usageRepository,
   );
   const chatService = new ChatService(
     conversationRepository,
@@ -216,17 +201,14 @@ export async function startServer(): Promise<Server> {
     config,
     insightsService,
   );
-  const learningRepository = new LearningRepository(collections);
+  const learningRepository = new PgLearningRepository(postgresPool);
   const learningService = new LearningService(
     learningRepository,
     retrievalService,
     embeddingProvider,
     structuredOutput,
-    new JsonLearningExecutionRepository(
-      collections.agentExecutions,
-      conversationRepository,
-    ),
-    conversationRepository,
+    executionRepository,
+    usageRepository,
     config,
     await loadLearningPrompt(config.learningPromptVersion),
   );
@@ -304,8 +286,6 @@ export async function startServer(): Promise<Server> {
       ]);
       const postgresReady = schemaVersion !== undefined;
       return {
-        jsonStoreOpen: true,
-        sqliteOpen: isConversationDatabaseReady(database),
         postgresReady,
         mongoReady: mongoReady ?? false,
         schemaVersion: schemaVersion ?? 0,
@@ -328,7 +308,6 @@ export async function startServer(): Promise<Server> {
   jobScheduler.start();
   registerShutdownHandlers(
     server,
-    database,
     postgresPool,
     mongoClient,
     jobRunner,
@@ -402,7 +381,6 @@ function configureTracing(environment: AppConfig["environment"]): void {
  */
 function registerShutdownHandlers(
   server: Server,
-  database: ReturnType<typeof openConversationDatabase>,
   postgresPool: Pool,
   mongoClient: MongoClient,
   jobRunner: JobRunner,
@@ -439,13 +417,6 @@ function registerShutdownHandlers(
       } catch (error) {
         const errorName = error instanceof Error ? error.name : "UnknownError";
         logger.error({ signal, errorName }, "MongoDB shutdown failed");
-        process.exitCode = 1;
-      }
-      try {
-        database.close();
-      } catch (error) {
-        const errorName = error instanceof Error ? error.name : "UnknownError";
-        logger.error({ signal, errorName }, "SQLite shutdown failed");
         process.exitCode = 1;
       }
     })().catch((error: unknown) => {

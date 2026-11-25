@@ -8,7 +8,44 @@ import type {
   SystemCollections,
 } from "../../infra/jsonstore/system-collections";
 
-export class LearningRepository {
+type MaybePromise<T> = T | Promise<T>;
+
+export interface LearningRepositoryPort {
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+  getSummary(id: string): MaybePromise<LearningSummaryRecord | null>;
+  listSummaries(courseId: string): MaybePromise<LearningSummaryRecord[]>;
+  createSummary(input: Omit<LearningSummaryRecord, "id">): Promise<LearningSummaryRecord>;
+  updateSummary(
+    id: string,
+    update: (summary: LearningSummaryRecord) => LearningSummaryRecord,
+    expectedVersion?: number,
+  ): Promise<LearningSummaryRecord>;
+  getFlashcardSet(id: string): MaybePromise<FlashcardRecord | null>;
+  listFlashcardSets(courseId: string): MaybePromise<FlashcardRecord[]>;
+  createFlashcardSet(input: Omit<FlashcardRecord, "id">): Promise<FlashcardRecord>;
+  updateFlashcardSet(
+    id: string,
+    update: (flashcards: FlashcardRecord) => FlashcardRecord,
+    expectedVersion?: number,
+  ): Promise<FlashcardRecord>;
+  getQuiz(id: string): MaybePromise<QuizRecord | null>;
+  listQuizzes(courseId: string): MaybePromise<QuizRecord[]>;
+  createQuiz(input: Omit<QuizRecord, "id">): Promise<QuizRecord>;
+  updateQuiz(
+    id: string,
+    update: (quiz: QuizRecord) => QuizRecord,
+    expectedVersion?: number,
+  ): Promise<QuizRecord>;
+  removeQuiz(id: string): Promise<void>;
+  listAttemptsByQuiz(quizId: string): MaybePromise<QuizAttemptRecord[]>;
+  listAttemptsByUser(userId: string): MaybePromise<QuizAttemptRecord[]>;
+  createAttempt(input: Omit<QuizAttemptRecord, "id">): Promise<QuizAttemptRecord>;
+  createAudit(
+    input: Omit<AuditLogRecord, "id" | "createdAt">,
+  ): Promise<AuditLogRecord>;
+}
+
+export class LearningRepository implements LearningRepositoryPort {
   private readonly mutationMutex = new AsyncMutex();
 
   public constructor(private readonly collections: SystemCollections) {}

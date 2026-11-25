@@ -1,5 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import {
   cp,
   mkdir,
@@ -9,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import type { Db, Document as MongoDocument } from "mongodb";
+import { GridFSBucket, type Db, type Document as MongoDocument } from "mongodb";
 import { z } from "zod";
 import { loadConfig } from "../src/config/config";
 import {
@@ -49,14 +51,23 @@ export interface MongoMigrationResult {
     documentChunks: number;
     jobs: number;
     schedulerState: number;
+    uploads: number;
   };
 }
 
 interface MongoMigrationSource {
   documents: DocumentRecord[];
+  uploads: PrivateUploadSource[];
   chunks: ChunkRecord[];
   jobs: JobRecord[];
   schedulerState: SchedulerStateRecord[];
+}
+
+interface PrivateUploadSource {
+  storageKey: string;
+  filename: string;
+  filePath: string;
+  sizeBytes: number;
 }
 
 interface RawMongoRecord extends MongoDocument {
@@ -81,6 +92,7 @@ export async function migrateJsonToMongo(
     documentChunks: source.chunks.length,
     jobs: source.jobs.length,
     schedulerState: source.schedulerState.length,
+    uploads: source.uploads.length,
   };
   if (options.dryRun) {
     return { backupDirectory, dryRun: true, counts };
@@ -110,7 +122,9 @@ export async function migrateJsonToMongo(
     if (!database) throw new Error("MongoDB database is unavailable");
     await ensureMongoIndexes(database);
     await preflightTarget(database, source);
+    await preflightUploads(database, source.uploads);
     await migrateDocuments(database, source.documents);
+    await migrateUploads(database, source.uploads);
     await migrateChunks(database, source.chunks);
     await migrateJobs(database, source.jobs);
     await migrateSchedulerState(database, source.schedulerState);
@@ -134,6 +148,7 @@ export async function migrateJsonToMongo(
       "scheduler_state",
       source.schedulerState.map((record) => record.id),
     );
+    await assertUploads(database, source.uploads);
   } finally {
     if (shouldCloseClient && client) await client.close();
   }
@@ -209,6 +224,98 @@ async function preflightTarget(
 }
 
 /**
+ * Confirms GridFS contains exactly the source upload keys and matching file bytes.
+ */
+async function preflightUploads(
+  database: Db,
+  uploads: PrivateUploadSource[],
+): Promise<void> {
+  const bucket = new GridFSBucket(database, { bucketName: "uploads" });
+  const targetFiles = await bucket.find({}).toArray();
+  const uploadsByKey = new Map(uploads.map((upload) => [upload.storageKey, upload]));
+  for (const file of targetFiles) {
+    const storageKey = file.metadata?.storageKey;
+    if (typeof storageKey !== "string" || !uploadsByKey.has(storageKey)) {
+      throw new Error(
+        "MongoDB uploads contains files outside the source; no target data was changed",
+      );
+    }
+    const source = uploadsByKey.get(storageKey);
+    if (!source || file.length !== source.sizeBytes) {
+      throw new Error(`MongoDB upload ${storageKey} conflicts with its source`);
+    }
+    const [sourceHash, targetHash] = await Promise.all([
+      hashStream(createReadStream(source.filePath)),
+      hashStream(bucket.openDownloadStream(file._id)),
+    ]);
+    if (sourceHash !== targetHash) {
+      throw new Error(`MongoDB upload ${storageKey} conflicts with its source`);
+    }
+  }
+}
+
+/**
+ * Copies private file bytes to GridFS while preserving application storage keys.
+ */
+async function migrateUploads(
+  database: Db,
+  uploads: PrivateUploadSource[],
+): Promise<void> {
+  const bucket = new GridFSBucket(database, { bucketName: "uploads" });
+  for (const source of uploads) {
+    const existing = await bucket
+      .find({ "metadata.storageKey": source.storageKey })
+      .limit(1)
+      .next();
+    if (existing) continue;
+    await pipeline(
+      createReadStream(source.filePath),
+      bucket.openUploadStream(source.filename, {
+        metadata: { storageKey: source.storageKey },
+      }),
+    );
+  }
+}
+
+/**
+ * Verifies all migrated upload keys and their bytes after import.
+ */
+async function assertUploads(
+  database: Db,
+  uploads: PrivateUploadSource[],
+): Promise<void> {
+  const bucket = new GridFSBucket(database, { bucketName: "uploads" });
+  const targetFiles = await bucket.find({}).toArray();
+  if (targetFiles.length !== uploads.length) {
+    throw new Error(
+      "MongoDB uploads do not exactly match the source; no target data was deleted",
+    );
+  }
+  for (const source of uploads) {
+    const file = await bucket
+      .find({ "metadata.storageKey": source.storageKey })
+      .limit(1)
+      .next();
+    if (!file || file.length !== source.sizeBytes) {
+      throw new Error(`MongoDB upload ${source.storageKey} failed verification`);
+    }
+    const [sourceHash, targetHash] = await Promise.all([
+      hashStream(createReadStream(source.filePath)),
+      hashStream(bucket.openDownloadStream(file._id)),
+    ]);
+    if (sourceHash !== targetHash) {
+      throw new Error(`MongoDB upload ${source.storageKey} failed verification`);
+    }
+  }
+}
+
+async function hashStream(stream: AsyncIterable<Uint8Array>): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of stream) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+/**
  * Copies legacy JSON and private uploads before reading migration sources.
  */
 async function createSourceBackup(dataDirectory: string): Promise<string> {
@@ -274,7 +381,10 @@ async function readMigrationSource(
   assertUniqueIds("jobs", jobs);
   assertUniqueIds("scheduler_state", schedulerState);
   assertUniqueScheduleKeys(jobs);
-  await validatePrivateUploads(join(dataDirectory, "uploads"), documents);
+  const uploads = await readPrivateUploads(
+    join(dataDirectory, "uploads"),
+    documents,
+  );
 
   const documentsById = new Map(documents.map((record) => [record.id, record]));
   const chunks = await readChunkFiles(
@@ -295,24 +405,32 @@ async function readMigrationSource(
       );
     }
   }
-  return { documents, chunks, jobs, schedulerState };
+  return { documents, uploads, chunks, jobs, schedulerState };
 }
 
 /**
  * Confirms active documents still point to private uploads of the recorded size.
  */
-async function validatePrivateUploads(
+async function readPrivateUploads(
   uploadDirectory: string,
   documents: DocumentRecord[],
-): Promise<void> {
+): Promise<PrivateUploadSource[]> {
+  const uploads: PrivateUploadSource[] = [];
   for (const document of documents) {
     try {
-      const upload = await stat(join(uploadDirectory, document.storageKey));
+      const filePath = join(uploadDirectory, document.storageKey);
+      const upload = await stat(filePath);
       if (!upload.isFile() || upload.size !== document.sizeBytes) {
         throw new Error(
           `Private upload does not match document ${document.id}`,
         );
       }
+      uploads.push({
+        storageKey: document.storageKey,
+        filename: document.filename,
+        filePath,
+        sizeBytes: document.sizeBytes,
+      });
     } catch (error) {
       if (document.status === "deleting" && isMissingPathError(error)) continue;
       if (isMissingPathError(error)) {
@@ -321,6 +439,7 @@ async function validatePrivateUploads(
       throw error;
     }
   }
+  return uploads;
 }
 
 /**

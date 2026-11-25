@@ -2,7 +2,7 @@ import { NotFoundError } from "../../common/errors/app-error";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { AppConfig } from "../../config/config";
 import type { JobService } from "../jobs/job.service";
-import type { InsightsRepository } from "./insights.repository";
+import type { InsightsRepositoryPort } from "./insights.repository";
 import type { ActivityEventRecord, GapReportRecord } from "../../infra/jsonstore/system-collections";
 
 export interface CourseInsights {
@@ -22,7 +22,7 @@ export interface CourseInsights {
 
 export class InsightsService {
   public constructor(
-    private readonly repository: InsightsRepository,
+    private readonly repository: InsightsRepositoryPort,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
   ) {}
@@ -33,25 +33,25 @@ export class InsightsService {
     return this.repository.recordActivity(input);
   }
 
-  public getInsights(
+  public async getInsights(
     actor: AuthenticatedUser,
     courseId: string,
-  ): CourseInsights {
-    const course = this.requireOwnedCourse(actor, courseId);
+  ): Promise<CourseInsights> {
+    const course = await this.requireOwnedCourse(actor, courseId);
     const periodEnd = new Date();
     const periodStart = new Date(
       periodEnd.getTime() - this.config.insightPeriodDays * 24 * 60 * 60 * 1000,
     );
     const startIso = periodStart.toISOString();
     const endIso = periodEnd.toISOString();
-    const events = this.repository
-      .listEvents(course.id)
+    const events = (await this.repository
+      .listEvents(course.id))
       .filter((event) => event.createdAt >= startIso && event.createdAt <= endIso);
-    const feedback = this.repository
-      .listFeedback(course.id)
+    const feedback = (await this.repository
+      .listFeedback(course.id))
       .filter((record) => record.createdAt >= startIso && record.createdAt <= endIso);
-    const attempts = this.repository
-      .listQuizAttempts(course.id)
+    const attempts = (await this.repository
+      .listQuizAttempts(course.id))
       .filter((record) => record.submittedAt >= startIso && record.submittedAt <= endIso);
 
     const learnerIds = new Set([
@@ -107,11 +107,11 @@ export class InsightsService {
     };
   }
 
-  public getLatestGapReport(
+  public async getLatestGapReport(
     actor: AuthenticatedUser,
     courseId: string,
-  ): GapReportRecord | null {
-    this.requireOwnedCourse(actor, courseId);
+  ): Promise<GapReportRecord | null> {
+    await this.requireOwnedCourse(actor, courseId);
     return this.repository.getLatestGapReport(courseId);
   }
 
@@ -120,7 +120,7 @@ export class InsightsService {
     courseId: string,
     requestId: string,
   ) {
-    this.requireOwnedCourse(actor, courseId);
+    await this.requireOwnedCourse(actor, courseId);
     return this.jobs.enqueue({
       type: "cluster",
       payload: { courseId },
@@ -130,8 +130,8 @@ export class InsightsService {
     });
   }
 
-  private requireOwnedCourse(actor: AuthenticatedUser, courseId: string) {
-    const course = this.repository.findCourse(courseId);
+  private async requireOwnedCourse(actor: AuthenticatedUser, courseId: string) {
+    const course = await this.repository.findCourse(courseId);
     if (!course) throw new NotFoundError("Course not found");
     if (course.ownerId !== actor.id) {
       throw new NotFoundError("Course not found");
@@ -140,14 +140,14 @@ export class InsightsService {
   }
 
   public async generateGapReport(courseId: string): Promise<GapReportRecord> {
-    const course = this.repository.findCourse(courseId);
+    const course = await this.repository.findCourse(courseId);
     if (!course) throw new NotFoundError("Course not found");
     const periodEnd = new Date();
     const periodStart = new Date(
       periodEnd.getTime() - this.config.insightPeriodDays * 24 * 60 * 60 * 1000,
     );
-    const events = this.repository
-      .listEvents(courseId)
+    const events = (await this.repository
+      .listEvents(courseId))
       .filter(
         (event) =>
           event.type === "question" &&
@@ -158,8 +158,8 @@ export class InsightsService {
     const distinctLearnerIds = new Set(events.map((event) => event.userId));
     const qualified =
       distinctLearnerIds.size >= this.config.insightMinCohortSize;
-    const previousReports = this.repository
-      .listGapReports(courseId)
+    const previousReports = (await this.repository
+      .listGapReports(courseId))
       .filter((report) => report.createdAt < periodStart.toISOString());
     const previousCount =
       previousReports[0]?.topics[0]?.questionCount ?? null;

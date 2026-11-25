@@ -84,6 +84,61 @@ configuration. It returns `503` until `MISTRAL_API_KEY` and at least one LLM
 provider key (`INCEPTION_API_KEY` or `GROQ_API_KEY`) are configured in `.env`.
 Configuring both LLM providers enables fallback between them.
 
+## Run a backend on each device with shared data
+
+The backend now stores application records in PostgreSQL and MongoDB rather
+than using JSON or SQLite at runtime. Each device can run its own backend while
+both connect to the same Neon PostgreSQL database and MongoDB database:
+
+- Set the same `DATABASE_URL` on both devices.
+- Set the same `MONGODB_URI` and `MONGODB_DB_NAME` on both devices.
+- Set the same `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` so tokens issued
+  by either backend can be used with the other.
+- Configure provider credentials on each backend that needs to make AI calls.
+
+Use a secret manager or another secure channel to configure those values.
+Never commit or post connection strings or secrets. Keep `DATA_DIR` local; it
+is used as the source for one-time JSON/SQLite/file migrations, not as shared
+runtime storage. Each frontend should call its own local backend.
+
+### One-time migration of existing local data
+
+Choose **one** device as the authoritative source. Stop both backend instances
+while migrating, and do not run the import commands independently on each
+device. On the source device, from `backend`, run the dry runs first:
+
+```powershell
+npm run migrate:json-to-neon -- --dry-run
+npm run migrate:json-to-mongo -- --dry-run
+```
+
+Review the printed counts and backup locations. When they match the data to
+preserve, import from that same source device:
+
+```powershell
+npm run migrate:json-to-neon
+npm run migrate:json-to-mongo
+```
+
+The commands create backups under the configured `DATA_DIR` and leave the
+original data in place. The Neon importer applies the PostgreSQL migrations;
+the Mongo importer copies document metadata, chunks, jobs, and private upload
+bytes into MongoDB GridFS. Importers reject incompatible existing target data
+instead of deleting it. Keep the backups and source files until you have
+verified users, courses, conversations, documents, and uploaded files through
+the application.
+
+On the other device, configure the same database targets and JWT secrets, but
+do not import that device's local JSON. Start its backend only after the
+authoritative data has been imported and both databases are ready. `/ready`
+checks connectivity and schema/index readiness; it cannot confirm that two
+different environment files point to identical cloud resources.
+
+Rate limiting is currently held in each backend process, so limits are not
+aggregated between devices. Admin insight-setting changes are persisted in
+PostgreSQL for audit, but effective settings are process-local; apply the same
+change on each running backend.
+
 Document upload and ingestion support PDF, DOCX and UTF-8 TXT. The configured
 upload limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB.
 Document and personal-note text is sent to Mistral for embeddings, so disclose
@@ -125,9 +180,9 @@ verification and operating artefacts:
   standalone HTTP endpoint. Run its focused tests from `backend` with
   `npm test -- --runTestsByPath tests/unit/retrieval.service.test.ts tests/unit/private-file-storage.test.ts`.
 - **B8 — Grounded question answering:** `POST /api/v1/chat/ask` uses the
-  caller's permitted course material, gates insufficient evidence, and returns
-  only system-validated citations. Conversations and messages are stored in
-  SQLite and are visible only to their owner. JSON is the default response;
+caller's permitted course material, gates insufficient evidence, and returns
+only system-validated citations. Conversations and messages are stored in
+PostgreSQL and are visible only to their owner. JSON is the default response;
   `Accept: text/event-stream` replays the complete validated response (not
   model tokens). Test prompt injection handling, evidence threshold behavior,
   citation suppression, access isolation, conversation CRUD, provider failure
@@ -223,8 +278,7 @@ verification and operating artefacts:
   `POST /api/v1/admin/users/{id}/erase` to enqueue erasure.
 - **B12 — Release verification and packaging:** the API contract is published
   at `/openapi.json` and Swagger UI at `/api/docs`. Docker packaging uses one
-  container and a persistent named-volume deployment; the JSON store remains
-  single-writer and must not be horizontally scaled. Offline AI evaluation
+  container and persistent shared PostgreSQL/MongoDB services. Offline AI evaluation
   checks deterministic citation and refusal behavior and does not call external
   providers. Backup/restore scripts and the handover guide are included.
 

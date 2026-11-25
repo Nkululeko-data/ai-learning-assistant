@@ -3,7 +3,22 @@ import type {
   SystemCollections,
 } from "../../infra/jsonstore/system-collections";
 
-export class FeedbackRepository {
+export interface FeedbackRepositoryPort {
+  findByMessageAndUser(
+    messageId: string,
+    userId: string,
+  ): FeedbackRecord | null | Promise<FeedbackRecord | null>;
+  listByCourse(courseId: string): FeedbackRecord[] | Promise<FeedbackRecord[]>;
+  create(
+    input: Omit<FeedbackRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<FeedbackRecord>;
+  update(
+    id: string,
+    update: (current: FeedbackRecord) => FeedbackRecord,
+  ): Promise<FeedbackRecord>;
+}
+
+export class FeedbackRepository implements FeedbackRepositoryPort {
   public constructor(private readonly collections: SystemCollections) {}
 
   public findByMessageAndUser(

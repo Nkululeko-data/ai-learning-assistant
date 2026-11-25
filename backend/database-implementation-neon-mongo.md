@@ -1,7 +1,7 @@
 # AI Learning Assistant: Database Implementation (Neon Postgres + MongoDB Atlas)
 
 Build spec for the coding agent. Repo: `Nkululeko-data/ai-learning-assistant`, backend in `backend/`.
-This is the approved target architecture and phased migration plan, not a claim that the cutover is complete. Production is currently hybrid: JSON auth and other feature collections, SQLite conversations, PostgreSQL courses/enrolments, and MongoDB documents/chunks/jobs. Keep the legacy stores and single-instance deployment constraint until the final verification and cleanup gates pass.
+**Implementation status (2026-11-24):** the runtime is wired to PostgreSQL for identity, courses/enrolments, conversations, daily usage, learning content, feedback, insights, executions, and admin records; MongoDB stores documents, chunks, jobs, scheduler state, and GridFS uploads. `migrate:json-to-neon` and `migrate:json-to-mongo` import legacy data from one authoritative `DATA_DIR`. The cutover is not complete for an operator until both imports have been run and verified against the intended shared databases. PostgreSQL integration tests require `TEST_DATABASE_URL`, MongoDB integration tests require `TEST_MONGODB_URI`, and no production data migration has been run from this worktree.
 
 ## 0. Working rules
 
@@ -23,7 +23,7 @@ This is the approved target architecture and phased migration plan, not a claim 
 | Conversations + messages | **Move from SQLite to Neon** |
 | Existing JSON data | **Migrate all relational data** into Neon, keeping existing UUIDs |
 | Courses | New tables in Neon; seed some courses |
-| Single-instance rule | **Retained during migration.** Revisit only after all active JSON/SQLite writers, local uploads, and process-local rate limiting are addressed and verified. |
+| Multi-instance status | Shared database repositories and GridFS uploads are wired, but two-instance operation still requires deployment-level validation. Rate limits and effective admin settings remain process-local. |
 
 ## 2. What goes where
 
@@ -204,8 +204,8 @@ Repository interfaces: `DocumentRepository`, `ChunkRepository` (vector search ta
 Implementation and cutover:
 - `ensure-indexes.ts` creates the regular MongoDB indexes at startup; startup also refuses to proceed unless the Atlas vector index is queryable.
 - `docs/atlas-vector-index.json` is applied idempotently by `npm run mongo:vector-index`. The `mistral-embed` documentation confirms 1024 dimensions: https://docs.mistral.ai/inference/embeddings/text_embeddings
-- `npm run migrate:json-to-mongo -- --dry-run` backs up and validates `documents.json`, `jobs.json`, `scheduler_state.json`, all legacy chunk files, and private upload file sizes. The real run is idempotent, preserves IDs and upload paths, and refuses invalid, conflicting, or extra target records; it never deletes target data.
-- Stop the API and workers before the real import. Then run the importer, create the Atlas vector index, wait until Atlas reports it queryable, and only then start the Mongo-backed document, chunk, and job services. Uploaded file bytes remain in `DATA_DIR/uploads`, so that directory must stay on persistent private storage and be shared at the same path by every API/worker replica when horizontally scaled.
+- `npm run migrate:json-to-mongo -- --dry-run` backs up and validates documents, jobs, scheduler state, legacy chunk files, and private upload bytes. The real run imports upload bytes into GridFS while preserving application storage keys; it rejects invalid, conflicting, or extra target records and never deletes target data.
+- Stop the API and workers before the real import. Then run the importer, create the Atlas vector index, wait until Atlas reports it queryable, and only then start Mongo-backed services. `DATA_DIR/uploads` is migration input after cutover, not runtime upload storage.
 - Document deletion remains a confirmed, idempotent cleanup job: it permanently removes chunks, the private upload, and metadata. The existing UI confirmation warns that deletion cannot be undone.
 
 ## 10. Step 8: Cleanup and doc updates
@@ -214,27 +214,22 @@ Implementation and cutover:
   `infra/sqlite/*`, `infra/jsonstore/*`, `JsonAuthRepository`, or
   `scripts/migrations/001-initial-schema.ts` while the server or modules still
   depend on them.
-- As of this phase, production still wires JSON auth and SQLite conversations;
-  JSON also backs learning content, feedback, analytics, executions, and other
-  records. The PostgreSQL auth repository is not yet wired into the server, and
-  the data importers do not migrate every remaining JSON collection.
+- Runtime server wiring no longer initializes local JSON collections or
+  SQLite conversations. Legacy repositories remain for compatibility and
+  migration tooling; do not mistake their continued presence for active
+  production persistence.
 - `better-sqlite3` and `@types/better-sqlite3` are already absent from
   `backend/package.json`; conversations use Node's built-in `node:sqlite`.
-- Documentation now distinguishes the Neon/Atlas target from the current
-  hybrid runtime. Keep the one-instance deployment constraint until the
-  remaining repositories, rate limiting, and upload storage are ready for
-  multiple instances.
-- Before deleting legacy persistence, migrate the remaining data, switch all
-  production repositories, run isolated PostgreSQL and Atlas integration
-  tests, verify source/target counts and backups, and receive explicit approval
-  for removal.
+- Before deleting legacy persistence, run the one-time imports from one
+  authoritative source, run isolated PostgreSQL and Atlas integration tests,
+  verify source/target counts and backups, and receive explicit approval.
 
-## 11. Requirements before lifting the single-instance rule
+## 11. Multi-instance limitations
 
-- **Rate limiting** (auth routes) currently uses an in-memory store; implement a shared store or explicitly accept and protect per-instance limits.
-- **Job runner and scheduler** use MongoDB leases for atomic claims, but other multi-instance prerequisites remain.
-- **Uploads** must use persistent storage shared consistently by every API/worker instance.
-- **Remaining JSON and SQLite repositories** must be migrated and verified before multiple instances are enabled.
+- **Rate limiting** currently uses in-memory stores and therefore applies per backend instance.
+- **Admin insight settings** are persisted in PostgreSQL for audit, but effective settings are process-local; apply changes on each running instance.
+- **Job runner and scheduler** use MongoDB leases for atomic claims, but concurrent-worker behavior still needs deployment testing.
+- **Migration is one-source only:** never import JSON data from multiple devices into the same shared target independently.
 - **Readiness** checks both databases; `/health` stays process-only and `/ready` touches the databases.
 
 ## 12. Testing strategy
@@ -255,7 +250,7 @@ Implementation and cutover:
 
 ## 14. Definition of done (whole feature)
 
-- App runs only on Neon + Atlas; no JSON or SQLite code remains.
+- Runtime persistence uses Neon + Atlas; legacy JSON/SQLite code remains only for migration and compatibility.
 - `/ready` reflects both databases.
 - All existing auth tests pass against Postgres; new tests listed in section 12 pass.
 - Existing data migrated with matching counts; backup taken before migration.

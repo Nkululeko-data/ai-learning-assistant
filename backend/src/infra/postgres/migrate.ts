@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { loadConfig } from "../../config/config";
 import { createPostgresPool } from "./pool";
 
-export const EXPECTED_SCHEMA_VERSION = 4;
+export const EXPECTED_SCHEMA_VERSION = 5;
 
 const MIGRATION_LOCK_KEY = [1_094_853_441, 1] as const;
 const MIGRATION_FILE_PATTERN = /^(\d+)_([a-z0-9_-]+)\.sql$/i;

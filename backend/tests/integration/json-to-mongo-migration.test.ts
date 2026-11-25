@@ -18,6 +18,7 @@ import {
   type MongoJobDocument,
   type MongoSchedulerStateDocument,
 } from "../../src/modules/jobs/mongo-job.repository";
+import { MongoUploadStorage } from "../../src/infra/storage/mongo-upload-storage";
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
 const describeWithMongo = testMongoUri ? describe : describe.skip;
@@ -32,6 +33,7 @@ async function createSourceData(): Promise<{
   dataDirectory: string;
   documentId: string;
   jobId: string;
+  storageKey: string;
 }> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-mongo-migration-"));
   const dataDirectory = join(temporaryRoot, "data");
@@ -145,7 +147,7 @@ async function createSourceData(): Promise<{
       "utf8",
     ),
   ]);
-  return { dataDirectory, documentId, jobId };
+  return { dataDirectory, documentId, jobId, storageKey };
 }
 
 afterEach(async () => {
@@ -169,6 +171,7 @@ test("dry run backs up and validates documents, chunks, jobs, and uploads", asyn
       documentChunks: 1,
       jobs: 1,
       schedulerState: 1,
+      uploads: 1,
     },
   });
   await expect(
@@ -240,6 +243,10 @@ describeWithMongo("JSON-to-Mongo migration and job leases", () => {
         .collection("document_chunks")
         .countDocuments({ documentId: source.documentId }),
     ).toBe(1);
+    const uploadStorage = new MongoUploadStorage(database);
+    await expect(uploadStorage.readUpload(source.storageKey)).resolves.toEqual(
+      Buffer.from("private"),
+    );
 
     const repository = new MongoJobRepository(
       database.collection<MongoJobDocument>("jobs"),

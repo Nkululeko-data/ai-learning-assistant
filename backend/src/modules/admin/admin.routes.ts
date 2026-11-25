@@ -36,9 +36,9 @@ export function createAdminRouter(dependencies: AdminRouteDependencies): Router 
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("audit:view"),
-    (request, response) => {
+    async (request, response) => {
       const query = adminListQuerySchema.parse(request.query);
-      const page = dependencies.adminService.listAuditLogs(
+      const page = await dependencies.adminService.listAuditLogs(
         query.limit,
         query.cursor ? decodeCursor(query.cursor) : undefined,
       );
@@ -54,9 +54,9 @@ export function createAdminRouter(dependencies: AdminRouteDependencies): Router 
     authenticate,
     requirePasswordChangeComplete,
     requirePermission("executions:view"),
-    (request, response) => {
+    async (request, response) => {
       const query = adminListQuerySchema.parse(request.query);
-      const page = dependencies.adminService.listExecutions(
+      const page = await dependencies.adminService.listExecutions(
         query.limit,
         query.cursor ? decodeCursor(query.cursor) : undefined,
       );

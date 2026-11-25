@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
 import type { DocumentListQuery } from "./document.schemas";
 import type { DocumentRepository } from "./document.types";
-import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import type { UploadStorage } from "../../infra/storage/upload-storage";
 import {
   validateDocumentUpload,
   validateLessonVideoUpload,
@@ -39,7 +39,7 @@ export interface DocumentView {
 export class DocumentService {
   public constructor(
     private readonly repository: DocumentRepository,
-    private readonly storage: PrivateFileStorage,
+    private readonly storage: UploadStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
   ) {}

@@ -46,7 +46,7 @@ test("dry run backs up and validates source files without requiring PostgreSQL",
   const result = await migrateJsonToNeon({ dataDirectory, dryRun: true });
 
   expect(result.dryRun).toBe(true);
-  expect(result.tables).toHaveLength(12);
+  expect(result.tables).toHaveLength(21);
   expect(result.tables.every((table) => table.sourceCount === 0)).toBe(true);
   expect(result.tables.every((table) => table.targetCount === null)).toBe(true);
   expect(await readdir(join(result.backupDirectory, "json"))).toHaveLength(10);
@@ -175,17 +175,11 @@ describeWithTestDatabase("JSON-to-Neon migration", () => {
       pool: migrationPool,
       dryRun: false,
     });
-    expect(first.tables).toHaveLength(12);
+    expect(first.tables).toHaveLength(21);
+    expect(first.tables.every((table) => table.insertedCount === table.sourceCount)).toBe(true);
     expect(
       first.tables.every(
-        (table) =>
-          table.insertedCount === (table.table === "refresh_tokens" ? 2 : 1),
-      ),
-    ).toBe(true);
-    expect(
-      first.tables.every(
-        (table) =>
-          table.targetCount === (table.table === "refresh_tokens" ? 2 : 1),
+        (table) => table.targetCount === table.sourceCount,
       ),
     ).toBe(true);
 
@@ -220,8 +214,7 @@ describeWithTestDatabase("JSON-to-Neon migration", () => {
     expect(second.tables.every((table) => table.insertedCount === 0)).toBe(true);
     expect(
       second.tables.every(
-        (table) =>
-          table.targetCount === (table.table === "refresh_tokens" ? 2 : 1),
+        (table) => table.targetCount === table.sourceCount,
       ),
     ).toBe(true);
   });

@@ -2,9 +2,14 @@ import { randomUUID } from "node:crypto";
 import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
 import type { SystemCollections } from "../../infra/jsonstore/system-collections";
-import type { ConversationRepository } from "../../infra/sqlite/conversation.repository";
-import type { PrivateFileStorage } from "../../infra/storage/private-file-storage";
-import type { AuthenticatedUser } from "../auth/auth.types";
+import type { ConversationStore } from "../../infra/sqlite/conversation.repository";
+import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import type { UploadStorage } from "../../infra/storage/upload-storage";
+import {
+  JsonAuthRepository,
+  type AuthenticatedUser,
+  type AuthRepository,
+} from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
 import {
   JsonDocumentRepository,
@@ -18,33 +23,62 @@ import {
   JsonCourseRepository,
   type CourseRepository,
 } from "../courses/course.types";
+import {
+  JsonAdminRepository,
+  type AdminRepository,
+} from "./admin.repository";
 
 export class AdminService {
   private readonly documents: DocumentRepository;
   private readonly chunks: ChunkRepository;
   private readonly courses: CourseRepository;
+  private readonly authRepository: AuthRepository;
+  private readonly adminRepository: AdminRepository;
 
   public constructor(
-    private readonly collections: SystemCollections,
-    private readonly conversations: ConversationRepository,
-    private readonly storage: PrivateFileStorage,
+    collections: SystemCollections | undefined,
+    private readonly conversations: ConversationStore,
+    private readonly storage: UploadStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
     documents?: DocumentRepository,
     chunks?: ChunkRepository,
     courses?: CourseRepository,
+    authRepository?: AuthRepository,
+    adminRepository?: AdminRepository,
   ) {
-    this.documents = documents ?? new JsonDocumentRepository(collections);
-    this.chunks = chunks ?? new JsonChunkRepository(storage);
-    this.courses = courses ?? new JsonCourseRepository(collections);
+    if (!collections && (!documents || !chunks || !courses || !authRepository || !adminRepository)) {
+      throw new Error("Admin storage repositories are required");
+    }
+    this.documents =
+      documents ??
+      new JsonDocumentRepository(requireLegacyCollections(collections));
+    if (chunks) {
+      this.chunks = chunks;
+    } else if (storage instanceof PrivateFileStorage) {
+      this.chunks = new JsonChunkRepository(storage);
+    } else {
+      throw new Error("A chunk repository is required with remote upload storage");
+    }
+    this.courses =
+      courses ??
+      new JsonCourseRepository(requireLegacyCollections(collections));
+    this.authRepository =
+      authRepository ??
+      new JsonAuthRepository(requireLegacyCollections(collections));
+    this.adminRepository =
+      adminRepository ??
+      new JsonAdminRepository(requireLegacyCollections(collections));
   }
 
   public async getSummary() {
-    const users = this.collections.users.list();
-    const courses = await this.courses.listCourses();
-    const approvedEnrolments =
-      await this.courses.countEnrolmentsByStatus("approved");
-    const coachRequests = this.collections.coachRequests.list();
+    const [users, coachRequests, courses, approvedEnrolments] =
+      await Promise.all([
+        this.authRepository.listUsers(),
+        this.authRepository.listCoachRequests(),
+        this.courses.listCourses(),
+        this.courses.countEnrolmentsByStatus("approved"),
+      ]);
     const queuedOrRunningJobs = await this.jobs.countByStatuses([
       "queued",
       "running",
@@ -70,16 +104,12 @@ export class AdminService {
     };
   }
 
-  public listAuditLogs(limit: number, cursor?: string): {
+  public async listAuditLogs(limit: number, cursor?: string): Promise<{
     items: unknown[];
     nextCursor?: string;
-  } {
-    const records = this.collections.auditLogs
-      .list()
-      .filter((record) => record.id >= (cursor ?? ""))
-      .sort((left, right) => left.id.localeCompare(right.id));
-    const hasMore = records.length > limit;
-    const items = (hasMore ? records.slice(0, limit) : records).map((record) => ({
+  }> {
+    const page = await this.adminRepository.listAuditLogs(limit, cursor);
+    const items = page.items.map((record) => ({
       id: record.id,
       actorId: record.actorId,
       actorRole: record.actorRole,
@@ -91,25 +121,18 @@ export class AdminService {
       requestId: record.requestId ?? null,
       createdAt: record.createdAt,
     }));
-    const last = items.at(-1) as { id: string } | undefined;
     return {
       items,
-      ...(hasMore && last
-        ? { nextCursor: Buffer.from(last.id).toString("base64url") }
-        : {}),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     };
   }
 
-  public listExecutions(limit: number, cursor?: string): {
+  public async listExecutions(limit: number, cursor?: string): Promise<{
     items: unknown[];
     nextCursor?: string;
-  } {
-    const records = this.collections.agentExecutions
-      .list()
-      .filter((record) => record.id >= (cursor ?? ""))
-      .sort((left, right) => left.id.localeCompare(right.id));
-    const hasMore = records.length > limit;
-    const items = (hasMore ? records.slice(0, limit) : records).map((record) => ({
+  }> {
+    const page = await this.adminRepository.listExecutions(limit, cursor);
+    const items = page.items.map((record) => ({
       id: record.id,
       executionId: record.executionId,
       requestId: record.requestId,
@@ -130,12 +153,9 @@ export class AdminService {
       usageDate: record.usageDate,
       createdAt: record.createdAt,
     }));
-    const last = items.at(-1) as { id: string } | undefined;
     return {
       items,
-      ...(hasMore && last
-        ? { nextCursor: Buffer.from(last.id).toString("base64url") }
-        : {}),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     };
   }
 
@@ -159,17 +179,15 @@ export class AdminService {
     const before = this.getConfig();
     Object.assign(this.config, update);
     const after = this.getConfig();
-    const latest = this.collections.configVersions
-      .list()
-      .sort((left, right) => right.version - left.version)[0];
-    await this.collections.configVersions.insert({
+    const latest = await this.adminRepository.getLatestConfigVersion();
+    await this.adminRepository.createConfigVersion({
       version: (latest?.version ?? 0) + 1,
       changedBy: actor.id,
       before,
       after,
       createdAt: new Date().toISOString(),
     });
-    await this.collections.auditLogs.insert({
+    await this.adminRepository.createAudit({
       actorId: actor.id,
       actorRole: actor.role,
       action: "config.updated",
@@ -178,7 +196,6 @@ export class AdminService {
       before,
       after,
       requestId,
-      createdAt: new Date().toISOString(),
     });
     return after;
   }
@@ -191,7 +208,7 @@ export class AdminService {
     if (targetUserId === actor.id) {
       throw new AppError("FORBIDDEN", 403, "Users cannot erase their own account here");
     }
-    const target = this.collections.users.getById(targetUserId);
+    const target = await this.authRepository.findUserById(targetUserId);
     if (!target) throw new NotFoundError("User not found");
     const job = await this.jobs.enqueue({
       type: "erase",
@@ -199,7 +216,7 @@ export class AdminService {
       createdBy: actor.id,
       requestId,
     });
-    await this.collections.auditLogs.insert({
+    await this.adminRepository.createAudit({
       actorId: actor.id,
       actorRole: actor.role,
       action: "user.erasure_requested",
@@ -208,18 +225,17 @@ export class AdminService {
       before: null,
       after: { jobId: job.id },
       requestId,
-      createdAt: new Date().toISOString(),
     });
     return job;
   }
 
   public async eraseUser(userId: string): Promise<{ erased: boolean }> {
-    const user = this.collections.users.getById(userId);
+    const user = await this.authRepository.findUserById(userId);
     if (!user) return { erased: false };
     if (user.erasedAt) return { erased: true };
 
     const pseudonymId = randomUUID();
-    this.conversations.deleteByUser(userId);
+    await this.conversations.deleteByUser(userId);
     for (const document of await this.documents.listPersonalDocumentsByOwner(
       userId,
     )) {
@@ -227,51 +243,35 @@ export class AdminService {
       await this.storage.removeUpload(document.storageKey);
       await this.documents.removeDocument(document.id);
     }
-    for (const summary of this.collections.learningSummaries.list(
-      (record) => record.visibility === "private" && record.ownerId === userId,
-    )) {
-      await this.collections.learningSummaries.remove(summary.id);
+    for (const summary of await this.adminRepository.listPrivateSummaries(userId)) {
+      await this.adminRepository.removeLearningSummary(summary.id);
     }
-    for (const flashcards of this.collections.flashcards.list(
-      (record) => record.visibility === "private" && record.ownerId === userId,
-    )) {
-      await this.collections.flashcards.remove(flashcards.id);
+    for (const flashcards of await this.adminRepository.listPrivateFlashcards(userId)) {
+      await this.adminRepository.removeFlashcards(flashcards.id);
     }
-    for (const quiz of this.collections.quizzes.list(
-      (record) => record.visibility === "private" && record.ownerId === userId,
-    )) {
-      await this.collections.quizzes.remove(quiz.id);
+    for (const quiz of await this.adminRepository.listPrivateQuizzes(userId)) {
+      await this.adminRepository.removeQuiz(quiz.id);
     }
-    for (const attempt of this.collections.quizAttempts.list(
-      (record) => record.userId === userId,
-    )) {
-      await this.collections.quizAttempts.remove(attempt.id);
+    for (const attempt of await this.adminRepository.listAttemptsByUser(userId)) {
+      await this.adminRepository.removeQuizAttempt(attempt.id);
     }
-    for (const token of this.collections.refreshTokens.list(
-      (record) => record.userId === userId,
+    const now = new Date().toISOString();
+    for (const token of await this.authRepository.findRefreshTokensByUser(
+      userId,
     )) {
-      await this.collections.refreshTokens.remove(token.id);
-    }
-    for (const feedback of this.collections.feedback.list(
-      (record) => record.userId === userId,
-    )) {
-      await this.collections.feedback.update(feedback.id, (record) => ({
+      await this.authRepository.updateRefreshToken(token.id, (record) => ({
         ...record,
-        userId: pseudonymId,
-        updatedAt: new Date().toISOString(),
+        revokedAt: now,
       }));
     }
-    for (const event of this.collections.activityEvents.list(
-      (record) => record.userId === userId,
-    )) {
-      await this.collections.activityEvents.update(event.id, (record) => ({
-        ...record,
-        userId: pseudonymId,
-      }));
+    for (const feedback of await this.adminRepository.listFeedbackByUser(userId)) {
+      await this.adminRepository.anonymizeFeedback(feedback.id, pseudonymId);
+    }
+    for (const event of await this.adminRepository.listActivityByUser(userId)) {
+      await this.adminRepository.anonymizeActivity(event.id, pseudonymId);
     }
 
-    const now = new Date().toISOString();
-    await this.collections.users.update(userId, (record) => ({
+    await this.authRepository.updateUser(userId, (record) => ({
       ...record,
       email: `erased-${pseudonymId}@invalid.local`,
       passwordHash: randomUUID().replaceAll("-", ""),
@@ -285,7 +285,7 @@ export class AdminService {
       lockedUntil: null,
       updatedAt: now,
     }));
-    await this.collections.auditLogs.insert({
+    await this.adminRepository.createAudit({
       actorId: "system",
       actorRole: "system",
       action: "user.erased",
@@ -294,8 +294,16 @@ export class AdminService {
       before: null,
       after: { erased: true, pseudonymId },
       requestId: null,
-      createdAt: now,
     });
     return { erased: true };
   }
+}
+
+function requireLegacyCollections(
+  collections: SystemCollections | undefined,
+): SystemCollections {
+  if (!collections) {
+    throw new Error("Legacy admin repositories require JSON collections");
+  }
+  return collections;
 }

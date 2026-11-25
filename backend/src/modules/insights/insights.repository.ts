@@ -1,10 +1,28 @@
 import type {
   ActivityEventRecord,
+  CourseRecord,
+  FeedbackRecord,
   GapReportRecord,
+  QuizAttemptRecord,
   SystemCollections,
 } from "../../infra/jsonstore/system-collections";
 
-export class InsightsRepository {
+export interface InsightsRepositoryPort {
+  findCourse(courseId: string): CourseRecord | null | Promise<CourseRecord | null>;
+  listFeedback(courseId: string): FeedbackRecord[] | Promise<FeedbackRecord[]>;
+  listEvents(courseId: string): ActivityEventRecord[] | Promise<ActivityEventRecord[]>;
+  listQuizAttempts(courseId: string): QuizAttemptRecord[] | Promise<QuizAttemptRecord[]>;
+  recordActivity(
+    input: Omit<ActivityEventRecord, "id" | "createdAt">,
+  ): Promise<ActivityEventRecord>;
+  listGapReports(courseId: string): GapReportRecord[] | Promise<GapReportRecord[]>;
+  getLatestGapReport(courseId: string): GapReportRecord | null | Promise<GapReportRecord | null>;
+  createGapReport(
+    input: Omit<GapReportRecord, "id" | "createdAt">,
+  ): Promise<GapReportRecord>;
+}
+
+export class InsightsRepository implements InsightsRepositoryPort {
   public constructor(private readonly collections: SystemCollections) {}
 
   public findCourse(courseId: string) {

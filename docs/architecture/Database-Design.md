@@ -4,9 +4,9 @@
 
 Detailed field-level specification of the data model. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
 
-**Persistence status:** Neon PostgreSQL and MongoDB Atlas are the approved target and are partially wired. Production still uses JSON for auth and several feature collections, and SQLite for conversations. This document includes the legacy source layouts/schema; it does not mean all data has been migrated. See `backend/database-implementation-neon-mongo.md` for current migration status and cutover gates.
+**Persistence status:** the runtime repositories are wired to PostgreSQL and MongoDB Atlas. Legacy JSON collections, SQLite conversations, chunks, and local uploads remain as one-time migration inputs and compatibility code; existing operator data is not shared until the one-time imports have been run and verified. Per-instance rate limits and effective admin insight settings remain process-local. See `backend/database-implementation-neon-mongo.md` for migration steps and remaining validation gates.
 
-Logical storage target: relational/access data in Neon PostgreSQL; document metadata, chunks, jobs, and scheduler state in MongoDB Atlas. Remaining JSON and SQLite storage is transitional and must not be deleted until its data and dependent repositories are migrated and verified.
+Runtime storage: identity, courses/enrolments, conversations, daily usage, learning content, feedback, insights, executions, and admin records use PostgreSQL; documents, chunks, jobs, scheduler state, and private upload bytes use MongoDB Atlas/GridFS.
 
 ---
 
@@ -67,7 +67,7 @@ erDiagram
   MESSAGES ||--o{ FEEDBACK : "rated by"
   COURSES ||--o{ GAP_REPORTS : "has"
 ```
-Current runtime cross-store references include SQLite messages and JSON `feedback`/`activity_events`; the target is to migrate relational records and conversations to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
+Cross-store references connect PostgreSQL records and MongoDB documents. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
 
 ---
 
@@ -530,9 +530,9 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 
 ---
 
-## 9. Legacy SQLite conversation source (current runtime; PostgreSQL cutover pending)
+## 9. Legacy SQLite conversation source (one-time PostgreSQL migration input)
 
-This section describes the current migration source, not a final target schema. Runtime conversations, messages, and daily chat usage still use `data/sqlite/conversations.db`. The Neon conversation schema and data migration remain to be implemented and verified before SQLite can be removed. Use WAL mode, foreign keys, and parameterised queries while this legacy source remains active.
+This section describes the legacy migration source, not current runtime persistence. Runtime conversations, messages, and daily chat usage use PostgreSQL. The one-time migration reads `data/sqlite/conversations.db`; retain that file and its backup until the imported history has been verified.
 
 ### 9.1 `conversations`
 | Column | Type | Null | Notes |

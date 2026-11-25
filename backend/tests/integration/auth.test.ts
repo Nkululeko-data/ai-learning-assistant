@@ -110,8 +110,6 @@ async function createAuthTestContext(): Promise<AuthTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-      jsonStoreOpen: true,
-      sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
       schemaVersion: 1,

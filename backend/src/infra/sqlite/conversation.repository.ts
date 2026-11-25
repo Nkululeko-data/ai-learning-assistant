@@ -58,7 +58,53 @@ export interface ConversationExchange {
   retrievalScoreTop: number | null;
 }
 
-export class ConversationRepository {
+export interface DailyUsageRepository {
+  dailyTokenUsage(userId: string, usageDate: string): number | Promise<number>;
+  reserveDailyRequest(
+    userId: string,
+    usageDate: string,
+    requestLimit: number,
+  ): boolean | Promise<boolean>;
+  recordDailyTokenUsage(
+    userId: string,
+    usageDate: string,
+    tokenCount: number,
+  ): void | Promise<void>;
+}
+
+type MaybePromise<T> = T | Promise<T>;
+
+export interface ConversationStore extends DailyUsageRepository {
+  findConversation(id: string): MaybePromise<ConversationRecord | null>;
+  findMessage(id: string): MaybePromise<ConversationMessageRecord | null>;
+  listConversations(
+    userId: string,
+    courseId: string | undefined,
+    limit: number,
+    cursorId?: string,
+  ): MaybePromise<{ items: ConversationRecord[]; nextCursor?: string }>;
+  listMessages(conversationId: string): MaybePromise<ConversationMessageRecord[]>;
+  getRecentMessages(
+    conversationId: string,
+    maximumMessages: number,
+  ): MaybePromise<ConversationMessageRecord[]>;
+  saveExchange(exchange: ConversationExchange): MaybePromise<{
+    userMessageId: string;
+    assistantMessageId: string;
+  }>;
+  updateTitle(
+    conversationId: string,
+    userId: string,
+    title: string,
+  ): MaybePromise<boolean>;
+  deleteConversation(
+    conversationId: string,
+    userId: string,
+  ): MaybePromise<boolean>;
+  deleteByUser(userId: string): MaybePromise<void>;
+}
+
+export class ConversationRepository implements ConversationStore {
   public constructor(private readonly database: DatabaseSync) {}
 
   public dailyTokenUsage(userId: string, usageDate: string): number {
