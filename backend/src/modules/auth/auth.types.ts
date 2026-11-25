@@ -137,16 +137,11 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a user by ID.
    */
-<<<<<<< HEAD
   public async findUserById(id: string): Promise<UserRecord | null> {
-    return this.collections.users.getById(id);
-=======
-  public findUserById(id: string): UserRecord | null {
     return (
       this.collections.users.getById(id) ??
       this.collections.users.getById(this.legacyUserIdAliases.get(id) ?? id)
     );
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   }
 
   public async listUsers(): Promise<UserRecord[]> {

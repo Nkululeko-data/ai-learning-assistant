@@ -241,7 +241,7 @@ async function readAndValidateCollections(
     }
   }
 
-  await store.initializeCollections();
+  await store.initialize();
   return collectionList
     .filter((collection) => POSTGRES_RECORD_COLLECTIONS.has(collection.name))
     .map((collection) => ({

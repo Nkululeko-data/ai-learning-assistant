@@ -2,10 +2,7 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
-<<<<<<< HEAD
 import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
-=======
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 import { createApp } from "../../src/app";
 import { createLogger } from "../../src/common/logging/logger";
 import type { AppConfig } from "../../src/config/config";
@@ -22,7 +19,6 @@ import type { DocumentEmbeddingProvider } from "../../src/modules/documents/mist
 import { JobRunner } from "../../src/modules/jobs/job.runner";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
-import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async (buffer: Uint8Array) => {
@@ -72,11 +68,7 @@ afterEach(async () => {
 async function createContext(): Promise<DocumentTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-documents-"));
   const dataDirectory = join(temporaryRoot, "data");
-<<<<<<< HEAD
   await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
-=======
-  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -163,15 +155,10 @@ async function createContext(): Promise<DocumentTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-<<<<<<< HEAD
       jsonStoreOpen: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
-=======
-      neonOpen: true,
-      mongoOpen: true,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

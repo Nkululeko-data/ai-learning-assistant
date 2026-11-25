@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Pool } from "pg";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { PgCourseRepository } from "../../src/modules/courses/pg-course.repository";
 import { seedCourses } from "../../scripts/seed-courses";
 import { runMigrations } from "../../src/infra/postgres/migrate";

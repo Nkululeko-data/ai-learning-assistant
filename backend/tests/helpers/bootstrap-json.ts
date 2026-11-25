@@ -2,7 +2,7 @@ import argon2 from "argon2";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { openConversationDatabase } from "../../src/infra/sqlite/database";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import {
   baselinePermissions,
   permissionDefinitions,

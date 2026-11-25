@@ -219,15 +219,9 @@ export class AdminService {
     if (user.erasedAt) return { erased: true };
 
     const pseudonymId = randomUUID();
-<<<<<<< HEAD
-    this.conversations.deleteByUser(userId);
+    await this.conversations.deleteByUser(userId);
     for (const document of await this.documents.listPersonalDocumentsByOwner(
       userId,
-=======
-    await this.conversations.deleteByUser(userId);
-    for (const document of this.collections.documents.list(
-      (record) => record.scope === "personal" && record.ownerId === userId,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
     )) {
       await this.chunks.deleteForDocument(document.id);
       await this.storage.removeUpload(document.storageKey);

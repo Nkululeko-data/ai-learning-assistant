@@ -12,15 +12,10 @@ function createReadyTestApp() {
     logger,
     corsOrigins: ["https://ui.example.test"],
     getReadiness: () => ({
-<<<<<<< HEAD
       jsonStoreOpen: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
-=======
-      neonOpen: true,
-      mongoOpen: true,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,
@@ -55,15 +50,10 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-<<<<<<< HEAD
       jsonStoreOpen: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
-=======
-      neonOpen: true,
-      mongoOpen: true,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: false,

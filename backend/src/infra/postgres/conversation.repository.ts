@@ -8,6 +8,8 @@ import type {
 } from "../../ai/graphs/chat-state";
 import type {
   ConversationRepositoryPort,
+} from "../mongodb/conversation.repository";
+import type {
   ConversationExchange,
   ConversationMessageRecord,
   ConversationRecord,

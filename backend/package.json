@@ -9,16 +9,13 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "bootstrap": "tsx scripts/bootstrap.ts",
-<<<<<<< HEAD
     "migrate": "tsx src/infra/postgres/migrate.ts",
     "migrate:json-to-neon": "tsx scripts/migrate-json-to-neon.ts",
     "migrate:json-to-mongo": "tsx scripts/migrate-json-to-mongo.ts",
     "seed:courses": "tsx scripts/seed-courses.ts",
     "mongo:vector-index": "tsx scripts/create-atlas-vector-index.ts",
-=======
     "db:migrate": "tsx scripts/migrate-database-schema.ts",
     "db:import-legacy": "tsx scripts/migrate-databases.ts",
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
     "backup": "tsx scripts/backup.ts",
     "restore": "tsx scripts/restore.ts",
     "eval:offline": "jest --runInBand tests/ai-eval/offline-eval.test.ts",

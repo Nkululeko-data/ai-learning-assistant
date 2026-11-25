@@ -47,15 +47,10 @@ import {
 } from "./modules/admin/admin.routes";
 
 export interface ReadinessStatus {
-<<<<<<< HEAD
   jsonStoreOpen: boolean;
   sqliteOpen: boolean;
   postgresReady: boolean;
   mongoReady: boolean;
-=======
-  neonOpen: boolean;
-  mongoOpen: boolean;
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   schemaVersion: number;
   expectedSchemaVersion: number;
   providerConfigurationPresent: boolean;
@@ -198,15 +193,10 @@ function createReadinessHandler(
     try {
       const readiness = await getReadiness();
       const ready =
-<<<<<<< HEAD
         readiness.jsonStoreOpen &&
         readiness.sqliteOpen &&
         readiness.postgresReady &&
         readiness.mongoReady &&
-=======
-        readiness.neonOpen &&
-        readiness.mongoOpen &&
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
         readiness.schemaVersion === readiness.expectedSchemaVersion &&
         readiness.providerConfigurationPresent;
       if (!ready) {
@@ -216,15 +206,10 @@ function createReadinessHandler(
             503,
             "One or more service dependencies are not ready",
             {
-<<<<<<< HEAD
               jsonStoreOpen: readiness.jsonStoreOpen,
               sqliteOpen: readiness.sqliteOpen,
               postgresReady: readiness.postgresReady,
               mongoReady: readiness.mongoReady,
-=======
-              neonOpen: readiness.neonOpen,
-              mongoOpen: readiness.mongoOpen,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
               schemaVersionMatches:
                 readiness.schemaVersion === readiness.expectedSchemaVersion,
               providerConfigurationPresent:

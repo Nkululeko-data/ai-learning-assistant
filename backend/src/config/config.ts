@@ -110,20 +110,14 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: z.coerce.number().int().min(1).max(65535),
   DATA_DIR: z.string().trim().min(1),
-<<<<<<< HEAD
   DATABASE_URL: optionalSecret,
   MONGODB_URI: optionalSecret,
+  MONGODB_DATABASE: optionalValue,
   MONGODB_DB_NAME: z.preprocess(
     (value: unknown) =>
       typeof value === "string" && value.trim() === "" ? undefined : value,
     z.string().trim().min(1).optional(),
   ),
-=======
-  DATABASE_URL: optionalValue,
-  MONGODB_URI: optionalValue,
-  MONGODB_DATABASE: optionalValue,
-  MONGODB_DB_NAME: optionalValue,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   LOG_LEVEL: z.enum([
     "fatal",
     "error",
@@ -183,15 +177,10 @@ export interface AppConfig {
   environment: "development" | "test" | "production";
   port: number;
   dataDir: string;
-<<<<<<< HEAD
   databaseUrl: string | undefined;
   mongodbUri: string | undefined;
   mongodbDbName: string | undefined;
-=======
-  databaseUrl?: string | undefined;
-  mongodbUri?: string | undefined;
   mongodbDatabase?: string | undefined;
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   corsOrigins: string[];
   passwordMinLength: number;
@@ -241,11 +230,8 @@ export interface AppConfig {
 
 export interface LoadConfigOptions {
   requireJwtSecrets?: boolean;
-<<<<<<< HEAD
   requireMongoConfiguration?: boolean;
-=======
   requireDatabases?: boolean;
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 }
 
 /**
@@ -259,10 +245,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     DATA_DIR: process.env.DATA_DIR ?? defaults.dataDir,
     DATABASE_URL: process.env.DATABASE_URL,
     MONGODB_URI: process.env.MONGODB_URI,
-<<<<<<< HEAD
-=======
     MONGODB_DATABASE: process.env.MONGODB_DATABASE,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
     MONGODB_DB_NAME: process.env.MONGODB_DB_NAME,
     LOG_LEVEL: process.env.LOG_LEVEL ?? defaults.logLevel,
     CORS_ORIGINS:
@@ -410,7 +393,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     if (!values.DATABASE_URL) missingConfiguration.push("DATABASE_URL");
     if (options.requireMongoConfiguration !== false) {
       if (!values.MONGODB_URI) missingConfiguration.push("MONGODB_URI");
-      if (!values.MONGODB_DB_NAME) {
+      if (!values.MONGODB_DB_NAME && !values.MONGODB_DATABASE) {
         missingConfiguration.push("MONGODB_DB_NAME");
       }
     }
@@ -424,31 +407,27 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       `Missing required configuration: ${missingConfiguration.join(", ")}`,
     );
   }
-  const missingDatabases: string[] = [];
   if (options.requireDatabases === true) {
+    const missingDatabases: string[] = [];
     if (!values.DATABASE_URL) missingDatabases.push("DATABASE_URL");
     if (!values.MONGODB_URI) missingDatabases.push("MONGODB_URI");
     if (!values.MONGODB_DATABASE && !values.MONGODB_DB_NAME) {
       missingDatabases.push("MONGODB_DATABASE");
     }
+    if (missingDatabases.length > 0) {
+      throw new Error(
+        `Missing required configuration: ${missingDatabases.join(", ")}`,
+      );
+    }
   }
-  if (missingDatabases.length > 0) {
-    throw new Error(
-      `Missing required configuration: ${missingDatabases.join(", ")}`,
-    );
-  }
-
   return {
     environment: values.NODE_ENV,
     port: values.PORT,
     dataDir: resolve(values.DATA_DIR),
     databaseUrl: values.DATABASE_URL,
     mongodbUri: values.MONGODB_URI,
-<<<<<<< HEAD
-    mongodbDbName: values.MONGODB_DB_NAME,
-=======
+    mongodbDbName: values.MONGODB_DB_NAME ?? values.MONGODB_DATABASE,
     mongodbDatabase: values.MONGODB_DATABASE ?? values.MONGODB_DB_NAME,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
     logLevel: values.LOG_LEVEL,
     corsOrigins,
     passwordMinLength: values.PASSWORD_MIN_LENGTH,

@@ -6,17 +6,13 @@ import { createApp } from "../../src/app";
 import type { AppConfig } from "../../src/config/config";
 import { createLogger } from "../../src/common/logging/logger";
 import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
-import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
-<<<<<<< HEAD
 import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async () => undefined,
 }));
-=======
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
 const adminPassword = "B3-test-admin-passphrase-2026!";
 const changedAdminPassword = "B3-changed-admin-passphrase-2026!";
@@ -44,15 +40,11 @@ afterEach(cleanupTemporaryDirectory);
 async function createAuthTestContext(): Promise<AuthTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-auth-"));
   const dataDirectory = join(temporaryRoot, "data");
-<<<<<<< HEAD
   await bootstrapJsonTestData(
     dataDirectory,
     "admin@example.test",
     adminPassword,
   );
-=======
-  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -118,15 +110,10 @@ async function createAuthTestContext(): Promise<AuthTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-<<<<<<< HEAD
       jsonStoreOpen: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
-=======
-      neonOpen: true,
-      mongoOpen: true,
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

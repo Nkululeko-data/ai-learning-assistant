@@ -9,10 +9,7 @@ const configEnvironmentKeys = [
   "DATA_DIR",
   "DATABASE_URL",
   "MONGODB_URI",
-<<<<<<< HEAD
-=======
   "MONGODB_DATABASE",
->>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   "MONGODB_DB_NAME",
   "LOG_LEVEL",
   "CORS_ORIGINS",
@@ -235,7 +232,7 @@ function verifiesDatabaseConfigurationIsRequiredForRuntime(): void {
     "Missing required configuration: DATABASE_URL, MONGODB_URI, MONGODB_DATABASE",
   );
 
-  process.env.DATABASE_URL = "postgresql://db.example.test/app";
+  process.env.DATABASE_URL = "postgresql://db.example.test/app?sslmode=require";
   process.env.MONGODB_URI = "mongodb://mongo.example.test";
   process.env.MONGODB_DATABASE = "learning_assistant";
   expect(
