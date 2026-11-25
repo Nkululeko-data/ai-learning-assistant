@@ -45,8 +45,13 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     }
 
     const errorName = error instanceof Error ? error.name : "UnknownError";
+    const databaseErrorCode = getSqlStateCode(error);
     logger.error(
-      { errorName, requestId: req.requestId },
+      {
+        errorName,
+        ...(databaseErrorCode ? { databaseErrorCode } : {}),
+        requestId: req.requestId,
+      },
       "Unhandled request failure",
     );
     res.status(500).json({
@@ -57,4 +62,24 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       },
     });
   };
+}
+
+function getSqlStateCode(error: unknown): string | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(error.code)
+  ) {
+    return error.code;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "cause" in error
+  ) {
+    return getSqlStateCode(error.cause);
+  }
+  return undefined;
 }

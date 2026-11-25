@@ -66,7 +66,7 @@ CREATE TABLE gap_reports (
   payload jsonb NOT NULL
 );
 CREATE INDEX gap_reports_course_created_idx
-  ON gap_reports ((payload->>'courseId'), ((payload->>'createdAt') DESC));
+  ON gap_reports ((payload->>'courseId'), (payload->>'createdAt') DESC);
 
 CREATE TABLE config_versions (
   id uuid PRIMARY KEY,
@@ -80,7 +80,7 @@ CREATE TABLE agent_executions (
   payload jsonb NOT NULL
 );
 CREATE INDEX agent_executions_created_idx
-  ON agent_executions (((payload->>'createdAt') DESC));
+  ON agent_executions ((payload->>'createdAt') DESC);
 CREATE INDEX agent_executions_execution_idx
   ON agent_executions ((payload->>'executionId'));
 

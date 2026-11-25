@@ -123,6 +123,31 @@ describeWithTestDatabase("PostgreSQL authentication repository", () => {
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
   });
 
+  test("updates a user while preserving the user ID parameter", async () => {
+    const user = await repository.createUser(
+      userRecord(`${randomUUID()}@example.test`),
+    );
+    const lastLoginAt = new Date().toISOString();
+
+    const updated = await repository.updateUser(user.id, (current) => ({
+      ...current,
+      failedLoginCount: 0,
+      lastLoginAt,
+      updatedAt: lastLoginAt,
+    }));
+
+    expect(updated).toMatchObject({
+      id: user.id,
+      email: user.email,
+      lastLoginAt,
+    });
+    await expect(repository.findUserById(user.id)).resolves.toMatchObject({
+      id: user.id,
+      email: user.email,
+      lastLoginAt,
+    });
+  });
+
   test("allows only one concurrent refresh-token rotation", async () => {
     const user = await repository.createUser(
       userRecord(`${randomUUID()}@example.test`),

@@ -190,7 +190,7 @@ export class PgAuthRepository implements AuthRepository {
           updated_at = $18
         WHERE id = $1
         RETURNING *`,
-        userValues(updated),
+        [id, ...userValues(updated)],
       );
       return mapUser(requireRow(updatedResult.rows[0], "Updated user"));
     });

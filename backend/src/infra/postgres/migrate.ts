@@ -147,13 +147,38 @@ async function applyMigration(
           `Migration ${migration.filename} failed and its transaction could not be rolled back`,
         );
       }
-      throw new Error(`Migration ${migration.filename} failed`, {
-        cause: error,
-      });
+      const diagnostics = getPostgresDiagnostics(error);
+      throw new Error(
+        `Migration ${migration.filename} failed${
+          diagnostics ? ` (PostgreSQL ${diagnostics})` : ""
+        }`,
+        { cause: error },
+      );
     }
   } finally {
     client.release();
   }
+}
+
+function getPostgresDiagnostics(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const fields: string[] = [];
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(error.code)
+  ) {
+    fields.push(`SQLSTATE ${error.code}`);
+  }
+  if (
+    "position" in error &&
+    (typeof error.position === "string" ||
+      typeof error.position === "number") &&
+    /^\d+$/.test(String(error.position))
+  ) {
+    fields.push(`position ${error.position}`);
+  }
+  return fields.length > 0 ? fields.join(", ") : undefined;
 }
 
 /**
