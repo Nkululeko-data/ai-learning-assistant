@@ -1,12 +1,12 @@
 import { z } from "zod";
 import type { Collection, Document as MongoDocument } from "mongodb";
 import type { DocumentRecord } from "../../infra/jsonstore/system-collections";
-import type { PrivateFileStorage } from "../../infra/storage/private-file-storage";
 
-export type LegacyChunkStorage = Pick<
-  PrivateFileStorage,
-  "readChunks" | "writeChunks" | "removeChunks"
->;
+export interface LegacyChunkStorage {
+  readChunks(documentId: string): Promise<unknown>;
+  writeChunks(documentId: string, value: unknown): Promise<void>;
+  removeChunks(documentId: string): Promise<void>;
+}
 
 const legacyChunkFileSchema = z
   .object({

@@ -6,6 +6,7 @@ import { openConversationDatabase } from "../../src/infra/sqlite/database";
 import { ConversationRepository } from "../../src/infra/sqlite/conversation.repository";
 import { PrivateFileStorage } from "../../src/infra/storage/private-file-storage";
 import { AdminService } from "../../src/modules/admin/admin.service";
+import { JsonChunkRepository } from "../../src/modules/documents/chunk.repository";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
 import { loadConfig } from "../../src/config/config";
@@ -53,7 +54,7 @@ test("privacy erasure tombstones identity and removes personal content", async (
     contentHash: "a".repeat(64),
     status: "ready",
     chunkCount: 1,
-    embeddingModel: "mistral-embed",
+    embeddingModel: "gemini-embedding-001",
     ingestJobId: null,
     createdAt: now,
     updatedAt: now,
@@ -90,6 +91,7 @@ test("privacy erasure tombstones identity and removes personal content", async (
     storage,
     new JobService(jobRepository),
     loadConfig({ requireJwtSecrets: false }),
+    new JsonChunkRepository(storage),
   );
 
   await admin.eraseUser(userId);
@@ -210,6 +212,7 @@ test("admin summary aggregates active system records without exposing user detai
       new JsonJobRepository(collections.jobs, collections.schedulerState),
     ),
     loadConfig({ requireJwtSecrets: false }),
+    new JsonChunkRepository(storage),
   );
 
   await expect(admin.getSummary()).resolves.toEqual({

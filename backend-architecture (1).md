@@ -43,7 +43,7 @@
 | Vector search | Atlas Vector Search over MongoDB-backed chunks |
 | AI orchestration | **LangGraph.js** (`@langchain/langgraph`) |
 | LLM providers | **Inception Labs** (primary; model `mercury-3`, official `inceptionai` SDK, structured output via `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }`), **Groq** (fallback), behind an adapter |
-| Embeddings | **Mistral embeddings only** (DECIDED), behind the `EmbeddingProvider` adapter. Model `mistral-embed` (verify the model name and vector dimension, expected 1024, in Mistral's current docs). Key from `MISTRAL_API_KEY` |
+| Embeddings | Google Gemini through the `EmbeddingProvider` adapter. Model `gemini-embedding-001`, 1024 dimensions, key from `GEMINI_API_KEY` |
 | Jobs / scheduler | In-process runner with MongoDB-backed jobs and scheduler state |
 | Auth | JWT access token + rotating refresh token; argon2 password hashing |
 | Parsing | `pdfjs-dist` (per-page PDF text), `mammoth` (DOCX), plain read (TXT), `file-type` (content sniffing), `multer` (uploads) |
@@ -108,7 +108,7 @@ backend/
       sqlite/                  # legacy SQLite conversations and daily chat usage
       postgres/                # Neon PostgreSQL client and migrations
       mongo/                   # MongoDB client, indexes, and Atlas readiness
-      storage/                 # uploaded-file storage adapter (local disk)
+      storage/                 # MongoDB Atlas GridFS upload adapter
   scripts/
     bootstrap.ts               # section 6
     backup.ts  restore.ts
@@ -371,9 +371,9 @@ LlmProvider        { generate(input): Promise<LlmResult>   // supports structure
 EmbeddingProvider  { embed(texts): Promise<number[][]>; dimension: number; modelId: string }
 ```
 - Nodes depend only on these interfaces; no provider SDK is imported inside nodes.
-- Implementations: `InceptionProvider` (primary LLM), `GroqProvider` (fallback LLM), `MistralEmbeddingProvider` (the **only** embedding provider), plus `FakeLlmProvider` and `FakeEmbeddingProvider` (deterministic, for tests only).
-- **Embeddings (DECIDED: Mistral only):** `MistralEmbeddingProvider` batches inputs within Mistral's request limits, honours `Retry-After` on 429, and reports `modelId` and `dimension` (read from config and checked against the first response). There is **no embedding fallback provider**: if Mistral is unavailable, ingestion/re-embed jobs retry with backoff and then go `dead`, and chat retrieval returns `PROVIDER_UNAVAILABLE`. Changing the embedding model requires a `reembed` job, because vectors from different models are not comparable (chunks store `embeddingModel`; retrieval searches only the current model).
-- **Privacy note:** the text of course documents and learners' personal notes, and the text of questions, is sent to Mistral's API to be embedded. Record this in `Security-Architecture.md` and make it visible to users (for example in upload and privacy notices).
+- Implementations: `InceptionProvider` (primary LLM), `GroqProvider` (fallback LLM), `GeminiEmbeddingProvider`, plus `FakeLlmProvider` and `FakeEmbeddingProvider` (deterministic, for tests only).
+- **Embeddings:** `GeminiEmbeddingProvider` batches inputs, uses retrieval-specific task types, normalizes reduced-dimension vectors, and retries transient failures. There is **no embedding fallback provider**: if Gemini is unavailable, ingestion/re-embed jobs retry with backoff and then go `dead`, and chat retrieval returns `PROVIDER_UNAVAILABLE`. Changing the embedding model requires a `reembed` job, because vectors from different models are not comparable (chunks store `embeddingModel`; retrieval searches only the current model).
+- **Privacy note:** course documents, learners' personal notes, and question text are sent to Google's Gemini API for embeddings. Disclose this in security documentation and user-facing privacy notices.
 - **Fallback policy:** bounded retries with backoff (honour `Retry-After` on 429) on the primary, then switch to Groq on persistent failure or timeout. Record the provider/model actually used in `agent_executions`. If both fail, return `PROVIDER_UNAVAILABLE` (no partial answer).
 - **Inception structured output is confirmed** (Inception docs, "Structured Outputs"): pass the JSON schema through `response_format` with `strict: true`. Generate that JSON schema from the same Zod schema used to parse the result (e.g. `zod-to-json-schema`) so there is one source of truth, and **still parse the response with Zod**. Groq's JSON-schema support for the fallback path is **unverified** (OPEN-16).
 - **Cost controls:** per-user rate limit and daily request/token quota (config). Exceeding returns `QUOTA_EXCEEDED`.
@@ -576,8 +576,8 @@ Coach quiz analytics are aggregate only (average score, hardest questions, compl
 ## 17. Security and privacy (MUST)
 
 - Auth, RBAC, **ownership checks at every API and retrieval boundary**, rate limiting, secure file handling (type/size/content validation, files outside any web root, never executed).
-- Secrets only from env/secret manager (`MISTRAL_API_KEY`, Inception and Groq keys, JWT secrets). Validate env at startup and fail fast. `.env` is gitignored.
-- Document and note text leaves the system for embedding (Mistral) and for generation (Inception/Groq). State this in the security docs and user-facing privacy notice.
+- Secrets only from env/secret manager (`GEMINI_API_KEY`, Inception and Groq keys, JWT secrets). Validate env at startup and fail fast. `.env` is gitignored.
+- Document and note text leaves the system for embedding (Gemini) and for generation (Inception/Groq). State this in the security docs and user-facing privacy notice.
 - Logs are redacted: never log credentials, tokens, document text or question text. No personal data in analytics tables or admin views.
 - Security headers (helmet), request body size limits, parameterised SQL only, dependency audit in CI.
 - All uploaded files, retrieved passages, conversation history and external content are untrusted input (8.8).
@@ -712,14 +712,14 @@ Database replacement and final cleanup are a separate approved sequence in `back
 | OPEN-17 | AWS vs Azure target | Decide before B12 |
 | OPEN-18 | Real-database migration timing (MongoDB/PostgreSQL) | Approved and in progress; complete remaining migrations and verify before cleanup |
 
-Resolved since v1: OPEN-4 ("specialized" quiz = generated from content the learner selects), OPEN-2 (Mistral embeddings only), OPEN-3 (SQLite was the initial conversation store; migration target is Neon), OPEN-5 (version quizzes), OPEN-10 (SSE over POST), OPEN-12 (superseded: Atlas Vector Search is now the target).
+Resolved since v1: OPEN-4 ("specialized" quiz = generated from content the learner selects), OPEN-2 (Gemini embeddings), OPEN-3 (SQLite was the initial conversation store; migration target is Neon), OPEN-5 (version quizzes), OPEN-10 (SSE over POST), OPEN-12 (superseded: Atlas Vector Search is now the target).
 
 ---
 
 ## 24. Deviations from the brief (need coach approval; document in `Architecture.md`)
 
 1. **Persistence cutover is partial:** PostgreSQL and MongoDB Atlas are wired for selected modules, while JSON and SQLite remain active elsewhere. Do not describe the target as fully deployed.
-2. **Single instance / single process remains required** until active JSON/SQLite writers, local uploads, and process-local rate limiting are addressed.
+2. **Single instance / single process remains required** until active JSON/SQLite writers and process-local rate limiting are addressed; original uploads now use MongoDB Atlas GridFS.
 3. **LLM providers** are Inception Labs and Groq (brief: Claude and OpenAI; alternatives allowed with documented approval).
 4. **LangGraph.js** for orchestration (brief allows LangChain.js or a custom layer).
 5. **Deterministic citation validation** as the runtime gate; semantic faithfulness is measured offline.

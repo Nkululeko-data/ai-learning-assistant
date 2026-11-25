@@ -11,11 +11,11 @@ Neon PostgreSQL. Conversations and messages are stored in MongoDB; daily chat
 quotas remain relational data in Neon. MongoDB must be a replica set or
 sharded deployment because conversation writes use transactions.
 
-Uploaded source files and generated retrieval chunk files remain in the
-private `DATA_DIR` filesystem. They are file artifacts rather than the primary
-structured-data store. JSON collections and the old SQLite conversation
-database are read only by the legacy importer; the running API does not fall
-back to either store.
+Original uploaded files are stored in the MongoDB Atlas GridFS
+`document_uploads` bucket so every backend instance can retrieve them.
+Generated retrieval chunk files remain in the private `DATA_DIR` filesystem.
+JSON collections and the old SQLite conversation database are read only by the
+legacy importer; the running API does not fall back to either store.
 
 The existing repository API keeps synchronous read operations by loading
 Neon-backed records into process-local indexes at startup. Run a single API
@@ -59,7 +59,26 @@ The importer preserves the source JSON and SQLite files. Run it again safely
 after an interrupted import; conflicting existing records are reported rather
 than overwritten. Back up the source data and both databases before migration.
 `npm run backup` snapshots local files only; use Neon and MongoDB's provider
-backup/restore facilities separately for database data.
+backup/restore facilities separately for database data, including GridFS
+uploads.
+
+To migrate previously uploaded files from `DATA_DIR/uploads` to GridFS, first
+run the dry run and review its counts:
+
+```powershell
+Set-Location .\backend
+npm run uploads:migrate-gridfs
+```
+
+Then copy and verify the available files:
+
+```powershell
+npm run uploads:migrate-gridfs -- --apply
+```
+
+The migration keeps the local copies. New uploads use GridFS after the backend
+restarts with MongoDB configured. If the migration reports missing originals,
+those files cannot be recovered from their metadata and must be uploaded again.
 
 To create the initial administrator, also set `BOOTSTRAP_ADMIN_EMAIL` and
 `BOOTSTRAP_ADMIN_PASSWORD` in `.env`. The password must meet the configured
@@ -98,7 +117,7 @@ Actions > New repository secret**. Use these names when a workflow needs them:
 
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
-- `MISTRAL_API_KEY`
+- `GEMINI_API_KEY`
 - At least one of `INCEPTION_API_KEY` or `GROQ_API_KEY`
 - `BOOTSTRAP_ADMIN_PASSWORD` only for a job that runs the initial bootstrap
 
@@ -118,14 +137,14 @@ Invoke-RestMethod http://localhost:3000/health
 ```
 
 The `/ready` endpoint also checks both databases, schema version, and provider
-configuration. It returns `503` until `MISTRAL_API_KEY` and at least one LLM
+configuration. It returns `503` until `GEMINI_API_KEY` and at least one LLM
 provider key (`INCEPTION_API_KEY` or `GROQ_API_KEY`) are configured in `.env`.
 Configuring both LLM providers enables fallback between them.
 
 Document upload and ingestion support PDF, DOCX and UTF-8 TXT. The configured
 upload limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB.
-Document and personal-note text is sent to Mistral for embeddings, so disclose
-this data flow to users before enabling uploads. `MISTRAL_API_KEY` is required
+Document and personal-note text is sent to Gemini for embeddings, so disclose
+this data flow to users before enabling uploads. `GEMINI_API_KEY` is required
 for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
@@ -150,7 +169,7 @@ verification and operating artefacts:
   handling, and graceful shutdown. Test job completion, failure/retry, and
   recovery behavior.
 - **B6 — Document upload and ingestion:** PDF, DOCX, and UTF-8 TXT validation;
-  private storage; text extraction, chunking, and Mistral embeddings; plus
+  private storage; text extraction, chunking, and Gemini embeddings; plus
   status, retry, listing, deduplication, and deletion. Focus on upload limits
   and invalid files, course-owner versus personal-note access, ingestion
   success/failure, and retry/delete behavior.
@@ -187,7 +206,7 @@ verification and operating artefacts:
 
   Include `conversationId` from a previous response to continue that
   conversation. Ensure the course has at least one `ready` document. Chat
-  sends questions to Mistral for embeddings and sends bounded history and
+  sends questions to Gemini for embeddings and sends bounded history and
   retrieved evidence to the configured LLM provider. The default limits are
   10 requests/minute, 100 requests/UTC day, and 100,000 provider tokens/UTC
   day; they are configurable.
@@ -276,7 +295,7 @@ verification and operating artefacts:
 Run the focused B6 tests from the `backend` directory:
 
 ```powershell
-npm test -- --runTestsByPath tests/integration/documents.test.ts tests/unit/document.chunker.test.ts tests/unit/document.validation.test.ts tests/unit/mistral-embedding.provider.test.ts
+npm test -- --runTestsByPath tests/integration/documents.test.ts tests/unit/document.chunker.test.ts tests/unit/document.validation.test.ts tests/unit/gemini-embedding.provider.test.ts
 ```
 
 Run the focused B5 integration tests from the `backend` directory:

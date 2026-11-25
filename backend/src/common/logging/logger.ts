@@ -5,6 +5,7 @@ const redactionPaths = [
   "req.headers.cookie",
   "req.headers['set-cookie']",
   "req.headers['x-api-key']",
+  "req.headers['x-goog-api-key']",
   "*.password",
   "*.passwordHash",
   "*.token",
@@ -17,6 +18,7 @@ const redactionPaths = [
   "*.INCEPTION_API_KEY",
   "*.GROQ_API_KEY",
   "*.MISTRAL_API_KEY",
+  "*.GEMINI_API_KEY",
 ];
 
 /**

@@ -159,7 +159,7 @@ deletion rules are enforced.
 **Current status:** Complete. Authenticated PDF, DOCX and UTF-8 TXT uploads are
 validated and stored under private random keys. Persistent jobs extract text,
 create approximately 512-token chunks with 100-token overlap, embed through
-Mistral, and atomically write private chunk files. Status, retry, listing,
+Gemini, and atomically write private chunk files. Status, retry, listing,
 deduplication and deletion endpoints enforce course and personal-note access
 rules. Focused integration and unit tests cover processing, validation,
 visibility, provider retries and deletion.
@@ -208,7 +208,7 @@ Verify Groq structured-output support and record the selected model and
 validation policy before relying on its fallback path.
 
 **Current status:** Complete. The LangGraph workflow classifies intents,
-rewrites follow-ups, embeds queries with Mistral, invokes the access-filtered
+rewrites follow-ups, embeds queries with Gemini, invokes the access-filtered
 B7 retrieval service, builds a token-bounded context, gates weak evidence, and
 validates citations deterministically. Inception is primary and Groq is the
 fallback; provider calls use documented REST APIs behind adapters, and fakes

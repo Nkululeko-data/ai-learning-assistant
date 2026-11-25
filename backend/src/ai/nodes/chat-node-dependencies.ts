@@ -1,6 +1,6 @@
 import type { AppConfig } from "../../config/config";
 import type { StructuredOutputService } from "../providers/structured-output.service";
-import type { DocumentEmbeddingProvider } from "../../modules/documents/mistral-embedding.provider";
+import type { DocumentEmbeddingProvider } from "../../modules/documents/embedding-provider";
 import type { RetrievalService } from "../../modules/retrieval/retrieval.service";
 import type { AuthenticatedUser } from "../../modules/auth/auth.types";
 

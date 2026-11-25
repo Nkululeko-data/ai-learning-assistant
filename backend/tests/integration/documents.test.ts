@@ -14,8 +14,9 @@ import { CourseService } from "../../src/modules/courses/course.service";
 import { JsonCourseRepository } from "../../src/modules/courses/course.types";
 import { DocumentIngestionService } from "../../src/modules/documents/document.ingestion.service";
 import { DocumentService } from "../../src/modules/documents/document.service";
+import { JsonChunkRepository } from "../../src/modules/documents/chunk.repository";
 import { JsonDocumentRepository } from "../../src/modules/documents/document.types";
-import type { DocumentEmbeddingProvider } from "../../src/modules/documents/mistral-embedding.provider";
+import type { DocumentEmbeddingProvider } from "../../src/modules/documents/embedding-provider";
 import { JobRunner } from "../../src/modules/jobs/job.runner";
 import { JobService } from "../../src/modules/jobs/job.service";
 import { JsonJobRepository } from "../../src/modules/jobs/job.types";
@@ -94,8 +95,8 @@ async function createContext(): Promise<DocumentTestContext> {
     chunkSizeTokens: 512,
     chunkOverlapTokens: 100,
     chunkCacheMaxDocuments: 100,
-    mistralEmbeddingModel: "mistral-embed",
-    mistralEmbeddingDimension: 1024,
+    embeddingModel: "gemini-embedding-001",
+    embeddingDimension: 1024,
     inceptionModel: "mercury-3",
     groqModel: "openai/gpt-oss-20b",
     chatMinSimilarity: 0.3,
@@ -121,7 +122,7 @@ async function createContext(): Promise<DocumentTestContext> {
     jwtRefreshSecret: "b6-refresh-secret-for-tests-at-least-32",
     inceptionApiKey: undefined,
     groqApiKey: undefined,
-    mistralApiKey: undefined,
+    geminiApiKey: undefined,
     bootstrapAdminEmail: "admin@example.test",
     bootstrapAdminPassword: adminPassword,
   };
@@ -138,8 +139,8 @@ async function createContext(): Promise<DocumentTestContext> {
   const storage = new PrivateFileStorage(dataDirectory);
   await storage.initialize();
   const embeddingProvider: DocumentEmbeddingProvider = {
-    model: config.mistralEmbeddingModel,
-    dimension: config.mistralEmbeddingDimension,
+    model: config.embeddingModel,
+    dimension: config.embeddingDimension,
     embed: async (texts) => texts.map(() => Array.from({ length: 1024 }, () => 0.25)),
   };
   const documentService = new DocumentService(documentRepository, storage, jobService, config);
@@ -150,6 +151,7 @@ async function createContext(): Promise<DocumentTestContext> {
     config.chunkSizeTokens,
     config.chunkOverlapTokens,
     config.maxDocxExpandedSizeBytes,
+    new JsonChunkRepository(storage),
   );
   const app = createApp({
     logger,
@@ -324,7 +326,7 @@ describe("Document ingestion API", () => {
       errorDetail: null,
       extractionDiagnostics: null,
       chunkCount: 1,
-      embeddingModel: "mistral-embed",
+      embeddingModel: "gemini-embedding-001",
       ingestJobId: null,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -372,6 +374,13 @@ describe("Document ingestion API", () => {
     expect(file.headers["content-type"]).toMatch(/application\/pdf/);
     expect(file.headers["cache-control"]).toContain("no-store");
     expect(file.body).toEqual(pdfBytes);
+
+    await storage.removeUpload(storageKey);
+    const missingFile = await request(context.app)
+      .get(`/api/v1/documents/${document.id}/file`)
+      .set("Authorization", `Bearer ${learner.token}`);
+    expect(missingFile.status).toBe(410);
+    expect(missingFile.body.error.code).toBe("ORIGINAL_FILE_MISSING");
 
     const deletion = await request(context.app)
       .delete(`/api/v1/documents/${document.id}`)

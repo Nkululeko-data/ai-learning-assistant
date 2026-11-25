@@ -67,7 +67,7 @@ flowchart TB
         JSON[JSON Store Engine]
         SQLITE[SQLite Database]
         STORAGE[File Storage]
-        PROVIDERS[AI Providers<br/>Inception, Groq, Mistral]
+        PROVIDERS[AI Providers<br/>Inception, Groq, Gemini]
     end
     
     subgraph Background["Background Processing"]
@@ -889,7 +889,7 @@ flowchart TD
         CLM[Job Runner<br/>Claims Job]
         EXT[Extract Text<br/>per Page]
         CHK[Chunk Text<br/>with Overlap]
-        EMBD[Embed Chunks<br/>via Mistral]
+        EMBD[Embed Chunks<br/>via Gemini]
     end
     
     subgraph "Result Storage"
@@ -1080,7 +1080,7 @@ sequenceDiagram
     Note over N: Record provider used<br/>in execution metadata
 ```
 
-**Embedding Provider:** Mistral only, **no fallback**. If unavailable, operations return `PROVIDER_UNAVAILABLE` and retry via job system.
+**Embedding Provider:** Gemini only, **no fallback**. If unavailable, operations return `PROVIDER_UNAVAILABLE` and retry via job system.
 
 ---
 
@@ -1108,7 +1108,7 @@ graph TB
     subgraph "External Services"
         INC[Inception Labs API]
         GROQ[Groq API]
-        MIST[Mistral API]
+        GEM[Google Gemini API]
     end
     
     CLIENT[Client Browser] -->|HTTP| API
@@ -1121,7 +1121,7 @@ graph TB
     
     API -->|LLM| INC
     API -->|Fallback| GROQ
-    API -->|Embeddings| MIST
+    API -->|Embeddings| GEM
     
     style CLIENT fill:#e3f2fd
     style API fill:#c5cae9
@@ -1129,7 +1129,7 @@ graph TB
     style SQLITE fill:#fff9c4
     style INC fill:#c8e6c9
     style GROQ fill:#c8e6c9
-    style MIST fill:#c8e6c9
+    style GEM fill:#c8e6c9
 ```
 
 ### 8.2 Data Persistence
@@ -1419,7 +1419,7 @@ graph TB
     subgraph "Caching Strategy"
         CACHE[Permission Cache<br/>TTL: 5 min]
         CHUNK[Chunk File LRU<br/>Config: max docs]
-        EMBED[Embedding Batch<br/>Mistral limits]
+        EMBED[Embedding Batch<br/>Gemini limits]
     end
     
     subgraph "Rate Limiting"

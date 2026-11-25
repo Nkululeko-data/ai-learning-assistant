@@ -3,13 +3,14 @@ import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { writeJsonAtomically } from "../jsonstore/atomic-write";
+import type { UploadStorage } from "./upload-storage";
 
 const storageKeySchema = z.string().uuid();
 
 /**
  * Stores source uploads and per-document chunk files outside the public web root.
  */
-export class PrivateFileStorage {
+export class PrivateFileStorage implements UploadStorage {
   private readonly uploadDirectory: string;
   private readonly chunkDirectory: string;
   private readonly chunkCache = new Map<string, unknown>();
@@ -41,8 +42,8 @@ export class PrivateFileStorage {
   /**
    * Writes upload bytes to an unpredictable, extensionless file with private permissions.
    */
-  public async storeUpload(bytes: Buffer): Promise<string> {
-    const storageKey = randomUUID();
+  public async storeUpload(bytes: Buffer, existingKey?: string): Promise<string> {
+    const storageKey = storageKeySchema.parse(existingKey ?? randomUUID());
     const filePath = join(this.uploadDirectory, storageKey);
     const handle = await open(filePath, "wx", 0o600);
     let writeError: unknown;

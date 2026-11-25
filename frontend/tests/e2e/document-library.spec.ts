@@ -72,7 +72,7 @@ const documents = [
     errorDetail: null,
     extractionDiagnostics: null,
     chunkCount: 8,
-    embeddingModel: "mistral-embed",
+    embeddingModel: "gemini-embedding-001",
     ingestJobId: null,
     createdAt: "2026-01-01T10:00:00.000Z",
     updatedAt: "2026-01-01T10:01:00.000Z",

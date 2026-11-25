@@ -54,6 +54,11 @@ data/
   backups/<timestamp>/              snapshots
 ```
 
+The `uploads/` directory above is a legacy migration source. Runtime originals
+are stored in MongoDB Atlas GridFS in the `document_uploads` bucket. Document
+metadata retains its opaque `storageKey`, which is the lookup key for the
+corresponding GridFS file. Generated chunk files remain under `DATA_DIR`.
+
 ---
 
 ## 2. Logical relationships
@@ -217,7 +222,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
 | ownerId | uuid | R | Uploader: the coach (scope `course`) or the learner (scope `personal`) |
 | scope | enum(`course`,`personal`) | R | Immutable |
 | filename | string | R | Sanitised display name |
-| storageKey | string | R | Random key in `data/uploads/`; never derived from the filename |
+| storageKey | string | R | Opaque GridFS lookup key; legacy files use the same key under `data/uploads/`. Never derived from the filename |
 | mimeType | string | R | Detected from content, must match extension allowlist |
 | sizeBytes | integer | R | |
 | contentHash | sha256 | R | Duplicate detection |
@@ -240,7 +245,7 @@ Seeded by bootstrap; rows are added, never removed, by bootstrap. **Scope:** rea
   "storageKey": "9f3c1e...", "mimeType": "application/pdf", "sizeBytes": 2481923, "contentHash": "ab12...",
   "status": "ready", "errorCode": null, "errorDetail": null,
   "extractionDiagnostics": { "parser": "pdfjs-dist", "pageCount": 42, "charCount": 98122, "lowTextPages": [], "warnings": [] },
-  "chunkCount": 118, "embeddingModel": "mistral-embed", "ingestJobId": "j-3",
+  "chunkCount": 118, "embeddingModel": "gemini-embedding-001", "ingestJobId": "j-3",
   "createdAt": "2026-11-16T09:00:00.000Z", "updatedAt": "2026-11-16T09:01:10.000Z", "readyAt": "2026-11-16T09:01:10.000Z" }
 ```
 
@@ -254,7 +259,7 @@ Header:
 | courseId | uuid | R | Copied from the document at creation; immutable |
 | ownerId | uuid | R | Copied; immutable |
 | scope | enum(`course`,`personal`) | R | Copied; immutable |
-| embeddingModel | string | R | e.g. `mistral-embed` |
+| embeddingModel | string | R | e.g. `gemini-embedding-001` |
 | dimension | integer | R | e.g. 1024 (configured dimension; every vector is validated against it) |
 | chunkCount | integer | R | |
 | createdAt | iso8601 | R | |
@@ -276,7 +281,7 @@ Chunk (array `chunks[]`):
 
 ```json
 { "header": { "documentId": "d-7", "courseId": "c-12", "ownerId": "u-coach1", "scope": "course",
-              "embeddingModel": "mistral-embed", "dimension": 1024, "chunkCount": 118, "createdAt": "2026-11-16T09:01:09.000Z" },
+              "embeddingModel": "gemini-embedding-001", "dimension": 1024, "chunkCount": 118, "createdAt": "2026-11-16T09:01:09.000Z" },
   "chunks": [ { "id": "d-7:41", "chunkIndex": 41, "text": "A transaction is a unit of work ...", "tokenEstimate": 412,
                 "pageStart": 12, "pageEnd": 12, "section": "Transactions", "embedding": "<base64...>" } ] }
 ```

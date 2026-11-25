@@ -1,34 +1,22 @@
 import { z } from "zod";
+import {
+  EmbeddingProviderError,
+  type DocumentEmbeddingProvider,
+  type EmbeddingTaskType,
+} from "./embedding-provider";
 
 const embeddingResponseSchema = z.object({
-  data: z.array(
+  embeddings: z.array(
     z.object({
-      index: z.number().int().nonnegative(),
-      embedding: z.array(z.number().finite()),
+      values: z.array(z.number().finite()),
     }),
   ),
 });
 
-export interface DocumentEmbeddingProvider {
-  model: string;
-  dimension: number;
-  embed(texts: string[], signal: AbortSignal): Promise<number[][]>;
-}
-
-export class EmbeddingProviderError extends Error {
-  public constructor(
-    public readonly code: string,
-    public readonly retryable: boolean,
-  ) {
-    super("Embedding provider request failed");
-    this.name = "EmbeddingProviderError";
-  }
-}
-
 /**
- * Calls Mistral's embedding API in bounded batches and validates every returned vector.
+ * Calls Gemini's text embedding API in bounded batches and validates each vector.
  */
-export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
+export class GeminiEmbeddingProvider implements DocumentEmbeddingProvider {
   public constructor(
     private readonly apiKey: string | undefined,
     public readonly model: string,
@@ -37,11 +25,12 @@ export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
   ) {}
 
   /**
-   * Returns one validated embedding per input, preserving the original input order.
+   * Returns one normalized embedding per input, preserving the original input order.
    */
   public async embed(
     texts: string[],
     signal: AbortSignal,
+    taskType: EmbeddingTaskType = "RETRIEVAL_DOCUMENT",
   ): Promise<number[][]> {
     if (!this.apiKey) {
       throw new EmbeddingProviderError("EMBEDDING_PROVIDER_NOT_CONFIGURED", false);
@@ -51,18 +40,18 @@ export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
     for (let offset = 0; offset < texts.length; offset += 32) {
       signal.throwIfAborted();
       const batch = texts.slice(offset, offset + 32);
-      const response = await this.requestBatch(batch, signal);
-      embeddings.push(...response);
+      embeddings.push(...(await this.requestBatch(batch, signal, taskType)));
     }
     return embeddings;
   }
 
   /**
-   * Makes a bounded number of requests and honors bounded provider retry delays.
+   * Makes bounded requests and honors bounded provider retry delays.
    */
   private async requestBatch(
     texts: string[],
     signal: AbortSignal,
+    taskType: EmbeddingTaskType,
   ): Promise<number[][]> {
     const maximumAttempts = 3;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
@@ -71,14 +60,21 @@ export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
       let response: Response;
       try {
         response = await this.fetchImplementation(
-          "https://api.mistral.ai/v1/embeddings",
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:batchEmbedContents`,
           {
             method: "POST",
             headers: {
-              authorization: `Bearer ${this.apiKey}`,
+              "x-goog-api-key": this.apiKey ?? "",
               "content-type": "application/json",
             },
-            body: JSON.stringify({ model: this.model, input: texts }),
+            body: JSON.stringify({
+              requests: texts.map((text) => ({
+                model: `models/${this.model}`,
+                content: { parts: [{ text }] },
+                taskType,
+                output_dimensionality: this.dimension,
+              })),
+            }),
             signal: AbortSignal.any([signal, timeout]),
           },
         );
@@ -138,7 +134,7 @@ export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
   }
 
   /**
-   * Parses a provider response without retaining or exposing its raw body on failure.
+   * Validates batch shape and normalizes vectors as required for reduced dimensions.
    */
   private async parseResponse(
     response: Response,
@@ -151,33 +147,31 @@ export class MistralEmbeddingProvider implements DocumentEmbeddingProvider {
       throw new EmbeddingProviderError("EMBEDDING_PROVIDER_RESPONSE_INVALID", true);
     }
     const parsed = embeddingResponseSchema.safeParse(body);
-    if (!parsed.success || parsed.data.data.length !== expectedCount) {
+    if (!parsed.success || parsed.data.embeddings.length !== expectedCount) {
       throw new EmbeddingProviderError("EMBEDDING_PROVIDER_RESPONSE_INVALID", true);
     }
 
-    const vectors = new Array<number[]>(expectedCount);
-    for (const item of parsed.data.data) {
-      if (
-        item.index >= expectedCount ||
-        item.embedding.length !== this.dimension ||
-        vectors[item.index] !== undefined
-      ) {
+    return parsed.data.embeddings.map(({ values }) => {
+      if (values.length !== this.dimension) {
         throw new EmbeddingProviderError(
           "EMBEDDING_PROVIDER_RESPONSE_INVALID",
           true,
         );
       }
-      vectors[item.index] = item.embedding;
-    }
-    if (vectors.some((vector) => vector === undefined)) {
-      throw new EmbeddingProviderError("EMBEDDING_PROVIDER_RESPONSE_INVALID", true);
-    }
-    return vectors;
+      const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
+      if (!Number.isFinite(norm) || norm === 0) {
+        throw new EmbeddingProviderError(
+          "EMBEDDING_PROVIDER_RESPONSE_INVALID",
+          true,
+        );
+      }
+      return values.map((value) => value / norm);
+    });
   }
 }
 
 /**
- * Parses the standard Retry-After seconds or HTTP-date forms with a finite upper bound.
+ * Parses Retry-After seconds or HTTP dates with a finite upper bound.
  */
 function parseRetryAfter(value: string | null): number | null {
   if (!value) return null;
@@ -197,7 +191,7 @@ function retryDelay(attempt: number): number {
 }
 
 /**
- * Waits for provider backoff while still allowing worker shutdown to abort the job.
+ * Waits for provider backoff while still allowing worker shutdown to abort.
  */
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (milliseconds === 0) return Promise.resolve();

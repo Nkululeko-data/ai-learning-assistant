@@ -1,4 +1,4 @@
-import type { DocumentEmbeddingProvider } from "../../modules/documents/mistral-embedding.provider";
+import type { DocumentEmbeddingProvider } from "../../modules/documents/embedding-provider";
 
 export class FakeEmbeddingProvider implements DocumentEmbeddingProvider {
   public readonly calls: string[][] = [];

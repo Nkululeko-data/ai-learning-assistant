@@ -252,9 +252,11 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   course owner or an approved learner. Lesson responses may include
   `videoDocumentId`, `videoFilename`, and `videoSizeBytes`. Existing external
   video URLs remain readable and may be retained or removed, but new external
-  URLs are not accepted.
-- Document and personal-note text is sent to Mistral for embeddings. Deployers
-  must disclose this before upload. `MISTRAL_API_KEY` is optional at startup
+  URLs are not accepted. If the stored original is missing, the endpoint
+  returns `410 ORIGINAL_FILE_MISSING` and instructs the caller to upload it
+  again.
+- Document and personal-note text is sent to Google Gemini for embeddings. Deployers
+  must disclose this before upload. `GEMINI_API_KEY` is optional at startup
   but required to complete ingestion; provider failures are exposed only as
   safe status diagnostics.
 
@@ -293,7 +295,7 @@ RATE_LIMITED` indicates the short-window limit.
   seconds by default); an expired node returns `504 NODE_TIMEOUT` and records
   only safe execution metadata.
 - The question, bounded conversation history, and retrieved context are sent
-  to the configured LLM provider. The question is sent to Mistral for query
+  to the configured LLM provider. The question is sent to Google Gemini for query
   embedding. This data flow must be disclosed to users. Execution records
   store only request/resource identifiers, node/status/timing, token counts,
   provider/model, prompt version, and safe error codes—not prompts, answers,

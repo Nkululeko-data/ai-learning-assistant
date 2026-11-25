@@ -8,7 +8,8 @@ The deployed backend uses Neon PostgreSQL for structured application data and
 MongoDB for conversations and messages. Chat quota counters remain in Neon.
 `backend/scripts/migrate-legacy-data.ts` imports JSON collections and SQLite
 conversation history idempotently; it does not delete the source files.
-Private uploads and generated retrieval chunk files remain in `DATA_DIR`.
+Original uploads use MongoDB Atlas GridFS (`document_uploads`); generated
+retrieval chunk files remain in `DATA_DIR`.
 The original JSON/SQLite storage decisions below describe the initial design,
 not the current runtime.
 
@@ -50,10 +51,10 @@ Modules communicate through their exported `index.ts` service surface. Repositor
 | Retrieval | Access-filtered in-process BM25 keyword and cosine-vector search, combined with weighted reciprocal-rank fusion |
 | Orchestration | LangGraph.js with stateless graphs |
 | LLM | Inception Labs primary, Groq fallback |
-| Embeddings | Mistral only; no embedding fallback |
+| Embeddings | Gemini `gemini-embedding-001`; no embedding fallback |
 | Background work | Neon-backed in-process job runner and scheduler |
 | Auth | Short-lived JWT access tokens, rotating opaque refresh tokens, argon2 password hashes |
-| Files | Local disk outside the web root; PDF, DOCX and TXT ingestion |
+| Files | Private MongoDB Atlas GridFS bucket; PDF, DOCX and TXT ingestion |
 | Tests | Jest, Supertest, isolated integration tests and an on-demand AI evaluation suite |
 | Operations | Docker single container with a persistent data volume |
 
@@ -71,7 +72,8 @@ The detailed field-level data model is in [Database-Design.md](./Database-Design
 ## Runtime and scaling constraints
 
 Run one backend process for now and mount `data/` on persistent storage for
-uploads and generated chunks. The Neon adapter hydrates synchronous
+generated chunks and other local data. MongoDB GridFS stores source uploads.
+The Neon adapter hydrates synchronous
 process-local read indexes at startup, and job ownership is in-process; do not
 run multiple API instances until cache invalidation and distributed job
 ownership are addressed.
@@ -94,7 +96,7 @@ The following decisions are incorporated from the supplied design decisions and 
 |---|---|
 | JSON + SQLite instead of MongoDB/Atlas | Superseded: Neon and MongoDB are runtime stores |
 | Single instance and in-process jobs | Current limitation from process-local indexes and in-process workers |
-| Inception/Groq and Mistral instead of the brief's provider choices | Proposed; coach approval and privacy notice required |
+| Inception/Groq and Gemini instead of the brief's provider choices | Proposed; coach approval and privacy notice required |
 | LangGraph.js | Proposed; coach approval and written rationale required |
 | Admin handling of a deactivated coach's courses | Resolved for B4: reassign to an active coach or archive |
 | Groq structured-output support | Must be verified before the chat graph; use the documented JSON-mode fallback if unsupported |
@@ -105,7 +107,7 @@ Do not implement an open item until its decision is recorded. Do not start appli
 
 ## Security and privacy
 
-The security controls are specified in [Security-Architecture.md](./Security-Architecture.md). In particular: never log secrets or learner/course text; treat retrieved and uploaded material as untrusted; keep uploaded files outside the web root; and disclose that document, note and question text is sent to the configured LLM and Mistral embedding services.
+The security controls are specified in [Security-Architecture.md](./Security-Architecture.md). In particular: never log secrets or learner/course text; treat retrieved and uploaded material as untrusted; keep uploaded files outside the web root; and disclose that document, note and question text is sent to the configured LLM and Gemini embedding services.
 
 ## Documentation and implementation phases
 

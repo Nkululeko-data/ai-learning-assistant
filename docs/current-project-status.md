@@ -9,9 +9,12 @@ application records and MongoDB for conversations and messages. Daily chat
 quotas are stored in Neon. `npm run db:migrate` applies the additive Neon
 schema migration; `npm run db:import-legacy` imports available JSON and SQLite
 records without deleting source files. Runtime startup requires both
-databases. Private uploads and generated retrieval chunk files remain in
-`DATA_DIR`; JSON/SQLite application stores are retained only as migration
-sources and test fixtures.
+databases. Original uploads are stored in MongoDB Atlas GridFS
+(`document_uploads`); generated retrieval chunk files remain in `DATA_DIR`.
+`npm run uploads:migrate-gridfs` dry-runs legacy upload migration;
+`npm run uploads:migrate-gridfs -- --apply` copies and verifies available
+files while preserving local copies. JSON/SQLite application stores are
+retained only as migration sources and test fixtures.
 
 ## Current position
 
@@ -119,8 +122,8 @@ artifacts, not runtime functions.
   `chunkDocumentPages()` splits extracted text into searchable chunks.
 - [`document.ingestion.service.ts`](../backend/src/modules/documents/document.ingestion.service.ts):
   `DocumentIngestionService.ingest()` runs ingestion.
-- [`mistral-embedding.provider.ts`](../backend/src/modules/documents/mistral-embedding.provider.ts):
-  `MistralEmbeddingProvider.embed()` creates embeddings.
+- [`gemini-embedding.provider.ts`](../backend/src/modules/documents/gemini-embedding.provider.ts):
+  `GeminiEmbeddingProvider.embed()` creates embeddings.
 
 ### B7 — Access-filtered retrieval
 

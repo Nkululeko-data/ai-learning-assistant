@@ -42,8 +42,8 @@ const defaultConfigSchema = z
   chunkCacheMaxDocuments: z.number().int().min(1).max(10000),
   inceptionModel: z.string().trim().min(1).max(100),
   groqModel: z.string().trim().min(1).max(100),
-  mistralEmbeddingModel: z.string().trim().min(1).max(100),
-  mistralEmbeddingDimension: z.number().int().min(1).max(4096),
+  embeddingModel: z.string().trim().min(1).max(100),
+  embeddingDimension: z.number().int().min(1).max(4096),
   chatMinSimilarity: z.number().min(0).max(1),
   chatMinChunks: z.number().int().min(1).max(50),
   chatMinCitations: z.number().int().min(1).max(20),
@@ -168,7 +168,7 @@ const environmentSchema = z.object({
   JWT_REFRESH_SECRET: optionalSecret.pipe(z.string().min(32).optional()),
   INCEPTION_API_KEY: optionalSecret,
   GROQ_API_KEY: optionalSecret,
-  MISTRAL_API_KEY: optionalSecret,
+  GEMINI_API_KEY: optionalSecret,
   BOOTSTRAP_ADMIN_EMAIL: optionalEmail,
   BOOTSTRAP_ADMIN_PASSWORD: optionalValue,
 });
@@ -198,8 +198,8 @@ export interface AppConfig {
   chunkCacheMaxDocuments: number;
   inceptionModel: string;
   groqModel: string;
-  mistralEmbeddingModel: string;
-  mistralEmbeddingDimension: number;
+  embeddingModel: string;
+  embeddingDimension: number;
   chatMinSimilarity: number;
   chatMinChunks: number;
   chatMinCitations: number;
@@ -223,7 +223,7 @@ export interface AppConfig {
   jwtRefreshSecret: string | undefined;
   inceptionApiKey: string | undefined;
   groqApiKey: string | undefined;
-  mistralApiKey: string | undefined;
+  geminiApiKey: string | undefined;
   bootstrapAdminEmail: string | undefined;
   bootstrapAdminPassword: string | undefined;
 }
@@ -335,7 +335,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
     INCEPTION_API_KEY: process.env.INCEPTION_API_KEY,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
-    MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     BOOTSTRAP_ADMIN_EMAIL: process.env.BOOTSTRAP_ADMIN_EMAIL,
     BOOTSTRAP_ADMIN_PASSWORD: process.env.BOOTSTRAP_ADMIN_PASSWORD,
   });
@@ -447,8 +447,8 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     chunkCacheMaxDocuments: values.CHUNK_CACHE_MAX_DOCUMENTS,
     inceptionModel: values.INCEPTION_MODEL,
     groqModel: values.GROQ_MODEL,
-    mistralEmbeddingModel: defaults.mistralEmbeddingModel,
-    mistralEmbeddingDimension: defaults.mistralEmbeddingDimension,
+    embeddingModel: defaults.embeddingModel,
+    embeddingDimension: defaults.embeddingDimension,
     chatMinSimilarity: values.CHAT_MIN_SIMILARITY,
     chatMinChunks: values.CHAT_MIN_CHUNKS,
     chatMinCitations: values.CHAT_MIN_CITATIONS,
@@ -472,7 +472,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     jwtRefreshSecret: values.JWT_REFRESH_SECRET,
     inceptionApiKey: values.INCEPTION_API_KEY,
     groqApiKey: values.GROQ_API_KEY,
-    mistralApiKey: values.MISTRAL_API_KEY,
+    geminiApiKey: values.GEMINI_API_KEY,
     bootstrapAdminEmail: values.BOOTSTRAP_ADMIN_EMAIL?.toLowerCase(),
     bootstrapAdminPassword: values.BOOTSTRAP_ADMIN_PASSWORD,
   };
@@ -511,6 +511,6 @@ function loadDefaultConfig(): z.infer<typeof defaultConfigSchema> {
  */
 export function hasProviderConfiguration(config: AppConfig): boolean {
   return Boolean(
-    config.mistralApiKey && (config.inceptionApiKey || config.groqApiKey),
+    config.geminiApiKey && (config.inceptionApiKey || config.groqApiKey),
   );
 }

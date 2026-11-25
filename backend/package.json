@@ -12,6 +12,7 @@
     "migrate": "tsx src/infra/postgres/migrate.ts",
     "migrate:json-to-neon": "tsx scripts/migrate-json-to-neon.ts",
     "migrate:json-to-mongo": "tsx scripts/migrate-json-to-mongo.ts",
+    "uploads:migrate-gridfs": "tsx scripts/migrate-local-uploads-to-gridfs.ts",
     "seed:courses": "tsx scripts/seed-courses.ts",
     "mongo:vector-index": "tsx scripts/create-atlas-vector-index.ts",
     "db:migrate": "tsx scripts/migrate-database-schema.ts",

@@ -40,8 +40,8 @@ async function main(): Promise<void> {
     await migrateJsonToMongo({
       dataDirectory: config.dataDir,
       dryRun: true,
-      embeddingModel: config.mistralEmbeddingModel,
-      embeddingDimension: config.mistralEmbeddingDimension,
+      embeddingModel: config.embeddingModel,
+      embeddingDimension: config.embeddingDimension,
       database: mongoDatabase,
     });
     const collections = await migrateLegacyData(
@@ -53,8 +53,8 @@ async function main(): Promise<void> {
     const mongoMigration = await migrateJsonToMongo({
       dataDirectory: config.dataDir,
       dryRun: false,
-      embeddingModel: config.mistralEmbeddingModel,
-      embeddingDimension: config.mistralEmbeddingDimension,
+      embeddingModel: config.embeddingModel,
+      embeddingDimension: config.embeddingDimension,
       database: mongoDatabase,
       userIdAliases: await loadUserIdAliases(postgres),
     });

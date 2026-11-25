@@ -325,6 +325,7 @@
           },
           "401": { "$ref": "#/components/responses/ApiError" },
           "404": { "$ref": "#/components/responses/ApiError" },
+          "410": { "$ref": "#/components/responses/ApiError" },
           "422": { "$ref": "#/components/responses/ValidationError" }
         }
       }
@@ -908,7 +909,7 @@
       },
       "DocumentUploadRequest": {
         "required": true,
-        "description": "Multipart upload. Course-scope files require the owning coach; personal files require an approved learner. Content is sent to Mistral for embeddings.",
+        "description": "Multipart upload. Course-scope files require the owning coach; personal files require an approved learner. Content is sent to Google Gemini for embeddings.",
         "content": {
           "multipart/form-data": {
             "schema": { "$ref": "#/components/schemas/DocumentUploadRequest" }

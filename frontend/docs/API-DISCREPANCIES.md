@@ -33,7 +33,7 @@ the F1 scaffold was added after approval.
 1. **Persistence and AI providers:** the brief proposes MongoDB/Atlas Vector
    Search and Claude/OpenAI. The code uses JSON collections, SQLite for
    conversations and daily chat usage, private chunk files with in-process
-   cosine retrieval, Inception/Groq for LLM calls, and Mistral embeddings.
+   cosine retrieval, Inception/Groq for LLM calls, and Gemini embeddings.
    [`design-decisions (1).md`](<../../design-decisions%20(1).md>) records these
    choices as decided/tabled; the older decision table in
    [`Architecture.md`](../../docs/architecture/Architecture.md) still labels

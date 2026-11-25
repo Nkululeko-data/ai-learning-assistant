@@ -16,7 +16,7 @@ import {
   StructuredOutputError,
   StructuredOutputService,
 } from "../../ai/providers/structured-output.service";
-import type { DocumentEmbeddingProvider } from "../documents/mistral-embedding.provider";
+import type { DocumentEmbeddingProvider } from "../documents/embedding-provider";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { RetrievalService } from "../retrieval/retrieval.service";
 import {

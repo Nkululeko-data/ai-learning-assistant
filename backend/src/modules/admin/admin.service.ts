@@ -3,7 +3,7 @@ import { AppError, NotFoundError } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
 import type { SystemCollections } from "../../infra/jsonstore/system-collections";
 import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
-import type { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import type { UploadStorage } from "../../infra/storage/upload-storage";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
 import {
@@ -11,7 +11,6 @@ import {
   type DocumentRepository,
 } from "../documents/document.types";
 import {
-  JsonChunkRepository,
   type ChunkRepository,
 } from "../documents/chunk.repository";
 import {
@@ -27,15 +26,15 @@ export class AdminService {
   public constructor(
     private readonly collections: SystemCollections,
     private readonly conversations: ConversationRepositoryPort,
-    private readonly storage: PrivateFileStorage,
+    private readonly storage: UploadStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
+    chunks: ChunkRepository,
     documents?: DocumentRepository,
-    chunks?: ChunkRepository,
     courses?: CourseRepository,
   ) {
     this.documents = documents ?? new JsonDocumentRepository(collections);
-    this.chunks = chunks ?? new JsonChunkRepository(storage);
+    this.chunks = chunks;
     this.courses = courses ?? new JsonCourseRepository(collections);
   }
 

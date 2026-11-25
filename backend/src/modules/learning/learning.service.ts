@@ -7,8 +7,8 @@ import {
 } from "../../common/errors/app-error";
 import type { AppConfig } from "../../config/config";
 import { runLearningContentGraph } from "../../ai/graphs/learning-content.graph";
-import type { DocumentEmbeddingProvider } from "../documents/mistral-embedding.provider";
-import { EmbeddingProviderError } from "../documents/mistral-embedding.provider";
+import type { DocumentEmbeddingProvider } from "../documents/embedding-provider";
+import { EmbeddingProviderError } from "../documents/embedding-provider";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import type {
   RetrievedChunk,
@@ -955,14 +955,18 @@ export class LearningService {
       `Important concepts and learning objectives from selected material for ${kind}`;
     let vectors: number[][];
     try {
-      vectors = await this.embeddingProvider.embed([query], signal);
+      vectors = await this.embeddingProvider.embed(
+        [query],
+        signal,
+        "RETRIEVAL_QUERY",
+      );
     } catch (error) {
       if (error instanceof EmbeddingProviderError) {
         throw new AppError(
           "PROVIDER_UNAVAILABLE",
           503,
           "The embedding provider is unavailable",
-          { provider: "mistral", providerErrorCode: error.code },
+          { provider: "gemini", providerErrorCode: error.code },
         );
       }
       throw error;
@@ -973,7 +977,7 @@ export class LearningService {
         "PROVIDER_UNAVAILABLE",
         503,
         "The embedding provider returned no vector",
-        { provider: "mistral", providerErrorCode: "EMBEDDING_PROVIDER_RESPONSE_INVALID" },
+        { provider: "gemini", providerErrorCode: "EMBEDDING_PROVIDER_RESPONSE_INVALID" },
       );
     }
     const retrieved = await this.retrievalService.search(

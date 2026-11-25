@@ -9,12 +9,12 @@ flowchart LR
   UP[Authenticated upload] --> AUTH[Permission and ownership checks]
   AUTH --> VAL[Extension, MIME, content and size validation]
   VAL --> HASH[Hash and duplicate check]
-  HASH --> FILE[Store under random key outside web root]
+  HASH --> FILE[Store under random key in MongoDB GridFS]
   FILE --> META[Create uploaded document record]
   META --> JOB[Enqueue ingest job; return 202]
   JOB --> EXT[Extract PDF pages / DOCX text / UTF-8 TXT]
   EXT --> CHK[Chunk at configured size with overlap and page metadata]
-  CHK --> EMB[Mistral embedding adapter]
+  CHK --> EMB[Gemini embedding adapter]
   EMB --> WRITE[Atomically write per-document chunk file]
   WRITE --> READY[Set document ready]
   EXT -->|low text or parse error| FAILED[Set actionable failure diagnostics]
@@ -23,9 +23,11 @@ flowchart LR
 Invalid uploads are rejected before enqueueing. The default compressed upload
 limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB. Ingestion
 jobs are idempotent and report status through the document status endpoint.
-Chunks are approximately 512 tokens with 100-token overlap by default and do
-not cross PDF page boundaries. OCR is out of scope. Document text is sent to
-Mistral for embeddings and must be disclosed to users before upload.
+Original file bytes are read from the same GridFS bucket during ingestion and
+when authorized users retrieve the source file. Chunks are approximately 512
+tokens with 100-token overlap by default and do not cross PDF page boundaries.
+OCR is out of scope. Document text is sent to Google Gemini for embeddings and
+must be disclosed to users before upload.
 
 ## 2. Grounded chat
 

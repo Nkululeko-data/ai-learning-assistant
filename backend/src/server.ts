@@ -47,8 +47,8 @@ import {
 } from "./modules/documents/chunk.repository";
 import { DocumentService } from "./modules/documents/document.service";
 import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
-import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
-import { PrivateFileStorage } from "./infra/storage/private-file-storage";
+import { GeminiEmbeddingProvider } from "./modules/documents/gemini-embedding.provider";
+import { GridFSUploadStorage } from "./infra/storage/gridfs-upload-storage";
 import { ChatService } from "./modules/chat/chat.service";
 import { RetrievalService } from "./modules/retrieval/retrieval.service";
 import { InceptionProvider } from "./ai/providers/inception.provider";
@@ -82,15 +82,18 @@ export async function startServer(): Promise<Server> {
   const postgresPool = createPostgresPool(databaseUrl);
   const mongoClient = createMongoClient(mongodbUri);
   let mongoDatabase: Db;
+  let uploadStorage!: GridFSUploadStorage;
   let collections: SystemCollections;
   try {
     await mongoClient.connect();
     mongoDatabase = mongoClient.db(mongodbDbName);
     await ensureMongoIndexes(mongoDatabase);
+    uploadStorage = new GridFSUploadStorage(mongoDatabase);
+    await uploadStorage.initialize();
     await assertAtlasVectorIndexReady(
       mongoDatabase,
-      config.mistralEmbeddingModel,
-      config.mistralEmbeddingDimension,
+      config.embeddingModel,
+      config.embeddingDimension,
     );
     const schemaVersion = await getSchemaVersion(postgresPool);
     if (schemaVersion !== EXPECTED_SCHEMA_VERSION) {
@@ -149,31 +152,26 @@ export async function startServer(): Promise<Server> {
   const chunkRepository = new MongoChunkRepository(
     mongoDatabase.collection<ChunkRecordDocument>("document_chunks"),
   );
-  const privateFileStorage = new PrivateFileStorage(
-    config.dataDir,
-    config.chunkCacheMaxDocuments,
-  );
-  await privateFileStorage.initialize();
   const retrievalService = new RetrievalService(
     documentRepository,
     chunkRepository,
-    config.mistralEmbeddingModel,
-    config.mistralEmbeddingDimension,
+    config.embeddingModel,
+    config.embeddingDimension,
   );
-  const embeddingProvider = new MistralEmbeddingProvider(
-    config.mistralApiKey,
-    config.mistralEmbeddingModel,
-    config.mistralEmbeddingDimension,
+  const embeddingProvider = new GeminiEmbeddingProvider(
+    config.geminiApiKey,
+    config.embeddingModel,
+    config.embeddingDimension,
   );
   const documentService = new DocumentService(
     documentRepository,
-    privateFileStorage,
+    uploadStorage,
     jobService,
     config,
   );
   const documentIngestionService = new DocumentIngestionService(
     documentRepository,
-    privateFileStorage,
+    uploadStorage,
     embeddingProvider,
     config.chunkSizeTokens,
     config.chunkOverlapTokens,
@@ -198,11 +196,11 @@ export async function startServer(): Promise<Server> {
   const adminService = new AdminService(
     collections,
     conversationRepository,
-    privateFileStorage,
+    uploadStorage,
     jobService,
     config,
-    documentRepository,
     chunkRepository,
+    documentRepository,
     courseRepository,
   );
   const executionRepository = new JsonAgentExecutionRepository(

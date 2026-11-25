@@ -62,11 +62,7 @@ export async function assertAtlasVectorIndexReady(
   embeddingModel: string,
   embeddingDimension: number,
 ): Promise<void> {
-  if (embeddingModel !== "mistral-embed" || embeddingDimension !== 1024) {
-    throw new Error(
-      "Atlas Vector Search requires mistral-embed with 1024 dimensions",
-    );
-  }
+  assertAtlasEmbeddingConfigSupported(embeddingModel, embeddingDimension);
   const indexes = await database
     .collection("document_chunks")
     .listSearchIndexes("document_chunks_vector")
@@ -75,6 +71,23 @@ export async function assertAtlasVectorIndexReady(
   if (!isReadyAtlasIndex(index)) {
     throw new Error(
       "Atlas Vector Search index document_chunks_vector is missing or not ready",
+    );
+  }
+}
+
+/**
+ * Keeps configured Gemini embeddings compatible with the existing Atlas vector index.
+ */
+export function assertAtlasEmbeddingConfigSupported(
+  embeddingModel: string,
+  embeddingDimension: number,
+): void {
+  if (
+    embeddingModel !== "gemini-embedding-001" ||
+    embeddingDimension !== 1024
+  ) {
+    throw new Error(
+      "Atlas Vector Search requires gemini-embedding-001 with 1024 dimensions",
     );
   }
 }

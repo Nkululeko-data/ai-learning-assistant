@@ -43,7 +43,7 @@ describe("ChatService", () => {
     dataDirectory = mkdtempSync(join(tmpdir(), "ai-learning-chat-service-"));
     database = openConversationDatabase(dataDirectory);
     repository = new ConversationRepository(database);
-    embeddingProvider = new FakeEmbeddingProvider("mistral-embed", 2);
+    embeddingProvider = new FakeEmbeddingProvider("gemini-embedding-001", 2);
     primary = new FakeLlmProvider("inception", "test-model", []);
     const config = loadConfig({ requireJwtSecrets: false });
     const retrievalRepository: RetrievalRepository = {
@@ -54,7 +54,7 @@ describe("ChatService", () => {
     const retrievalService = new RetrievalService(
       retrievalRepository,
       createTestChunkRepository(async () => ({})),
-      "mistral-embed",
+      "gemini-embedding-001",
       2,
     );
     service = new ChatService(

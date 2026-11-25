@@ -2,17 +2,17 @@ import { z } from "zod";
 import { JobExecutionError } from "../jobs/job.service";
 import type { JobRecord } from "../../infra/jsonstore/system-collections";
 import type { DocumentRepository } from "./document.types";
-import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import {
+  isUploadStorageNotFound,
+  type UploadStorage,
+} from "../../infra/storage/upload-storage";
 import { chunkDocumentPages } from "./document.chunker";
 import { extractDocumentText, type ExtractionResult } from "./document.extractors";
 import {
   EmbeddingProviderError,
   type DocumentEmbeddingProvider,
-} from "./mistral-embedding.provider";
-import {
-  JsonChunkRepository,
-  type ChunkRepository,
-} from "./chunk.repository";
+} from "./embedding-provider";
+import type { ChunkRepository } from "./chunk.repository";
 
 const documentIdPayloadSchema = z.object({
   documentId: z.string().uuid(),
@@ -27,12 +27,12 @@ const minimumPdfTextCharacters = 50;
 export class DocumentIngestionService {
   public constructor(
     private readonly repository: DocumentRepository,
-    private readonly storage: PrivateFileStorage,
+    private readonly storage: UploadStorage,
     private readonly embeddings: DocumentEmbeddingProvider,
     private readonly chunkSizeTokens: number,
     private readonly chunkOverlapTokens: number,
     private readonly maxExtractedTextBytes: number,
-    private readonly chunks: ChunkRepository = new JsonChunkRepository(storage),
+    private readonly chunks: ChunkRepository,
   ) {}
 
   /**
@@ -116,6 +116,7 @@ export class DocumentIngestionService {
       const vectors = await this.embeddings.embed(
         chunks.map((chunk) => chunk.text),
         signal,
+        "RETRIEVAL_DOCUMENT",
       );
       if (
         vectors.length !== chunks.length ||
@@ -266,14 +267,14 @@ function mapProcessingFailure(
       code: error.code,
       detail:
         error.code === "EMBEDDING_PROVIDER_NOT_CONFIGURED"
-          ? "MISTRAL_API_KEY is not configured. Configure it and retry processing."
+          ? "GEMINI_API_KEY is not configured. Configure it and retry processing."
           : error.code === "EMBEDDING_PROVIDER_AUTH_FAILED"
-            ? "The embedding provider rejected its credentials. Check MISTRAL_API_KEY."
+            ? "The embedding provider rejected its credentials. Check GEMINI_API_KEY."
             : "The embedding provider could not process this document. Retry later.",
       retryable: error.retryable,
     };
   }
-  if (isMissingFileError(error) && stage === "read") {
+  if (isUploadStorageNotFound(error) && stage === "read") {
     return {
       code: "ORIGINAL_FILE_MISSING",
       detail: "The original upload is unavailable. Upload the file again.",
@@ -298,16 +299,4 @@ function mapProcessingFailure(
  */
 function normalizeSection(section: string | null): string | null {
   return section?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? null;
-}
-
-/**
- * Identifies an absent source file without exposing a filesystem path.
- */
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
 }

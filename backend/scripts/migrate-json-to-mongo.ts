@@ -641,8 +641,8 @@ async function main(): Promise<void> {
   const result = await migrateJsonToMongo({
     dataDirectory: config.dataDir,
     dryRun,
-    embeddingModel: config.mistralEmbeddingModel,
-    embeddingDimension: config.mistralEmbeddingDimension,
+    embeddingModel: config.embeddingModel,
+    embeddingDimension: config.embeddingDimension,
   });
   console.info(
     JSON.stringify({

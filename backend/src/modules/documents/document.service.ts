@@ -8,7 +8,10 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import type { JobService } from "../jobs/job.service";
 import type { DocumentListQuery } from "./document.schemas";
 import type { DocumentRepository } from "./document.types";
-import { PrivateFileStorage } from "../../infra/storage/private-file-storage";
+import {
+  isUploadStorageNotFound,
+  type UploadStorage,
+} from "../../infra/storage/upload-storage";
 import {
   validateDocumentUpload,
   validateLessonVideoUpload,
@@ -39,7 +42,7 @@ export interface DocumentView {
 export class DocumentService {
   public constructor(
     private readonly repository: DocumentRepository,
-    private readonly storage: PrivateFileStorage,
+    private readonly storage: UploadStorage,
     private readonly jobs: JobService,
     private readonly config: AppConfig,
   ) {}
@@ -226,10 +229,25 @@ export class DocumentService {
       throw new NotFoundError("Course file not found");
     }
     return {
-      bytes: await this.storage.readUpload(document.storageKey),
+      bytes: await this.readCourseFile(document.storageKey),
       filename: document.filename,
       mimeType: document.mimeType,
     };
+  }
+
+  private async readCourseFile(storageKey: string): Promise<Buffer> {
+    try {
+      return await this.storage.readUpload(storageKey);
+    } catch (error) {
+      if (isUploadStorageNotFound(error)) {
+        throw new AppError(
+          "ORIGINAL_FILE_MISSING",
+          410,
+          "The original upload is unavailable. Upload the file again.",
+        );
+      }
+      throw error;
+    }
   }
 
   /**

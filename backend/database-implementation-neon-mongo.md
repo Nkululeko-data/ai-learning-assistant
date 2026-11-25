@@ -1,7 +1,7 @@
 # AI Learning Assistant: Database Implementation (Neon Postgres + MongoDB Atlas)
 
 Build spec for the coding agent. Repo: `Nkululeko-data/ai-learning-assistant`, backend in `backend/`.
-This is the approved target architecture and phased migration plan, not a claim that the cutover is complete. Production is currently hybrid: JSON auth and other feature collections, SQLite conversations, PostgreSQL courses/enrolments, and MongoDB documents/chunks/jobs. Keep the legacy stores and single-instance deployment constraint until the final verification and cleanup gates pass.
+This is the approved target architecture and phased migration plan, not a claim that the full cutover is complete. Production is currently hybrid. Original uploads now use MongoDB Atlas GridFS; keep the remaining legacy stores and single-instance deployment constraint until the final verification and cleanup gates pass.
 
 ## 0. Working rules
 
@@ -23,7 +23,7 @@ This is the approved target architecture and phased migration plan, not a claim 
 | Conversations + messages | **Move from SQLite to Neon** |
 | Existing JSON data | **Migrate all relational data** into Neon, keeping existing UUIDs |
 | Courses | New tables in Neon; seed some courses |
-| Single-instance rule | **Retained during migration.** Revisit only after all active JSON/SQLite writers, local uploads, and process-local rate limiting are addressed and verified. |
+| Single-instance rule | **Retained during migration.** Revisit only after all active JSON/SQLite writers and process-local rate limiting are addressed and verified. |
 
 ## 2. What goes where
 
@@ -41,7 +41,7 @@ documents (metadata), document_chunks (text + embedding), jobs, ai_executions, g
 - Chunk id is `<documentId>:<chunkIndex>`.
 - Retrieval filter is applied **before** scoring:
   `courseId = X AND embeddingModel = current AND (scope = 'course' OR (scope = 'personal' AND ownerId = currentUser))`.
-- Embeddings: `mistral-embed` only. Expected 1024 dimensions; **verify against the API before fixing the index**.
+- Embeddings use Google's `gemini-embedding-001` model with 1024-dimensional normalized vectors to match the Atlas index.
 
 ## 3. Step 1: Config and connections
 
@@ -203,10 +203,10 @@ Repository interfaces: `DocumentRepository`, `ChunkRepository` (vector search ta
 
 Implementation and cutover:
 - `ensure-indexes.ts` creates the regular MongoDB indexes at startup; startup also refuses to proceed unless the Atlas vector index is queryable.
-- `docs/atlas-vector-index.json` is applied idempotently by `npm run mongo:vector-index`. The `mistral-embed` documentation confirms 1024 dimensions: https://docs.mistral.ai/inference/embeddings/text_embeddings
-- `npm run migrate:json-to-mongo -- --dry-run` backs up and validates `documents.json`, `jobs.json`, `scheduler_state.json`, all legacy chunk files, and private upload file sizes. The real run is idempotent, preserves IDs and upload paths, and refuses invalid, conflicting, or extra target records; it never deletes target data.
-- Stop the API and workers before the real import. Then run the importer, create the Atlas vector index, wait until Atlas reports it queryable, and only then start the Mongo-backed document, chunk, and job services. Uploaded file bytes remain in `DATA_DIR/uploads`, so that directory must stay on persistent private storage and be shared at the same path by every API/worker replica when horizontally scaled.
-- Document deletion remains a confirmed, idempotent cleanup job: it permanently removes chunks, the private upload, and metadata. The existing UI confirmation warns that deletion cannot be undone.
+- `docs/atlas-vector-index.json` is applied idempotently by `npm run mongo:vector-index`. Gemini's embedding API supports configurable dimensions: https://ai.google.dev/gemini-api/docs/embeddings
+- `npm run migrate:json-to-mongo -- --dry-run` backs up and validates `documents.json`, `jobs.json`, `scheduler_state.json`, legacy chunk files, and legacy upload file sizes. The real run is idempotent, preserves IDs and storage keys, and refuses invalid, conflicting, or extra target records; it never deletes target data.
+- Original uploads are stored in the MongoDB Atlas GridFS `document_uploads` bucket. Run `npm run uploads:migrate-gridfs` for a dry run, then `npm run uploads:migrate-gridfs -- --apply` to copy and verify available files from `DATA_DIR/uploads`; the migration preserves local copies. Missing originals must be uploaded again.
+- Document deletion remains a confirmed, idempotent cleanup job: it permanently removes chunks, the GridFS upload, and metadata. The existing UI confirmation warns that deletion cannot be undone.
 
 ## 10. Step 8: Cleanup and doc updates
 
@@ -228,8 +228,8 @@ Implementation and cutover:
   source/target counts before relying on migrated records.
 - `better-sqlite3` and `@types/better-sqlite3` are absent from
   `backend/package.json`; conversations use Node's built-in `node:sqlite`.
-- Keep the one-instance deployment constraint until rate limiting and upload
-  storage are ready for multiple instances.
+- Keep the one-instance deployment constraint until rate limiting and the
+  remaining persistence dependencies are ready for multiple instances.
 - Before deleting legacy persistence, migrate the remaining data, switch all
   production repositories, run isolated PostgreSQL and Atlas integration
   tests, verify source/target counts and backups, and receive explicit approval
@@ -239,7 +239,7 @@ Implementation and cutover:
 
 - **Rate limiting** (auth routes) currently uses an in-memory store; implement a shared store or explicitly accept and protect per-instance limits.
 - **Job runner and scheduler** use MongoDB leases for atomic claims, but other multi-instance prerequisites remain.
-- **Uploads** must use persistent storage shared consistently by every API/worker instance.
+- **Uploads** use the shared MongoDB Atlas GridFS bucket across API/worker instances.
 - **Remaining JSON and SQLite repositories** must be migrated and verified before multiple instances are enabled.
 - **Readiness** checks both databases; `/health` stays process-only and `/ready` touches the databases.
 
@@ -249,7 +249,7 @@ Implementation and cutover:
 - Repository tests: real Postgres via `TEST_DATABASE_URL` (separate Neon branch or local container). Never run against production.
 - Mongo tests: real Mongo (local container or a separate Atlas test database). Atlas Vector Search needs Atlas, so vector queries are covered by a separate, opt-in integration test; unit tests fake `ChunkRepository`.
 - Required test cases: partial unique index on pending coach requests, refresh-token rotation race, registration atomicity (rollback leaves no user), migration idempotency, JSON-to-Neon count match, retrieval filter excludes other users' personal notes.
-- No test may call Inception, Groq or Mistral.
+- No test may call Inception, Groq or Gemini.
 
 ## 13. Open items to confirm (defaults in brackets)
 
@@ -257,7 +257,7 @@ Implementation and cutover:
 2. Rate-limit store when multi-instance: Postgres table [default] or per-instance and documented?
 3. Course seed list: provided by the user, otherwise two placeholders.
 4. Where the frontend lives (not in the default branch of the cloned repo); only needed for CORS origin config and API contract checks.
-5. `mistral-embed` dimension is confirmed as 1024 in the official Mistral documentation linked above.
+5. Gemini embeddings are normalized to 1024 dimensions to match the current Atlas vector index.
 
 ## 14. Definition of done (whole feature)
 

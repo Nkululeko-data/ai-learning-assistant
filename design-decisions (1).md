@@ -120,7 +120,7 @@ Rules: Treat the current system as a hybrid, not a completed cutover. Do not rem
 |---|---|---|
 | P-1 | DECIDED | **Inception Labs** is the primary LLM provider; **Groq** is the fallback. |
 | P-2 | DECIDED | **LangGraph.js** orchestrates the agent workflows, on a Node.js + TypeScript backend. |
-| P-3 | DECIDED | **Embeddings use Mistral embeddings only.** No local or other embedding provider. Accessed through the `EmbeddingProvider` adapter; there is no embedding fallback. Changing the model requires re-embedding. Document and note text is sent to Mistral for embedding, so this goes in the privacy notice. |
+| P-3 | DECIDED | **Embeddings use Google Gemini (`gemini-embedding-001`)** through the `EmbeddingProvider` adapter, at 1024 dimensions. There is no embedding fallback. Changing the model requires re-embedding. Document and note text is sent to Gemini for embedding, so this goes in the privacy notice. |
 
 All provider access goes through adapters; fallback uses bounded retries then switches to Groq; the provider actually used is recorded per execution. LangSmith/LangChain tracing is forced off. Fake providers are used in all non-evaluation tests.
 

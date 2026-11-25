@@ -51,7 +51,7 @@ const configEnvironmentKeys = [
   "JWT_REFRESH_SECRET",
   "INCEPTION_API_KEY",
   "GROQ_API_KEY",
-  "MISTRAL_API_KEY",
+  "GEMINI_API_KEY",
   "BOOTSTRAP_ADMIN_EMAIL",
   "BOOTSTRAP_ADMIN_PASSWORD",
 ];
@@ -96,6 +96,8 @@ function verifiesDefaultConfiguration(): void {
   expect(config.chunkOverlapTokens).toBe(100);
   expect(config.chunkCacheMaxDocuments).toBe(100);
   expect(config.groqModel).toBe("openai/gpt-oss-20b");
+  expect(config.embeddingModel).toBe("gemini-embedding-001");
+  expect(config.embeddingDimension).toBe(1024);
   expect(config.chatMinSimilarity).toBe(0.3);
   expect(config.chatTopK).toBe(8);
   expect(config.chatDailyRequestLimit).toBe(100);
@@ -201,7 +203,7 @@ function verifiesChatDailyQuotaConfiguration(): void {
 }
 
 function verifiesProviderReadinessUsesConfiguredFallbackProviders(): void {
-  process.env.MISTRAL_API_KEY = "test-mistral-key";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
   process.env.GROQ_API_KEY = "test-groq-key";
   expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
     true,
@@ -218,7 +220,7 @@ function verifiesProviderReadinessUsesConfiguredFallbackProviders(): void {
     false,
   );
 
-  delete process.env.MISTRAL_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   process.env.GROQ_API_KEY = "test-groq-key";
   expect(hasProviderConfiguration(loadConfig({ requireJwtSecrets: false }))).toBe(
     false,

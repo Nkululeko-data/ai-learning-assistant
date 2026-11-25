@@ -15,21 +15,21 @@ flowchart LR
   APP --> PORTS[Repository and graph ports]
   PORTS --> JSON[(JSON collections)]
   PORTS --> SQL[(SQLite conversations)]
-  PORTS --> FILES[(Private local file storage)]
+  PORTS --> FILES[(MongoDB Atlas GridFS uploads)]
   APP --> JOBS[In-process job runner and scheduler]
   JOBS --> JSON
   APP --> GRAPH[LangGraph GraphRunner]
   GRAPH --> RETRIEVAL[RetrievalService]
   RETRIEVAL --> PORTS
   GRAPH --> LLM[Inception / Groq adapters]
-  GRAPH --> EMBED[Mistral embedding adapter]
+  GRAPH --> EMBED[Gemini embedding adapter]
 ```
 
 ## Major subsystems
 
 1. **HTTP/API:** Express routes, request validation, authentication, permissions, error mapping, pagination, request IDs and OpenAPI.
 2. **Identity and domain services:** users, roles, permissions, courses, enrolments, documents, learning content, feedback, insights, administration and audit.
-3. **Storage infrastructure:** JSON collection engine with atomic single-writer persistence; SQLite for conversation history; local private upload storage.
+3. **Storage infrastructure:** JSON collection engine with atomic single-writer persistence; SQLite for conversation history; private source uploads in MongoDB Atlas GridFS and generated chunk files on local persistent storage.
 4. **Jobs:** durable JSON job records, bounded retries, idempotent handlers, scheduled backups/reconciliation/retention.
 5. **AI workflows:** typed LangGraph nodes, provider adapters, access-filtered retrieval, context construction, evidence gating and deterministic citation validation.
 6. **Operations:** validated configuration, structured redacted logs, health/readiness endpoints, backups, restore and a single-container deployment.

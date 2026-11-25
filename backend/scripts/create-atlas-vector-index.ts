@@ -4,6 +4,7 @@ import type { SearchIndexDescription } from "mongodb";
 import { z } from "zod";
 import { loadConfig } from "../src/config/config";
 import { createMongoClient } from "../src/infra/mongo/client";
+import { assertAtlasEmbeddingConfigSupported } from "../src/infra/mongo/ensure-indexes";
 
 const vectorIndexSchema = z
   .object({
@@ -18,14 +19,10 @@ const vectorIndexSchema = z
  */
 export async function createAtlasVectorIndex(): Promise<void> {
   const config = loadConfig({ requireMongoConfiguration: true });
-  if (config.mistralEmbeddingModel !== "mistral-embed") {
-    throw new Error("The Atlas vector index supports only the mistral-embed model");
-  }
-  if (config.mistralEmbeddingDimension !== 1024) {
-    throw new Error(
-      "The configured embedding dimension must match docs/atlas-vector-index.json (1024)",
-    );
-  }
+  assertAtlasEmbeddingConfigSupported(
+    config.embeddingModel,
+    config.embeddingDimension,
+  );
   const uri = config.mongodbUri;
   const databaseName = config.mongodbDbName;
   if (!uri || !databaseName) {

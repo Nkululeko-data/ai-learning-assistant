@@ -64,7 +64,7 @@ const document: DocumentRecord = {
   errorDetail: null,
   extractionDiagnostics: null,
   chunkCount: 1,
-  embeddingModel: "mistral-embed",
+  embeddingModel: "gemini-embedding-001",
   ingestJobId: null,
   createdAt,
   updatedAt: createdAt,
@@ -89,7 +89,7 @@ function createRetrievalService(documents: DocumentRecord[]): RetrievalService {
           courseId,
           ownerId: coachId,
           scope: "course",
-          embeddingModel: "mistral-embed",
+          embeddingModel: "gemini-embedding-001",
           dimension: 2,
           chunkCount: 1,
           createdAt,
@@ -107,7 +107,7 @@ function createRetrievalService(documents: DocumentRecord[]): RetrievalService {
           },
         ],
       })),
-    "mistral-embed",
+    "gemini-embedding-001",
     2,
   );
 }
@@ -147,7 +147,7 @@ function createDependencies(
 ) {
   const primary = new FakeLlmProvider("inception", "test-model", llmResponses);
   const fallback = new FakeLlmProvider("groq", "test-fallback", []);
-  const embeddingProvider = new FakeEmbeddingProvider("mistral-embed", 2);
+  const embeddingProvider = new FakeEmbeddingProvider("gemini-embedding-001", 2);
   const config = loadConfig({ requireJwtSecrets: false });
   return {
     primary,
@@ -328,7 +328,7 @@ describe("chat graph", () => {
       ...dependencies,
       config: { ...dependencies.config, chatNodeTimeoutMs: 1000 },
       embeddingProvider: {
-        model: "mistral-embed",
+        model: "gemini-embedding-001",
         dimension: 2,
         embed: async (_texts: string[], signal: AbortSignal) =>
           new Promise<number[][]>((resolve, reject) => {

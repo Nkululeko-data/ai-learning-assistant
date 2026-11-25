@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/app-error";
-import { EmbeddingProviderError } from "../../modules/documents/mistral-embedding.provider";
+import { EmbeddingProviderError } from "../../modules/documents/embedding-provider";
 import type { RetrievedChunk } from "../../modules/retrieval/retrieval.service";
 import type { ChatGraphState, ChatNodeUpdate } from "../graphs/chat-state";
 import type { ChatNodeDependencies } from "./chat-node-dependencies";
@@ -13,6 +13,7 @@ export async function retrievalNode(
     embeddings = await dependencies.embeddingProvider.embed(
       [state.rewrittenQuery],
       dependencies.signal,
+      "RETRIEVAL_QUERY",
     );
   } catch (error) {
     if (!(error instanceof EmbeddingProviderError)) throw error;

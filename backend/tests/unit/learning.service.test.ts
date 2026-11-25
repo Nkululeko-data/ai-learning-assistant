@@ -59,7 +59,7 @@ const document: DocumentRecord = {
   errorDetail: null,
   extractionDiagnostics: null,
   chunkCount: 1,
-  embeddingModel: "mistral-embed",
+  embeddingModel: "gemini-embedding-001",
   ingestJobId: null,
   createdAt,
   updatedAt: createdAt,
@@ -136,7 +136,7 @@ async function createLearningService(llmResponse: string | string[]): Promise<{
           courseId,
           ownerId: coachId,
           scope: "course",
-          embeddingModel: "mistral-embed",
+          embeddingModel: "gemini-embedding-001",
           dimension: 2,
           chunkCount: 1,
           createdAt,
@@ -154,7 +154,7 @@ async function createLearningService(llmResponse: string | string[]): Promise<{
           },
         ],
       })),
-    "mistral-embed",
+    "gemini-embedding-001",
     2,
   );
   const primary = new FakeLlmProvider(
@@ -168,7 +168,7 @@ async function createLearningService(llmResponse: string | string[]): Promise<{
   const service = new LearningService(
     new LearningRepository(collections),
     retrievalService,
-    new FakeEmbeddingProvider("mistral-embed", 2),
+    new FakeEmbeddingProvider("gemini-embedding-001", 2),
     new StructuredOutputService(primary, fallback, 1200),
     new JsonLearningExecutionRepository(
       collections.agentExecutions,
