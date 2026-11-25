@@ -12,15 +12,11 @@ import { runMigrations } from "../src/infra/postgres/migrate";
 const MIGRATION_LOCK = [1_094_853_441, 3] as const;
 const BATCH_SIZE = 250;
 const POSTGRES_RECORD_COLLECTIONS = new Set([
-  "learning_summaries",
-  "flashcards",
-  "quizzes",
   "quiz_attempts",
   "feedback",
   "activity_events",
   "gap_reports",
   "config_versions",
-  "agent_executions",
 ]);
 
 export interface JsonRecordMigrationOptions {

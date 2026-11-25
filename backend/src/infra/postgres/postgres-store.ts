@@ -7,6 +7,10 @@ import type {
   JsonCollectionDefinition,
   NewRecord,
 } from "../jsonstore/json-store";
+import {
+  PostgresRecordCollection,
+  PostgresRecordStore,
+} from "./postgres-record-store";
 
 export interface PostgresField<T extends { id: string }> {
   property: keyof T & string;
@@ -368,16 +372,25 @@ export class PostgresStore {
   private readonly collections: CollectionLifecycle[] = [];
   private readonly names = new Set<string>();
   private readonly collectionsByName = new Map<string, unknown>();
+  private readonly recordStore: PostgresRecordStore;
 
-  public constructor(private readonly pool: Pool) {}
+  public constructor(private readonly pool: Pool) {
+    this.recordStore = new PostgresRecordStore(pool);
+  }
 
   public register<T extends { id: string }>(
     definition: PostgresCollectionDefinition<T>,
-  ): PostgresCollection<T> {
+  ): PostgresCollection<T> | PostgresRecordCollection<T> {
     if (this.names.has(definition.table)) {
       throw new Error(`PostgreSQL table "${definition.table}" is already registered`);
     }
-    const collection = new PostgresCollection(this.pool, definition);
+    const collection = definition.payloadColumn
+      ? this.recordStore.register({
+          name: definition.table,
+          schema: definition.schema,
+          indexes: definition.indexes ?? [],
+        })
+      : new PostgresCollection(this.pool, definition);
     this.collections.push(collection);
     this.names.add(definition.table);
     this.collectionsByName.set(definition.table, collection);
@@ -386,12 +399,12 @@ export class PostgresStore {
 
   public getCollection<T extends { id: string }>(
     table: string,
-  ): PostgresCollection<T> {
+  ): PostgresCollection<T> | PostgresRecordCollection<T> {
     const collection = this.collectionsByName.get(table);
     if (!collection) {
       throw new Error(`PostgreSQL table "${table}" is not registered`);
     }
-    return collection as PostgresCollection<T>;
+    return collection as PostgresCollection<T> | PostgresRecordCollection<T>;
   }
 
   public async initialize(): Promise<void> {

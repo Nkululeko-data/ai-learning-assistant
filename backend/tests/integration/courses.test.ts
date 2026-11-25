@@ -112,7 +112,7 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,

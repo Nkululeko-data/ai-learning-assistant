@@ -1,55 +1,79 @@
 import { loadConfig } from "../src/config/config";
-import { createPostgresPool } from "../src/infra/postgres/connection";
+import { createPostgresPool } from "../src/infra/postgres/pool";
 import {
-  CURRENT_DATABASE_SCHEMA_VERSION,
-  getDatabaseSchemaVersion,
-} from "../src/infra/postgres/migrations/006-runtime-storage";
-import { openMongoConnection } from "../src/infra/mongodb/connection";
-import { MongoConversationRepository } from "../src/infra/mongodb/conversation.repository";
+  EXPECTED_SCHEMA_VERSION,
+  getSchemaVersion,
+} from "../src/infra/postgres/migrate";
+import { createMongoClient } from "../src/infra/mongo/client";
+import { ensureMongoIndexes } from "../src/infra/mongo/ensure-indexes";
 import { createSystemStore } from "../src/infra/jsonstore/create-system-store";
+import { loadUserIdAliases } from "../src/infra/postgres/user-id-aliases";
 import { migrateLegacyData } from "./migrate-legacy-data";
+import { migrateJsonToMongo } from "./migrate-json-to-mongo";
 
 async function main(): Promise<void> {
   const config = loadConfig({
     requireJwtSecrets: false,
     requireDatabases: true,
   });
-  if (!config.databaseUrl || !config.mongodbUri || !config.mongodbDatabase) {
+  if (!config.databaseUrl || !config.mongodbUri || !config.mongodbDbName) {
     throw new Error(
       "DATABASE_URL, MONGODB_URI, and MONGODB_DATABASE are required",
     );
   }
 
   const postgres = createPostgresPool(config.databaseUrl);
-  let mongo: Awaited<ReturnType<typeof openMongoConnection>> | undefined;
+  const mongoClient = createMongoClient(config.mongodbUri);
   try {
-    const schemaVersion = await getDatabaseSchemaVersion(postgres);
-    if (schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
+    const schemaVersion = await getSchemaVersion(postgres);
+    if (schemaVersion !== EXPECTED_SCHEMA_VERSION) {
       throw new Error(
         `Neon schema version ${schemaVersion} is not ready; run npm run db:migrate first`,
       );
     }
-    mongo = await openMongoConnection(
-      config.mongodbUri,
-      config.mongodbDatabase,
-    );
-    await new MongoConversationRepository(
-      mongo.client,
-      mongo.database,
-      postgres,
-    ).initialize();
-    const { store } = createSystemStore(postgres);
+    await mongoClient.connect();
+    const mongoDatabase = mongoClient.db(config.mongodbDbName);
+    await ensureMongoIndexes(mongoDatabase);
+    const { store, mongoStore } = createSystemStore(postgres, mongoDatabase);
     await store.initialize();
+    await mongoStore.initialize();
+    await migrateJsonToMongo({
+      dataDirectory: config.dataDir,
+      dryRun: true,
+      embeddingModel: config.mistralEmbeddingModel,
+      embeddingDimension: config.mistralEmbeddingDimension,
+      database: mongoDatabase,
+    });
     const collections = await migrateLegacyData(
       config.dataDir,
       postgres,
       store,
-      mongo.database,
+      mongoStore,
     );
-    console.log(JSON.stringify(collections, null, 2));
+    const mongoMigration = await migrateJsonToMongo({
+      dataDirectory: config.dataDir,
+      dryRun: false,
+      embeddingModel: config.mistralEmbeddingModel,
+      embeddingDimension: config.mistralEmbeddingDimension,
+      database: mongoDatabase,
+      userIdAliases: await loadUserIdAliases(postgres),
+    });
+    console.log(
+      JSON.stringify(
+        {
+          postgresAndGenericMongoRecords: collections,
+          mongoDocumentsAndJobs: mongoMigration.counts,
+        },
+        null,
+        2,
+      ),
+    );
   } finally {
-    if (mongo) await mongo.client.close();
-    await postgres.end();
+    try {
+      await mongoClient.close();
+    } finally {
+      await postgres.end();
+    }
   }
 }
 

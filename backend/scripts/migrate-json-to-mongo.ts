@@ -39,6 +39,7 @@ export interface MongoMigrationOptions {
   embeddingModel: string;
   embeddingDimension: number;
   database?: Db;
+  userIdAliases?: ReadonlyMap<string, string>;
 }
 
 export interface MongoMigrationResult {
@@ -76,6 +77,7 @@ export async function migrateJsonToMongo(
     options.embeddingModel,
     options.embeddingDimension,
   );
+  remapUserIds(source, options.userIdAliases);
   const counts = {
     documents: source.documents.length,
     documentChunks: source.chunks.length,
@@ -138,6 +140,31 @@ export async function migrateJsonToMongo(
     if (shouldCloseClient && client) await client.close();
   }
   return { backupDirectory, dryRun: false, counts };
+}
+
+function remapUserIds(
+  source: MongoMigrationSource,
+  aliases: ReadonlyMap<string, string> = new Map(),
+): void {
+  const mapUserId = (id: string): string => aliases.get(id) ?? id;
+  source.documents = source.documents.map((document) =>
+    documentSchema.parse({ ...document, ownerId: mapUserId(document.ownerId) }),
+  );
+  source.chunks = source.chunks.map((chunk) =>
+    chunkRecordSchema.parse({ ...chunk, ownerId: mapUserId(chunk.ownerId) }),
+  );
+  source.jobs = source.jobs.map((job) => {
+    const payload = { ...job.payload };
+    for (const key of ["userId", "ownerId", "createdBy"]) {
+      const value = payload[key];
+      if (typeof value === "string") payload[key] = mapUserId(value);
+    }
+    return jobSchema.parse({
+      ...job,
+      createdBy: mapUserId(job.createdBy),
+      payload,
+    });
+  });
 }
 
 /**

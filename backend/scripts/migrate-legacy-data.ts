@@ -1,8 +1,6 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import type { Pool } from "pg";
-import type { Db, Document } from "mongodb";
 import { z } from "zod";
 import {
   activityEventSchema,
@@ -33,12 +31,10 @@ import {
   type CoachRequestRecord,
   type ConfigVersionRecord,
   type CourseRecord,
-  type DocumentRecord,
   type EnrolmentRecord,
   type FeedbackRecord,
   type FlashcardRecord,
   type GapReportRecord,
-  type JobRecord,
   type LearningSummaryRecord,
   type PermissionRecord,
   type QuizAttemptRecord,
@@ -46,19 +42,11 @@ import {
   type RefreshTokenRecord,
   type RolePermissionRecord,
   type RoleRecord,
-  type SchedulerStateRecord,
   type UserPermissionOverrideRecord,
   type UserRecord,
 } from "../src/infra/jsonstore/system-collections";
-import {
-  parseLegacyConversationCitations,
-  parseLegacyConversationIntent,
-} from "../src/infra/mongodb/conversation.repository";
-import type {
-  ConversationMessageRecord,
-  ConversationRecord,
-} from "../src/infra/sqlite/conversation.repository";
 import type { PostgresStore } from "../src/infra/postgres/postgres-store";
+import type { MongoRecordStore } from "../src/infra/mongo/mongo-record-store";
 
 type LegacyRecord = Record<string, unknown> & { id: string };
 type LegacyCollections = Map<string, LegacyRecord[]>;
@@ -95,7 +83,7 @@ export async function migrateLegacyData(
   dataDirectory: string,
   postgres: Pool,
   store: PostgresStore,
-  mongo: Db,
+  mongoStore: MongoRecordStore,
 ): Promise<Counts> {
   const legacy = await readLegacyCollections(join(dataDirectory, "json"));
   const counts: Counts = {};
@@ -146,20 +134,14 @@ export async function migrateLegacyData(
   await importCoachRequests(legacy, postgres, store, userIds, counts);
   await importCourses(legacy, store, userIds, counts);
   await importEnrolments(legacy, postgres, store, userIds, counts);
-  await importJobs(legacy, store, userIds, counts);
-  await importDocuments(legacy, postgres, store, userIds, counts);
-  await importPayloadCollections(legacy, store, userIds, counts);
-  await importAuditLogs(legacy, store, userIds, counts);
-
-  const mongoCounts = await importSqliteConversations(
-    dataDirectory,
-    postgres,
-    mongo,
+  await importPayloadCollections(
+    legacy,
+    store,
+    mongoStore,
     userIds,
+    counts,
   );
-  counts.conversations = mongoCounts.conversations;
-  counts.messages = mongoCounts.messages;
-  counts.chat_daily_usage = mongoCounts.chat_daily_usage;
+  await importAuditLogs(legacy, store, userIds, counts);
   return counts;
 }
 
@@ -500,104 +482,79 @@ async function importEnrolments(
   }
 }
 
-async function importJobs(
-  legacy: LegacyCollections,
-  store: PostgresStore,
-  userIds: Map<string, string>,
-  counts: Counts,
-): Promise<void> {
-  for (const raw of rows(legacy, "jobs")) {
-    const source = jobSchema.parse(raw);
-    const payload = { ...source.payload };
-    for (const key of ["userId", "ownerId", "createdBy"]) {
-      const value = payload[key];
-      if (typeof value === "string") payload[key] = mapUserId(userIds, value);
-    }
-    const imported = jobSchema.parse({
-      ...source,
-      createdBy: mapUserId(userIds, source.createdBy),
-      payload,
-    });
-    const inserted = await store
-      .getCollection<JobRecord>("jobs")
-      .insertImportedRecord(imported);
-    recordCount(counts, "jobs", inserted);
-  }
-  for (const raw of rows(legacy, "scheduler_state")) {
-    const imported = schedulerStateSchema.parse(raw);
-    const inserted = await store
-      .getCollection<SchedulerStateRecord>("scheduler_state")
-      .insertImportedRecord(imported);
-    recordCount(counts, "scheduler_state", inserted);
-  }
-}
-
-async function importDocuments(
-  legacy: LegacyCollections,
-  postgres: Pool,
-  store: PostgresStore,
-  userIds: Map<string, string>,
-  counts: Counts,
-): Promise<void> {
-  for (const raw of rows(legacy, "documents")) {
-    const source = documentSchema.parse(raw);
-    const imported = documentSchema.parse({
-      ...source,
-      ownerId: mapUserId(userIds, source.ownerId),
-    });
-    if (imported.status !== "deleting") {
-      const duplicate = await postgres.query(
-        `SELECT 1 FROM documents
-         WHERE course_id = $1 AND scope = $2 AND owner_id = $3
-           AND content_hash = $4 AND status <> 'deleting'`,
-        [
-          imported.courseId,
-          imported.scope,
-          imported.ownerId,
-          imported.contentHash,
-        ],
-      );
-      if (duplicate.rowCount) {
-        recordCount(counts, "documents", false);
-        continue;
-      }
-    }
-    const inserted = await store
-      .getCollection<DocumentRecord>("documents")
-      .insertImportedRecord(imported);
-    recordCount(counts, "documents", inserted);
-  }
-}
-
 async function importPayloadCollections(
   legacy: LegacyCollections,
-  store: PostgresStore,
+  postgresStore: PostgresStore,
+  mongoStore: MongoRecordStore,
   userIds: Map<string, string>,
   counts: Counts,
 ): Promise<void> {
-  const payloads: Array<{
+  const postgresPayloads: Array<{
+    name: string;
+    parse: (value: unknown) => { id: string } & Record<string, unknown>;
+  }> = [
+    { name: "quiz_attempts", parse: (value) => asRecord(quizAttemptSchema.parse(value)) },
+    { name: "feedback", parse: (value) => asRecord(feedbackSchema.parse(value)) },
+    { name: "activity_events", parse: (value) => asRecord(activityEventSchema.parse(value)) },
+    { name: "gap_reports", parse: (value) => asRecord(gapReportSchema.parse(value)) },
+    { name: "config_versions", parse: (value) => asRecord(configVersionSchema.parse(value)) },
+  ];
+  const mongoPayloads: Array<{
     name: string;
     parse: (value: unknown) => { id: string } & Record<string, unknown>;
   }> = [
     { name: "learning_summaries", parse: (value) => asRecord(learningSummarySchema.parse(value)) },
     { name: "flashcards", parse: (value) => asRecord(flashcardSchema.parse(value)) },
     { name: "quizzes", parse: (value) => asRecord(quizSchema.parse(value)) },
-    { name: "quiz_attempts", parse: (value) => asRecord(quizAttemptSchema.parse(value)) },
-    { name: "feedback", parse: (value) => asRecord(feedbackSchema.parse(value)) },
-    { name: "activity_events", parse: (value) => asRecord(activityEventSchema.parse(value)) },
-    { name: "gap_reports", parse: (value) => asRecord(gapReportSchema.parse(value)) },
-    { name: "config_versions", parse: (value) => asRecord(configVersionSchema.parse(value)) },
     { name: "agent_executions", parse: (value) => asRecord(agentExecutionSchema.parse(value)) },
   ];
 
+  await importPayloadGroup(
+    legacy,
+    postgresStore,
+    postgresPayloads,
+    userIds,
+    counts,
+  );
+  await importPayloadGroup(
+    legacy,
+    mongoStore,
+    mongoPayloads,
+    userIds,
+    counts,
+  );
+}
+
+interface ImportedRecordStore {
+  getCollection<T extends { id: string }>(name: string): {
+    insertImportedRecord(record: T): Promise<boolean>;
+    list(): T[];
+  };
+}
+
+async function importPayloadGroup(
+  legacy: LegacyCollections,
+  store: ImportedRecordStore,
+  payloads: Array<{
+    name: string;
+    parse: (value: unknown) => { id: string } & Record<string, unknown>;
+  }>,
+  userIds: Map<string, string>,
+  counts: Counts,
+): Promise<void> {
   for (const payloadCollection of payloads) {
-    for (const raw of rows(legacy, payloadCollection.name)) {
+    const sourceRecords = rows(legacy, payloadCollection.name);
+    const collection = store.getCollection<LegacyRecord>(payloadCollection.name);
+    for (const raw of sourceRecords) {
       const source = payloadCollection.parse(raw);
       const imported = remapPayloadUserIds(source, userIds);
-      const inserted = await store
-        .getCollection<LegacyRecord>(payloadCollection.name)
-        .insertImportedRecord(imported);
+      const inserted = await collection.insertImportedRecord(imported);
       recordCount(counts, payloadCollection.name, inserted);
+    }
+    if (collection.list().length !== sourceRecords.length) {
+      throw new Error(
+        `Imported ${payloadCollection.name} count does not match the legacy JSON source`,
+      );
     }
   }
 }
@@ -643,152 +600,6 @@ async function importAuditLogs(
   }
 }
 
-async function importSqliteConversations(
-  dataDirectory: string,
-  postgres: Pool,
-  mongo: Db,
-  userIds: Map<string, string>,
-): Promise<Pick<Counts, "conversations" | "messages" | "chat_daily_usage">> {
-  const path = join(dataDirectory, "sqlite", "conversations.db");
-  try {
-    await access(path);
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return {
-        conversations: emptyCount(),
-        messages: emptyCount(),
-        chat_daily_usage: emptyCount(),
-      };
-    }
-    throw error;
-  }
-
-  const database = new DatabaseSync(path, { readOnly: true });
-  const counts = {
-    conversations: emptyCount(),
-    messages: emptyCount(),
-    chat_daily_usage: emptyCount(),
-  };
-  try {
-    const conversations = database
-      .prepare(
-        `SELECT id, user_id, course_id, title, created_at, updated_at
-         FROM conversations ORDER BY id`,
-      )
-      .all() as Array<Record<string, unknown>>;
-    const conversationCollection = mongo.collection<Document>("conversations");
-    const messageCollection = mongo.collection<Document>("messages");
-    for (const row of conversations) {
-      const conversation: ConversationRecord = {
-        id: requiredString(row.id, "conversations.id"),
-        userId: mapUserId(userIds, requiredString(row.user_id, "conversations.user_id")),
-        courseId: requiredString(row.course_id, "conversations.course_id"),
-        title: nullableString(row.title, "conversations.title"),
-        createdAt: requiredString(row.created_at, "conversations.created_at"),
-        updatedAt: requiredString(row.updated_at, "conversations.updated_at"),
-      };
-      const inserted = await insertMongoRecord(conversationCollection, conversation);
-      recordCount(counts, "conversations", inserted);
-    }
-
-    const messageColumns = database
-      .prepare("PRAGMA table_info(messages)")
-      .all() as Array<{ name: string }>;
-    const citationsColumn = messageColumns.some(
-      (column) => column.name === "citations",
-    )
-      ? "citations"
-      : "NULL AS citations";
-    const messages = database
-      .prepare(
-        `SELECT id, conversation_id, role, content, created_at, execution_id, intent,
-                grounding_status, ${citationsColumn}, retrieval_score_top
-         FROM messages ORDER BY conversation_id, created_at, rowid`,
-      )
-      .all() as Array<Record<string, unknown>>;
-    for (const row of messages) {
-      const intentValue = nullableString(row.intent, "messages.intent");
-      const message: ConversationMessageRecord = {
-        id: requiredString(row.id, "messages.id"),
-        conversationId: requiredString(row.conversation_id, "messages.conversation_id"),
-        role: parseMessageRole(row.role),
-        content: requiredString(row.content, "messages.content"),
-        createdAt: requiredString(row.created_at, "messages.created_at"),
-        executionId: nullableString(row.execution_id, "messages.execution_id"),
-        intent: parseLegacyConversationIntent(intentValue),
-        groundingStatus: parseGroundingStatus(row.grounding_status),
-        citations: parseLegacyConversationCitations(
-          nullableString(row.citations, "messages.citations"),
-        ),
-        retrievalScoreTop: nullableNumber(
-          row.retrieval_score_top,
-          "messages.retrieval_score_top",
-        ),
-      };
-      const inserted = await insertMongoRecord(messageCollection, message);
-      recordCount(counts, "messages", inserted);
-    }
-
-    const usageRows = database
-      .prepare(
-        `SELECT user_id, usage_date, request_count, token_count
-         FROM chat_daily_usage ORDER BY user_id, usage_date`,
-      )
-      .all() as Array<Record<string, unknown>>;
-    for (const row of usageRows) {
-      const result = await postgres.query(
-        `INSERT INTO chat_daily_usage (user_id, usage_date, request_count, token_count)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, usage_date) DO NOTHING`,
-        [
-          mapUserId(userIds, requiredString(row.user_id, "chat_daily_usage.user_id")),
-          requiredString(row.usage_date, "chat_daily_usage.usage_date"),
-          requiredInteger(row.request_count, "chat_daily_usage.request_count"),
-          requiredInteger(row.token_count, "chat_daily_usage.token_count"),
-        ],
-      );
-      recordCount(counts, "chat_daily_usage", result.rowCount === 1);
-    }
-    return counts;
-  } finally {
-    database.close();
-  }
-}
-
-async function insertMongoRecord(
-  collection: ReturnType<Db["collection"]>,
-  record: ConversationRecord | ConversationMessageRecord,
-): Promise<boolean> {
-  const existing = await collection.findOne({ id: record.id });
-  if (existing) {
-    if (stableSerialize(stripMongoId(existing)) !== stableSerialize(record)) {
-      throw new Error(
-        `Legacy MongoDB record "${record.id}" conflicts with existing data`,
-      );
-    }
-    return false;
-  }
-  const result = await collection.updateOne(
-    { id: record.id },
-    { $setOnInsert: record },
-    { upsert: true },
-  );
-  if (result.upsertedCount === 1) return true;
-  const concurrent = await collection.findOne({ id: record.id });
-  if (
-    !concurrent ||
-    stableSerialize(stripMongoId(concurrent)) !== stableSerialize(record)
-  ) {
-    throw new Error(`Legacy MongoDB record "${record.id}" conflicted during import`);
-  }
-  return false;
-}
-
-function stripMongoId(record: Document): Record<string, unknown> {
-  const { _id: _ignoredId, ...document } = record;
-  return document;
-}
-
 function asRecord(value: unknown): LegacyRecord {
   const object = recordSchema.parse(value);
   return {
@@ -816,68 +627,6 @@ function recordCount(counts: Counts, name: string, inserted: boolean): void {
 
 function emptyCount(): { inserted: number; alreadyPresent: number } {
   return { inserted: 0, alreadyPresent: 0 };
-}
-
-function requiredString(value: unknown, column: string): string {
-  if (typeof value !== "string") throw new Error(`Invalid legacy field ${column}`);
-  return value;
-}
-
-function nullableString(value: unknown, column: string): string | null {
-  return value === null || value === undefined
-    ? null
-    : requiredString(value, column);
-}
-
-function requiredInteger(value: unknown, column: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error(`Invalid legacy field ${column}`);
-  }
-  return value;
-}
-
-function nullableNumber(value: unknown, column: string): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`Invalid legacy field ${column}`);
-  }
-  return value;
-}
-
-function parseMessageRole(value: unknown): "user" | "assistant" {
-  if (value !== "user" && value !== "assistant") {
-    throw new Error("Stored conversation message role is invalid");
-  }
-  return value;
-}
-
-function parseGroundingStatus(value: unknown) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === "grounded" ||
-    value === "insufficient" ||
-    value === "unverified"
-  ) {
-    return value ?? null;
-  }
-  throw new Error("Stored conversation grounding status is invalid");
-}
-
-function stableSerialize(value: unknown): string {
-  if (value === undefined) return "undefined";
-  if (Array.isArray(value)) {
-    return `[${value.map(stableSerialize).join(",")}]`;
-  }
-  if (typeof value === "object" && value !== null) {
-    const entries = Object.entries(value)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
-    return `{${entries
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
 }
 
 function isMissingFile(error: unknown): boolean {

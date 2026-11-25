@@ -22,8 +22,8 @@ import {
 } from "./infra/mongo/ensure-indexes";
 import type { Pool } from "pg";
 import type { Db, MongoClient } from "mongodb";
-import { JsonStore } from "./infra/jsonstore/json-store";
-import { registerSystemCollections } from "./infra/jsonstore/system-collections";
+import { createSystemStore } from "./infra/jsonstore/create-system-store";
+import type { SystemCollections } from "./infra/jsonstore/system-collections";
 import { ConversationRepository } from "./infra/sqlite/conversation.repository";
 import { JsonAuthRepository } from "./modules/auth/auth.types";
 import { AuthService } from "./modules/auth/auth.service";
@@ -61,7 +61,6 @@ import { LearningRepository } from "./modules/learning/learning.repository";
 import { LearningService } from "./modules/learning/learning.service";
 import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
 import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
-import { initializeSchemaMetadata } from "./infra/jsonstore/schema-metadata";
 import { FeedbackRepository } from "./modules/feedback/feedback.repository";
 import { FeedbackService } from "./modules/feedback/feedback.service";
 import { InsightsRepository } from "./modules/insights/insights.repository";
@@ -83,6 +82,7 @@ export async function startServer(): Promise<Server> {
   const postgresPool = createPostgresPool(databaseUrl);
   const mongoClient = createMongoClient(mongodbUri);
   let mongoDatabase: Db;
+  let collections: SystemCollections;
   try {
     await mongoClient.connect();
     mongoDatabase = mongoClient.db(mongodbDbName);
@@ -92,6 +92,16 @@ export async function startServer(): Promise<Server> {
       config.mistralEmbeddingModel,
       config.mistralEmbeddingDimension,
     );
+    const schemaVersion = await getSchemaVersion(postgresPool);
+    if (schemaVersion !== EXPECTED_SCHEMA_VERSION) {
+      throw new Error(
+        `PostgreSQL schema version ${schemaVersion} is not ready; run npm run db:migrate first`,
+      );
+    }
+    const systemStore = createSystemStore(postgresPool, mongoDatabase);
+    await systemStore.store.initialize();
+    await systemStore.mongoStore.initialize();
+    collections = systemStore.collections;
   } catch (error) {
     const cleanupErrors: unknown[] = [];
     try {
@@ -112,10 +122,6 @@ export async function startServer(): Promise<Server> {
     }
     throw error;
   }
-  const store = new JsonStore(config.dataDir);
-  const collections = registerSystemCollections(store);
-  await store.initialize();
-  await initializeSchemaMetadata(store.jsonDirectory);
   const database = openConversationDatabase(config.dataDir);
   const authRepository = new JsonAuthRepository(collections);
   const authService = new AuthService(authRepository, config, {
@@ -302,7 +308,7 @@ export async function startServer(): Promise<Server> {
       ]);
       const postgresReady = schemaVersion !== undefined;
       return {
-        jsonStoreOpen: true,
+        systemStoreReady: true,
         sqliteOpen: isConversationDatabaseReady(database),
         postgresReady,
         mongoReady: mongoReady ?? false,

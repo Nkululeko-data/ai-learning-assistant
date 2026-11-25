@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { ConflictError, NotFoundError } from "../../common/errors/app-error";
 import { AsyncMutex } from "../jsonstore/async-mutex";
 import type {
@@ -110,6 +111,29 @@ export class PostgresRecordCollection<T extends { id: string }>
       this.records = next;
       this.rebuildIndexes();
       return record;
+    });
+  }
+
+  public insertImportedRecord(record: T): Promise<boolean> {
+    return this.mutex.runExclusive(async () => {
+      const validated = this.definition.schema.parse(record);
+      const existing = this.records.get(validated.id);
+      if (existing) {
+        if (!isDeepStrictEqual(existing, validated)) {
+          throw new ConflictError(
+            `Legacy record "${validated.id}" conflicts with existing PostgreSQL collection ${this.definition.name} data`,
+          );
+        }
+        return false;
+      }
+      this.assertUniqueRecord(validated);
+
+      const next = new Map(this.records);
+      next.set(validated.id, validated);
+      await this.persist(next, this.records);
+      this.records = next;
+      this.rebuildIndexes();
+      return true;
     });
   }
 

@@ -50,6 +50,7 @@ import type {
   JobRecord,
 } from "../jsonstore/system-collections";
 import { PostgresStore, type PostgresField } from "./postgres-store";
+import type { MongoBackedSystemCollections } from "../mongo/mongo-system-collections";
 
 type Entity = { id: string };
 type Indexes<T extends Entity> = JsonIndexDefinition<T>[];
@@ -110,6 +111,7 @@ function payload<T extends Entity>(
 
 export function registerPostgresSystemCollections(
   store: PostgresStore,
+  mongoCollections?: MongoBackedSystemCollections,
 ): SystemCollections {
   return {
     users: store.register({
@@ -328,51 +330,19 @@ export function registerPostgresSystemCollections(
         { name: "userId", key: (record) => record.userId },
       ],
     }),
-    documents: store.register({
-      table: "documents",
-      schema: documentSchema,
-      fields: [
-        field<DocumentRecord>("id", "id"),
-        field<DocumentRecord>("courseId", "course_id"),
-        field<DocumentRecord>("ownerId", "owner_id"),
-        field<DocumentRecord>("scope", "scope"),
-        field<DocumentRecord>("filename", "filename"),
-        field<DocumentRecord>("storageKey", "storage_key"),
-        field<DocumentRecord>("mimeType", "mime_type"),
-        field<DocumentRecord>("sizeBytes", "size_bytes", {
-          decode: (value) => (value === null ? null : Number(value)),
-        }),
-        field<DocumentRecord>("contentHash", "content_hash"),
-        field<DocumentRecord>("status", "status"),
-        field<DocumentRecord>("errorCode", "error_code"),
-        field<DocumentRecord>("errorDetail", "error_detail"),
-        field<DocumentRecord>("extractionDiagnostics", "extraction_diagnostics"),
-        field<DocumentRecord>("chunkCount", "chunk_count"),
-        field<DocumentRecord>("embeddingModel", "embedding_model"),
-        field<DocumentRecord>("ingestJobId", "ingest_job_id"),
-        timestamp<DocumentRecord>("createdAt", "created_at"),
-        timestamp<DocumentRecord>("updatedAt", "updated_at"),
-        timestamp<DocumentRecord>("readyAt", "ready_at"),
-      ],
-      indexes: [
-        { name: "id", key: (record) => record.id, unique: true },
-        { name: "courseId", key: (record) => record.courseId },
-        {
-          name: "courseScopeOwner",
-          key: (record) => `${record.courseId}:${record.scope}:${record.ownerId}`,
-        },
-        {
-          name: "courseScopeOwnerHash",
-          key: (record) =>
-            record.status === "deleting"
-              ? undefined
-              : `${record.courseId}:${record.scope}:${record.ownerId}:${record.contentHash}`,
-          unique: true,
-        },
-        { name: "status", key: (record) => record.status },
-      ],
-    }),
-    learningSummaries: payload(store, "learning_summaries", learningSummarySchema, [
+    documents: payload(store, "documents", documentSchema, [
+      { name: "id", key: (record) => record.id, unique: true },
+      { name: "courseId", key: (record) => record.courseId },
+      {
+        name: "courseScopeOwnerHash",
+        key: (record) =>
+          record.status === "deleting"
+            ? undefined
+            : `${record.courseId}:${record.scope}:${record.ownerId}:${record.contentHash}`,
+        unique: true,
+      },
+    ]),
+    learningSummaries: mongoCollections?.learningSummaries ?? payload(store, "learning_summaries", learningSummarySchema, [
       { name: "id", key: (record) => record.id, unique: true },
       { name: "sourceHash", key: (record) => record.sourceHash },
       {
@@ -383,7 +353,7 @@ export function registerPostgresSystemCollections(
       { name: "courseId", key: (record) => record.courseId },
       { name: "ownerId", key: (record) => record.ownerId ?? undefined },
     ]),
-    flashcards: payload(store, "flashcards", flashcardSchema, [
+    flashcards: mongoCollections?.flashcards ?? payload(store, "flashcards", flashcardSchema, [
       { name: "id", key: (record) => record.id, unique: true },
       { name: "sourceHash", key: (record) => record.sourceHash },
       {
@@ -394,7 +364,7 @@ export function registerPostgresSystemCollections(
       { name: "courseId", key: (record) => record.courseId },
       { name: "ownerId", key: (record) => record.ownerId ?? undefined },
     ]),
-    quizzes: payload(store, "quizzes", quizSchema, [
+    quizzes: mongoCollections?.quizzes ?? payload(store, "quizzes", quizSchema, [
       { name: "id", key: (record) => record.id, unique: true },
       {
         name: "lineageVersion",
@@ -462,7 +432,7 @@ export function registerPostgresSystemCollections(
       { name: "changedBy", key: (record) => record.changedBy },
       { name: "createdAt", key: (record) => record.createdAt },
     ]),
-    agentExecutions: payload(store, "agent_executions", agentExecutionSchema, [
+    agentExecutions: mongoCollections?.agentExecutions ?? payload(store, "agent_executions", agentExecutionSchema, [
       { name: "id", key: (record) => record.id, unique: true },
       { name: "executionId", key: (record) => record.executionId },
       { name: "createdAt", key: (record) => record.createdAt },
@@ -475,56 +445,18 @@ export function registerPostgresSystemCollections(
         key: (record) => `${record.userId}:${record.usageDate}`,
       },
     ]),
-    jobs: store.register({
-      table: "jobs",
-      schema: jobSchema,
-      fields: [
-        field<JobRecord>("id", "id"),
-        field<JobRecord>("type", "type"),
-        field<JobRecord>("status", "status"),
-        field<JobRecord>("attempts", "attempts"),
-        field<JobRecord>("maxAttempts", "max_attempts"),
-        timestamp<JobRecord>("runAfter", "run_after"),
-        timestamp<JobRecord>("lockedUntil", "locked_until"),
-        field<JobRecord>("leaseToken", "lease_token"),
-        field<JobRecord>("payload", "payload"),
-        field<JobRecord>("result", "result"),
-        field<JobRecord>("error", "error"),
-        field<JobRecord>("createdBy", "created_by"),
-        field<JobRecord>("requestId", "request_id"),
-        optionalField<JobRecord>("scheduleKey", "schedule_key"),
-        timestamp<JobRecord>("createdAt", "created_at"),
-        timestamp<JobRecord>("updatedAt", "updated_at"),
-        timestamp<JobRecord>("finishedAt", "finished_at"),
-      ],
-      indexes: [
-        { name: "id", key: (record) => record.id, unique: true },
-        {
-          name: "statusRunAfter",
-          key: (record) => `${record.status}:${record.runAfter}`,
-        },
-        {
-          name: "typeStatus",
-          key: (record) => `${record.type}:${record.status}`,
-        },
-        { name: "scheduleKey", key: (record) => record.scheduleKey, unique: true },
-      ],
-    }),
-    schedulerState: store.register({
-      table: "scheduler_state",
-      schema: schedulerStateSchema,
-      fields: [
-        field<SchedulerStateRecord>("id", "id"),
-        field<SchedulerStateRecord>("taskName", "task_name"),
-        timestamp<SchedulerStateRecord>("lastRunAt", "last_run_at"),
-        timestamp<SchedulerStateRecord>("nextRunAt", "next_run_at"),
-        field<SchedulerStateRecord>("lastStatus", "last_status"),
-      ],
-      indexes: [
-        { name: "id", key: (record) => record.id, unique: true },
-        { name: "taskName", key: (record) => record.taskName, unique: true },
-      ],
-    }),
+    jobs: payload(store, "jobs", jobSchema, [
+      { name: "id", key: (record) => record.id, unique: true },
+      {
+        name: "statusRunAfter",
+        key: (record) => `${record.status}:${record.runAfter}`,
+      },
+      { name: "scheduleKey", key: (record) => record.scheduleKey, unique: true },
+    ]),
+    schedulerState: payload(store, "scheduler_state", schedulerStateSchema, [
+      { name: "id", key: (record) => record.id, unique: true },
+      { name: "taskName", key: (record) => record.taskName, unique: true },
+    ]),
   };
 }
 

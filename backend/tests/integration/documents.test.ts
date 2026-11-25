@@ -155,7 +155,7 @@ async function createContext(): Promise<DocumentTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,

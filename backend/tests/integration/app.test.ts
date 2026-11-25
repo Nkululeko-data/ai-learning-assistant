@@ -12,7 +12,7 @@ function createReadyTestApp() {
     logger,
     corsOrigins: ["https://ui.example.test"],
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
@@ -50,7 +50,7 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
@@ -70,7 +70,7 @@ async function verifiesReadinessAndNotFoundErrors(): Promise<void> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: false,
       mongoReady: true,

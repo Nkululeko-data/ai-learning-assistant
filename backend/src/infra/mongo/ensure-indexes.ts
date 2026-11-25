@@ -47,6 +47,10 @@ export async function ensureMongoIndexes(database: Db): Promise<void> {
       { taskName: 1 },
       { name: "scheduler_task_name", unique: true },
     ),
+    database.collection("application_records").createIndex(
+      { collectionName: 1, recordId: 1 },
+      { name: "application_records_collection_id", unique: true },
+    ),
   ]);
 }
 

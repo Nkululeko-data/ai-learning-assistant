@@ -1,6 +1,9 @@
 import type { Pool } from "pg";
 import { z } from "zod";
-import { PostgresCollection } from "../../src/infra/postgres/postgres-store";
+import {
+  PostgresCollection,
+  PostgresStore,
+} from "../../src/infra/postgres/postgres-store";
 
 interface Item {
   id: string;
@@ -116,5 +119,29 @@ describe("PostgresCollection", () => {
 
     await collection.remove(inserted.id);
     expect(collection.getById(inserted.id)).toBeNull();
+  });
+
+  test("routes payload collections through application_records", async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes("FROM application_records")) {
+        return { rows: [], rowCount: 0 };
+      }
+      throw new Error(`Unexpected PostgreSQL query: ${sql}`);
+    });
+    const pool = { query } as unknown as Pool;
+    const store = new PostgresStore(pool);
+    const collection = store.register({
+      table: "items",
+      schema: itemSchema,
+      payloadColumn: true,
+    });
+
+    await store.initialize();
+
+    expect(collection.list()).toEqual([]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("FROM application_records"),
+      ["items"],
+    );
   });
 });

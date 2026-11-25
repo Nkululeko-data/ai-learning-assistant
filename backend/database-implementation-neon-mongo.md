@@ -214,16 +214,22 @@ Implementation and cutover:
   `infra/sqlite/*`, `infra/jsonstore/*`, `JsonAuthRepository`, or
   `scripts/migrations/001-initial-schema.ts` while the server or modules still
   depend on them.
-- As of this phase, production still wires JSON auth and SQLite conversations;
-  JSON also backs learning content, feedback, analytics, executions, and other
-  records. The PostgreSQL auth repository is not yet wired into the server, and
-  the data importers do not migrate every remaining JSON collection.
-- `better-sqlite3` and `@types/better-sqlite3` are already absent from
+- The runtime no longer initializes `JsonStore`: identity, courses, audit,
+  feedback, analytics, quiz attempts, and configuration records use PostgreSQL;
+  generated learning content and execution records use MongoDB; documents,
+  chunks, jobs, and scheduler state use their MongoDB repositories. SQLite
+  conversations remain unchanged because they are outside `data/json`.
+- The existing JSON files are legacy import sources, not runtime storage.
+  `db:migrate` applies the ordered SQL migrations and `db:import-legacy`
+  imports the legacy collections to their configured database owners. JSON
+  store fixtures remain available to isolated tests.
+- This is a persistence cutover, not proof that existing data has been
+  imported or verified against a production database. Keep backups and verify
+  source/target counts before relying on migrated records.
+- `better-sqlite3` and `@types/better-sqlite3` are absent from
   `backend/package.json`; conversations use Node's built-in `node:sqlite`.
-- Documentation now distinguishes the Neon/Atlas target from the current
-  hybrid runtime. Keep the one-instance deployment constraint until the
-  remaining repositories, rate limiting, and upload storage are ready for
-  multiple instances.
+- Keep the one-instance deployment constraint until rate limiting and upload
+  storage are ready for multiple instances.
 - Before deleting legacy persistence, migrate the remaining data, switch all
   production repositories, run isolated PostgreSQL and Atlas integration
   tests, verify source/target counts and backups, and receive explicit approval

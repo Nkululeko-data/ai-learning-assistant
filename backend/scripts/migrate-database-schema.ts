@@ -1,6 +1,9 @@
 import { loadConfig } from "../src/config/config";
-import { createPostgresPool } from "../src/infra/postgres/connection";
-import { runDatabaseMigrations } from "../src/infra/postgres/migrations/006-runtime-storage";
+import { createPostgresPool } from "../src/infra/postgres/pool";
+import {
+  getSchemaVersion,
+  runMigrations,
+} from "../src/infra/postgres/migrate";
 
 async function main(): Promise<void> {
   const config = loadConfig({ requireJwtSecrets: false });
@@ -9,8 +12,13 @@ async function main(): Promise<void> {
   }
   const pool = createPostgresPool(config.databaseUrl);
   try {
-    const version = await runDatabaseMigrations(pool);
-    console.log(`Neon database schema is at version ${version}`);
+    const appliedVersions = await runMigrations(pool);
+    const version = await getSchemaVersion(pool);
+    console.log(
+      `PostgreSQL schema is at version ${version}; newly applied migrations: ${
+        appliedVersions.length ? appliedVersions.join(", ") : "none"
+      }`,
+    );
   } finally {
     await pool.end();
   }

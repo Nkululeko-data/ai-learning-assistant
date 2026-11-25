@@ -146,7 +146,7 @@ async function createAdminContext(): Promise<JobTestContext> {
     logger,
     corsOrigins: [],
     getReadiness: () => ({
-      jsonStoreOpen: true,
+      systemStoreReady: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
