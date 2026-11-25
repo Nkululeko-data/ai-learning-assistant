@@ -6,7 +6,9 @@ import {
   type AppConfig,
 } from "./config/config";
 import { createLogger } from "./common/logging/logger";
+import { createPostgresPool, verifyPostgresConnection } from "./infra/postgres/connection";
 import {
+<<<<<<< HEAD
   isConversationDatabaseReady,
   openConversationDatabase,
 } from "./infra/sqlite/database";
@@ -24,6 +26,16 @@ import type { Pool } from "pg";
 import type { Db, MongoClient } from "mongodb";
 import { JsonStore } from "./infra/jsonstore/json-store";
 import { registerSystemCollections } from "./infra/jsonstore/system-collections";
+=======
+  CURRENT_DATABASE_SCHEMA_VERSION,
+  getDatabaseSchemaVersion,
+} from "./infra/postgres/migrations/006-runtime-storage";
+import { loadUserIdAliases } from "./infra/postgres/user-id-aliases";
+import { createSystemStore } from "./infra/jsonstore/create-system-store";
+import { openMongoConnection } from "./infra/mongodb/connection";
+import type { MongoConnection } from "./infra/mongodb/connection";
+import { MongoConversationRepository } from "./infra/mongodb/conversation.repository";
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 import { JsonAuthRepository } from "./modules/auth/auth.types";
 import { AuthService } from "./modules/auth/auth.service";
 import { PgCourseRepository } from "./modules/courses/pg-course.repository";
@@ -48,7 +60,6 @@ import { DocumentService } from "./modules/documents/document.service";
 import { DocumentIngestionService } from "./modules/documents/document.ingestion.service";
 import { MistralEmbeddingProvider } from "./modules/documents/mistral-embedding.provider";
 import { PrivateFileStorage } from "./infra/storage/private-file-storage";
-import { ConversationRepository } from "./infra/sqlite/conversation.repository";
 import { ChatService } from "./modules/chat/chat.service";
 import { RetrievalService } from "./modules/retrieval/retrieval.service";
 import { InceptionProvider } from "./ai/providers/inception.provider";
@@ -61,9 +72,12 @@ import { LearningRepository } from "./modules/learning/learning.repository";
 import { LearningService } from "./modules/learning/learning.service";
 import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
 import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
+<<<<<<< HEAD
 import {
   initializeSchemaMetadata,
 } from "./infra/jsonstore/schema-metadata";
+=======
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 import { FeedbackRepository } from "./modules/feedback/feedback.repository";
 import { FeedbackService } from "./modules/feedback/feedback.service";
 import { InsightsRepository } from "./modules/insights/insights.repository";
@@ -74,12 +88,13 @@ import { AdminService } from "./modules/admin/admin.service";
  * Initializes storage, builds the API, and starts listening on the configured port.
  */
 export async function startServer(): Promise<Server> {
-  const config = loadConfig();
+  const config = loadConfig({ requireDatabases: true });
   configureTracing(config.environment);
   const logger = createLogger(
     config.logLevel,
     config.environment === "development",
   );
+<<<<<<< HEAD
   const { databaseUrl, mongodbUri, mongodbDbName } =
     requireDatabaseConfiguration(config);
   const postgresPool = createPostgresPool(databaseUrl);
@@ -120,6 +135,32 @@ export async function startServer(): Promise<Server> {
   await initializeSchemaMetadata(store.jsonDirectory);
   const database = openConversationDatabase(config.dataDir);
   const authRepository = new JsonAuthRepository(collections);
+=======
+  if (!config.databaseUrl || !config.mongodbUri || !config.mongodbDatabase) {
+    throw new Error("DATABASE_URL, MONGODB_URI, and MONGODB_DATABASE are required");
+  }
+  const postgres = createPostgresPool(config.databaseUrl);
+  let mongo: MongoConnection | undefined;
+  let server: Server | undefined;
+  try {
+  await verifyPostgresConnection(postgres);
+  const schemaVersion = await getDatabaseSchemaVersion(postgres);
+  if (schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
+    throw new Error(
+      `Neon schema version ${schemaVersion} is not ready; run npm run db:migrate to reach version ${CURRENT_DATABASE_SCHEMA_VERSION}`,
+    );
+  }
+  mongo = await openMongoConnection(
+    config.mongodbUri,
+    config.mongodbDatabase,
+  );
+  const { store, collections } = createSystemStore(postgres);
+  await store.initialize();
+  const authRepository = new JsonAuthRepository(
+    collections,
+    await loadUserIdAliases(postgres),
+  );
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   const authService = new AuthService(authRepository, config, {
     allowRefreshTokenInBody: config.allowRefreshTokenInBody,
   });
@@ -181,7 +222,12 @@ export async function startServer(): Promise<Server> {
     new GroqProvider(config.groqApiKey, config.groqModel),
     config.chatMaxCompletionTokens,
   );
-  const conversationRepository = new ConversationRepository(database);
+  const conversationRepository = new MongoConversationRepository(
+    mongo.client,
+    mongo.database,
+    postgres,
+  );
+  await conversationRepository.initialize();
   const feedbackService = new FeedbackService(
     new FeedbackRepository(collections),
     conversationRepository,
@@ -286,6 +332,7 @@ export async function startServer(): Promise<Server> {
     feedback: { authService, feedbackService },
     insights: { authService, insightsService },
     admin: { authService, adminService },
+<<<<<<< HEAD
     getReadiness: async () => {
       const [schemaVersion, mongoReady] = await Promise.all([
         checkDatabaseReadiness(
@@ -313,29 +360,70 @@ export async function startServer(): Promise<Server> {
         providerConfigurationPresent: hasProviderConfiguration(config),
       };
     },
+=======
+    getReadiness: () => ({
+      neonOpen: true,
+      mongoOpen: true,
+      schemaVersion,
+      expectedSchemaVersion: CURRENT_DATABASE_SCHEMA_VERSION,
+      providerConfigurationPresent: hasProviderConfiguration(config),
+    }),
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   });
 
-  const server = await new Promise<Server>((resolve, reject) => {
+  server = await new Promise<Server>((resolve, reject) => {
     const listeningServer = app.listen(config.port, () => resolve(listeningServer));
     listeningServer.once("error", reject);
   });
 
   logger.info(
-    { port: config.port, dataDirectory: config.dataDir },
+    { port: config.port, storage: "Neon PostgreSQL and MongoDB" },
     "AI Learning Assistant backend started",
   );
   jobRunner.start();
   jobScheduler.start();
   registerShutdownHandlers(
     server,
+<<<<<<< HEAD
     database,
     postgresPool,
     mongoClient,
+=======
+    postgres,
+    mongo.client,
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
     jobRunner,
     jobScheduler,
     logger,
   );
   return server;
+  } catch (error) {
+    const cleanupErrors: unknown[] = [];
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server?.close(() => resolve());
+      });
+    }
+    if (mongo) {
+      try {
+        await mongo.client.close();
+      } catch (closeError) {
+        cleanupErrors.push(closeError);
+      }
+    }
+    try {
+      await postgres.end();
+    } catch (closeError) {
+      cleanupErrors.push(closeError);
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "Backend startup failed and database connections could not all be closed",
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -398,6 +486,7 @@ function configureTracing(environment: AppConfig["environment"]): void {
 }
 
 /**
+<<<<<<< HEAD
  * Stops background work, closes the HTTP server, and then closes all database clients.
  */
 function registerShutdownHandlers(
@@ -405,6 +494,14 @@ function registerShutdownHandlers(
   database: ReturnType<typeof openConversationDatabase>,
   postgresPool: Pool,
   mongoClient: MongoClient,
+=======
+ * Stops accepting requests, closes both database connections, and reports failures.
+ */
+function registerShutdownHandlers(
+  server: Server,
+  postgres: ReturnType<typeof createPostgresPool>,
+  mongo: MongoConnection["client"],
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   jobRunner: JobRunner,
   jobScheduler: JobScheduler,
   logger: ReturnType<typeof createLogger>,
@@ -428,6 +525,7 @@ function registerShutdownHandlers(
         });
       });
       try {
+<<<<<<< HEAD
         await postgresPool.end();
       } catch (error) {
         const errorName = error instanceof Error ? error.name : "UnknownError";
@@ -443,9 +541,19 @@ function registerShutdownHandlers(
       }
       try {
         database.close();
+=======
+        await mongo.close();
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       } catch (error) {
         const errorName = error instanceof Error ? error.name : "UnknownError";
-        logger.error({ signal, errorName }, "SQLite shutdown failed");
+        logger.error({ signal, errorName }, "MongoDB shutdown failed");
+        process.exitCode = 1;
+      }
+      try {
+        await postgres.end();
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : "UnknownError";
+        logger.error({ signal, errorName }, "Neon PostgreSQL shutdown failed");
         process.exitCode = 1;
       }
     })().catch((error: unknown) => {

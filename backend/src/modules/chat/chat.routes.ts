@@ -73,9 +73,9 @@ export function createChatRouter(dependencies: ChatRouteDependencies): Router {
     "/conversations",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const query = conversationListQuerySchema.parse(request.query);
-      const conversations = dependencies.chatService.listConversations(
+      const conversations = await dependencies.chatService.listConversations(
         requireAuthContext(request),
         query.courseId,
         query.limit,
@@ -94,8 +94,8 @@ export function createChatRouter(dependencies: ChatRouteDependencies): Router {
     "/conversations/:conversationId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
-      const conversation = dependencies.chatService.getConversation(
+    async (request, response) => {
+      const conversation = await dependencies.chatService.getConversation(
         requireAuthContext(request),
         requireUuidParam(request, "conversationId"),
       );
@@ -107,9 +107,9 @@ export function createChatRouter(dependencies: ChatRouteDependencies): Router {
     "/conversations/:conversationId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
+    async (request, response) => {
       const input = updateConversationRequestSchema.parse(request.body);
-      const conversation = dependencies.chatService.updateConversationTitle(
+      const conversation = await dependencies.chatService.updateConversationTitle(
         requireAuthContext(request),
         requireUuidParam(request, "conversationId"),
         input.title,
@@ -122,8 +122,8 @@ export function createChatRouter(dependencies: ChatRouteDependencies): Router {
     "/conversations/:conversationId",
     authenticate,
     requirePasswordChangeComplete,
-    (request, response) => {
-      dependencies.chatService.deleteConversation(
+    async (request, response) => {
+      await dependencies.chatService.deleteConversation(
         requireAuthContext(request),
         requireUuidParam(request, "conversationId"),
       );

@@ -98,9 +98,9 @@ describe("ChatService", () => {
       .toBe(0);
   });
 
-  test("does not allow a user to read another user's conversation", () => {
+  test("does not allow a user to read another user's conversation", async () => {
     const conversationId = "00000000-0000-4000-8000-000000000003";
-    repository.saveExchange({
+    await repository.saveExchange({
       conversationId,
       userId: "00000000-0000-4000-8000-000000000004",
       courseId,
@@ -115,8 +115,9 @@ describe("ChatService", () => {
       retrievalScoreTop: null,
     });
 
-    expect(() => service.getConversation(actor, conversationId)).toThrow(
-      expect.objectContaining({ code: "NOT_FOUND", statusCode: 404 }),
-    );
+    await expect(service.getConversation(actor, conversationId)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      statusCode: 404,
+    });
   });
 });

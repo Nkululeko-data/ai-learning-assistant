@@ -122,7 +122,10 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Creates the JSON-backed repository for identity and access records.
    */
-  public constructor(private readonly collections: SystemCollections) {}
+  public constructor(
+    private readonly collections: SystemCollections,
+    private readonly legacyUserIdAliases: ReadonlyMap<string, string> = new Map(),
+  ) {}
 
   /**
    * Finds a user by normalized email.
@@ -134,8 +137,16 @@ export class JsonAuthRepository implements AuthRepository {
   /**
    * Finds a user by ID.
    */
+<<<<<<< HEAD
   public async findUserById(id: string): Promise<UserRecord | null> {
     return this.collections.users.getById(id);
+=======
+  public findUserById(id: string): UserRecord | null {
+    return (
+      this.collections.users.getById(id) ??
+      this.collections.users.getById(this.legacyUserIdAliases.get(id) ?? id)
+    );
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   }
 
   public async listUsers(): Promise<UserRecord[]> {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ConflictError, NotFoundError } from "../../common/errors/app-error";
 import { AsyncMutex } from "../../infra/jsonstore/async-mutex";
-import type { JsonCollection } from "../../infra/jsonstore/json-store";
+import type { Collection } from "../../infra/jsonstore/json-store";
 import type {
   JobRecord,
   SchedulerStateRecord,
@@ -388,8 +388,8 @@ export class JsonJobRepository implements JobRepository {
   }
 
   public constructor(
-    private readonly jobs: JsonCollection<JobRecord>,
-    private readonly schedulerState: JsonCollection<SchedulerStateRecord>,
+    private readonly jobs: Collection<JobRecord>,
+    private readonly schedulerState: Collection<SchedulerStateRecord>,
   ) {}
 }
 

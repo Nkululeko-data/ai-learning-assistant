@@ -1,12 +1,34 @@
 # AI Learning Assistant: Data Design (B1)
 
+<<<<<<< HEAD
 **Status:** Approved data-model baseline. This copy is placed in the target `docs/architecture/` structure.
+=======
+**Status:** Original B2 data-model baseline; current runtime mapping is described below.
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
 Detailed field-level specification of the data model. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
 
+<<<<<<< HEAD
 **Persistence status:** Neon PostgreSQL and MongoDB Atlas are the approved target and are partially wired. Production still uses JSON for auth and several feature collections, and SQLite for conversations. This document includes the legacy source layouts/schema; it does not mean all data has been migrated. See `backend/database-implementation-neon-mongo.md` for current migration status and cutover gates.
 
 Logical storage target: relational/access data in Neon PostgreSQL; document metadata, chunks, jobs, and scheduler state in MongoDB Atlas. Remaining JSON and SQLite storage is transitional and must not be deleted until its data and dependent repositories are migrated and verified.
+=======
+### Current runtime mapping (2026-11)
+
+Neon PostgreSQL is the runtime store for users, roles, permissions, courses,
+enrolments, documents, jobs, learning records, feedback, audit data and other
+structured collections. Existing normalized Neon tables are reused; the
+remaining structured collections use the existing schema's JSONB payload
+tables. MongoDB stores conversations and messages, while daily chat quotas
+remain in Neon. Source uploads and generated retrieval chunk files remain in
+private `DATA_DIR` storage.
+
+The detailed field definitions below remain the logical record contracts.
+References to JSON collections and SQLite describe the legacy import format;
+`npm run db:migrate` applies the additive Neon schema migration and
+`npm run db:import-legacy` copies available JSON/SQLite data without deleting
+the original files.
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
 ---
 

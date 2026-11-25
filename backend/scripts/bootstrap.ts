@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+<<<<<<< HEAD
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Pool, PoolClient } from "pg";
@@ -11,6 +12,71 @@ import {
   permissionDefinitions,
   roleDefinitions,
 } from "../src/modules/auth/bootstrap-definitions";
+=======
+import { loadConfig } from "../src/config/config";
+import { createLogger } from "../src/common/logging/logger";
+import { createSystemStore } from "../src/infra/jsonstore/create-system-store";
+import type { SystemCollections } from "../src/infra/jsonstore/system-collections";
+import { createPostgresPool } from "../src/infra/postgres/connection";
+import {
+  CURRENT_DATABASE_SCHEMA_VERSION,
+  getDatabaseSchemaVersion,
+} from "../src/infra/postgres/migrations/006-runtime-storage";
+
+const roleDefinitions = [
+  { name: "learner" as const, description: "Learner account" },
+  { name: "coach" as const, description: "Coach account" },
+  { name: "admin" as const, description: "Administrator account" },
+];
+
+const permissionDefinitions = [
+  "course:create",
+  "course:edit",
+  "course:archive",
+  "document:upload",
+  "document:delete",
+  "enrolment:approve",
+  "insights:view",
+  "feedback:review",
+  "content:generate",
+  "quiz:create",
+  "user:manage",
+  "role:manage",
+  "config:manage",
+  "config:view",
+  "audit:view",
+  "executions:view",
+];
+
+const baselinePermissions: Record<string, string[]> = {
+  learner: [
+    "document:upload",
+    "document:delete",
+    "content:generate",
+    "quiz:create",
+  ],
+  coach: [
+    "course:create",
+    "course:edit",
+    "course:archive",
+    "document:upload",
+    "document:delete",
+    "enrolment:approve",
+    "insights:view",
+    "feedback:review",
+    "content:generate",
+    "quiz:create",
+  ],
+  admin: [
+    "user:manage",
+    "role:manage",
+    "config:manage",
+    "config:view",
+    "audit:view",
+    "executions:view",
+  ],
+};
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
 const weakPasswords = new Set([
   "password",
@@ -23,8 +89,13 @@ const weakPasswords = new Set([
 ]);
 
 export interface BootstrapOptions {
+<<<<<<< HEAD
   databaseUrl?: string | undefined;
   pool?: Pool;
+=======
+  dataDirectory?: string;
+  databaseUrl?: string | undefined;
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   environment: "development" | "test" | "production";
   adminEmail: string | undefined;
   adminPassword: string | undefined;
@@ -54,6 +125,11 @@ export async function bootstrapSystem(
   if (options.reset && !options.yes) {
     throw new Error("The --reset option requires the explicit --yes flag");
   }
+  if (options.reset) {
+    throw new Error(
+      "Database reset is not supported by bootstrap; use a reviewed database maintenance procedure",
+    );
+  }
   if (options.demo) {
     throw new Error(
       "Demo seeding is deferred until the normal document-ingestion pipeline is available",
@@ -61,20 +137,44 @@ export async function bootstrapSystem(
   }
 
   const credentials = validateAdminCredentials(options);
+<<<<<<< HEAD
   const pool = options.pool ?? createPostgresPool(requireDatabaseUrl(options));
   try {
     await runMigrations(pool, resolve(__dirname, "../migrations"));
     return await seedSystemCollections(pool, credentials, options.reset);
   } finally {
     if (!options.pool) await pool.end();
+=======
+  if (!options.databaseUrl) {
+    throw new Error("DATABASE_URL is required for database bootstrap");
+  }
+  const pool = createPostgresPool(options.databaseUrl);
+  try {
+    const schemaVersion = await getDatabaseSchemaVersion(pool);
+    if (schemaVersion !== CURRENT_DATABASE_SCHEMA_VERSION) {
+      throw new Error(
+        `Neon schema version ${schemaVersion} is not ready; run npm run db:migrate first`,
+      );
+    }
+    const { store, collections } = createSystemStore(pool);
+    await store.initialize();
+    return await seedSystemCollections(collections, credentials);
+  } finally {
+    await pool.end();
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   }
 }
 
 /**
  * Seeds roles, permissions, baseline grants, and the first administrator transactionally.
  */
+<<<<<<< HEAD
 async function seedSystemCollections(
   pool: Pool,
+=======
+export async function seedSystemCollections(
+  collections: SystemCollections,
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   credentials: { email: string; password: string },
   reset: boolean,
 ): Promise<BootstrapResult> {
@@ -299,7 +399,11 @@ function validateAdminCredentials(
 async function main(): Promise<void> {
   const config = loadConfig({
     requireJwtSecrets: false,
+<<<<<<< HEAD
     requireMongoConfiguration: false,
+=======
+    requireDatabases: true,
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   });
   const logger = createLogger(config.logLevel);
   const flags = new Set(process.argv.slice(2));

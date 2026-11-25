@@ -5,12 +5,16 @@ import request from "supertest";
 import { createApp } from "../../src/app";
 import type { AppConfig } from "../../src/config/config";
 import { createLogger } from "../../src/common/logging/logger";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { AuthService } from "../../src/modules/auth/auth.service";
 import { JsonAuthRepository } from "../../src/modules/auth/auth.types";
 import { CourseService } from "../../src/modules/courses/course.service";
 import { JsonCourseRepository } from "../../src/modules/courses/course.types";
+<<<<<<< HEAD
 import { bootstrapJsonTestData } from "../helpers/bootstrap-json";
+=======
+import { bootstrapJsonTestStore } from "../helpers/bootstrap-json-store";
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
 jest.mock("file-type", () => ({
   fileTypeFromBuffer: async () => undefined,
@@ -44,7 +48,11 @@ afterEach(cleanupTemporaryDirectory);
 async function createCourseTestContext(): Promise<CourseTestContext> {
   temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-courses-"));
   const dataDirectory = join(temporaryRoot, "data");
+<<<<<<< HEAD
   await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
+=======
+  await bootstrapJsonTestStore(dataDirectory, "admin@example.test", adminPassword);
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -112,10 +120,15 @@ async function createCourseTestContext(): Promise<CourseTestContext> {
     logger: createLogger("silent"),
     corsOrigins: config.corsOrigins,
     getReadiness: () => ({
+<<<<<<< HEAD
       jsonStoreOpen: true,
       sqliteOpen: true,
       postgresReady: true,
       mongoReady: true,
+=======
+      neonOpen: true,
+      mongoOpen: true,
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
       schemaVersion: 1,
       expectedSchemaVersion: 1,
       providerConfigurationPresent: true,

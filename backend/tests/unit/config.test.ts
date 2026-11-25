@@ -9,6 +9,10 @@ const configEnvironmentKeys = [
   "DATA_DIR",
   "DATABASE_URL",
   "MONGODB_URI",
+<<<<<<< HEAD
+=======
+  "MONGODB_DATABASE",
+>>>>>>> 0ae702e35dab12063557067788c54da7e271cca1
   "MONGODB_DB_NAME",
   "LOG_LEVEL",
   "CORS_ORIGINS",
@@ -224,6 +228,25 @@ function verifiesProviderReadinessUsesConfiguredFallbackProviders(): void {
   );
 }
 
+function verifiesDatabaseConfigurationIsRequiredForRuntime(): void {
+  expect(() =>
+    loadConfig({ requireJwtSecrets: false, requireDatabases: true }),
+  ).toThrow(
+    "Missing required configuration: DATABASE_URL, MONGODB_URI, MONGODB_DATABASE",
+  );
+
+  process.env.DATABASE_URL = "postgresql://db.example.test/app";
+  process.env.MONGODB_URI = "mongodb://mongo.example.test";
+  process.env.MONGODB_DATABASE = "learning_assistant";
+  expect(
+    loadConfig({ requireJwtSecrets: false, requireDatabases: true }),
+  ).toMatchObject({
+    databaseUrl: process.env.DATABASE_URL,
+    mongodbUri: process.env.MONGODB_URI,
+    mongodbDatabase: process.env.MONGODB_DATABASE,
+  });
+}
+
 describe("configuration", () => {
   test("loads validated default values", verifiesDefaultConfiguration);
   test("requires auth secrets and rejects wildcard credentialed CORS", verifiesRequiredSecretsAndCorsValidation);
@@ -241,5 +264,9 @@ describe("configuration", () => {
   test(
     "requires embeddings and at least one configured LLM provider",
     verifiesProviderReadinessUsesConfiguredFallbackProviders,
+  );
+  test(
+    "requires both databases for runtime configuration",
+    verifiesDatabaseConfigurationIsRequiredForRuntime,
   );
 });

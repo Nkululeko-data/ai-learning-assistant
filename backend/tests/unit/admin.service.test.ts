@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSystemStore } from "../../src/infra/jsonstore/create-system-store";
+import { createJsonSystemStore as createSystemStore } from "../../src/infra/jsonstore/create-json-system-store";
 import { openConversationDatabase } from "../../src/infra/sqlite/database";
 import { ConversationRepository } from "../../src/infra/sqlite/conversation.repository";
 import { PrivateFileStorage } from "../../src/infra/storage/private-file-storage";

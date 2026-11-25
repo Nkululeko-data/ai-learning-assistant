@@ -10,10 +10,19 @@ async function main(): Promise<void> {
   }
 
   const snapshotDirectory = resolve(snapshot);
-  for (const name of ["json", "sqlite", "uploads"]) {
-    await stat(join(snapshotDirectory, name));
-  }
   await stat(join(snapshotDirectory, "manifest.json"));
+  const availableDirectories = [];
+  for (const name of ["json", "sqlite", "uploads"]) {
+    try {
+      await stat(join(snapshotDirectory, name));
+      availableDirectories.push(name);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+  }
+  if (availableDirectories.length === 0) {
+    throw new Error("Snapshot contains no restorable data directories");
+  }
 
   const config = loadConfig({ requireJwtSecrets: false });
   const dataDirectory = resolve(config.dataDir);
@@ -22,7 +31,7 @@ async function main(): Promise<void> {
   }
   await mkdir(dataDirectory, { recursive: true });
 
-  for (const name of ["json", "sqlite", "uploads"]) {
+  for (const name of availableDirectories) {
     await rm(join(dataDirectory, name), { recursive: true, force: true });
     await cp(
       join(snapshotDirectory, name),
@@ -40,6 +49,15 @@ function isUnsafeTarget(path: string): boolean {
   if (normalized === "/" || normalized === "\\") return true;
   if (normalized === process.env.USERPROFILE?.toLowerCase()) return true;
   return false;
+}
+
+function isMissing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }
 
 void main().catch((error: unknown) => {

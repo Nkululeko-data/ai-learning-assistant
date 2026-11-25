@@ -21,12 +21,26 @@ export interface JsonCollectionDefinition<T extends { id: string }> {
 
 export type NewRecord<T extends { id: string }> = Omit<T, "id">;
 
+export interface Collection<T extends { id: string }> {
+  getById(id: string): T | null;
+  findByIndex(indexName: string, key: string): T[];
+  findUnique(indexName: string, key: string): T | null;
+  list(predicate?: (record: T) => boolean): T[];
+  insert(input: NewRecord<T>): Promise<T>;
+  update(
+    id: string,
+    updateRecord: (current: T) => T,
+    expectedVersion?: number,
+  ): Promise<T>;
+  remove(id: string): Promise<void>;
+}
+
 interface CollectionLifecycle {
   initialize(): Promise<void>;
 }
 
 export class JsonCollection<T extends { id: string }>
-  implements CollectionLifecycle
+  implements Collection<T>, CollectionLifecycle
 {
   private readonly mutex = new AsyncMutex();
   private readonly filePath: string;
