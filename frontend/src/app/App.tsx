@@ -9,6 +9,8 @@ import { CourseApprovalsPanel } from "../features/admin/CourseApprovalsPanel";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { WorkspaceLayout } from "../features/workspace/WorkspacePage";
 import { designTokens } from "../theme/designTokens";
+import "../learnerExperience.css";
+import "../features/admin/adminPortal.css";
 
 const ChangePasswordPage = lazy(() =>
   import("../features/auth/ChangePasswordPage").then((module) => ({
@@ -134,7 +136,7 @@ function AdminRoute({
       <Alert severity="error">You do not have permission to view this page.</Alert>
     );
   }
-  return children;
+  return <div className="learnova-admin-page">{children}</div>;
 }
 
 function NonAdminRoute({ children }: { children: ReactNode }) {
@@ -238,6 +240,20 @@ export function App() {
                 "&:hover, &:active": {
                   backgroundColor: designTokens.color.accentActive,
                 },
+              },
+              containedPrimary: {
+                backgroundColor: designTokens.color.accent,
+                "&:hover, &:active": {
+                  backgroundColor: designTokens.color.accentActive,
+                },
+              },
+            },
+          },
+          MuiPaper: {
+            styleOverrides: {
+              root: {
+                borderRadius: 16,
+                backgroundImage: "none",
               },
             },
           },

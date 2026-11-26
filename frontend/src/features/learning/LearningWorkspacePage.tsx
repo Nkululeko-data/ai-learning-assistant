@@ -121,9 +121,14 @@ export function LearningWorkspacePage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack className="learnova-study-workspace" spacing={3}>
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={700}>
+        <Typography
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+          className="learnova-page-heading"
+        >
           Study tools
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
@@ -131,7 +136,12 @@ export function LearningWorkspacePage() {
         </Typography>
       </Box>
 
-      <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
+      <Paper
+        component="section"
+        variant="outlined"
+        className="learnova-study-source-panel"
+        sx={{ p: { xs: 2, sm: 3 } }}
+      >
         <Stack spacing={2}>
           <Box>
             <Typography component="h2" variant="h6">

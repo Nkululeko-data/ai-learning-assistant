@@ -121,6 +121,38 @@ describe("DashboardPage", () => {
           },
         }),
       ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/lessons`, () =>
+        HttpResponse.json({
+          data: {
+            courseId,
+            version: 1,
+            lessons: [
+              {
+                id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7912",
+                title: "Introduction",
+                introduction: "Welcome",
+                pdfDocumentId: null,
+                pdfFilename: null,
+                videoDocumentId: null,
+                videoFilename: null,
+                videoSizeBytes: null,
+                videoUrl: null,
+              },
+              {
+                id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7913",
+                title: "Foundations",
+                introduction: "Begin here",
+                pdfDocumentId: null,
+                pdfFilename: null,
+                videoDocumentId: null,
+                videoFilename: null,
+                videoSizeBytes: null,
+                videoUrl: null,
+              },
+            ],
+          },
+        }),
+      ),
     );
 
     renderDashboard({
@@ -135,14 +167,19 @@ describe("DashboardPage", () => {
         "document:upload",
         "insights:view",
         "enrolment:approve",
+        "course:edit",
+        "quiz:create",
       ],
       permsVersion: 1,
     });
 
     expect(
-      await screen.findByRole("heading", { name: "Coach dashboard" }),
+      await screen.findByRole("heading", { name: "Welcome, Test coach" }),
     ).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Biology" })).toBeVisible();
+    expect(await screen.findByText("2 lessons")).toBeVisible();
+    expect(screen.getByText("Learner enrollments")).toBeVisible();
+    expect(screen.getByText("Your teaching workspace")).toBeVisible();
     expect(await screen.findByText("Taylor Learner")).toBeVisible();
     expect(screen.getByRole("link", { name: "Review request" })).toHaveAttribute(
       "href",
@@ -153,6 +190,18 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("link", { name: "Manage materials" })).toHaveAttribute(
       "href",
       `/courses/${courseId}/documents`,
+    );
+    expect(screen.getByRole("link", { name: "Manage lessons" })).toHaveAttribute(
+      "href",
+      `/courses/${courseId}#course-lessons-editor`,
+    );
+    expect(screen.getByRole("link", { name: "Manage quizzes" })).toHaveAttribute(
+      "href",
+      `/courses/${courseId}#course-quizzes`,
+    );
+    expect(screen.getByRole("link", { name: "Create a course" })).toHaveAttribute(
+      "href",
+      "/my-courses?create=1",
     );
     expect(screen.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "At a glance" })).toBeVisible();
@@ -246,6 +295,16 @@ describe("DashboardPage", () => {
       "href",
       `/courses/${courseId}/study`,
     );
+    expect(
+      screen.getByRole("link", {
+        name: "AI Tutor: Ask questions about the courses you can access.",
+      }),
+    ).toHaveAttribute("href", "/chat");
+    expect(screen.getByRole("link", { name: /Quizzes/ })).toHaveAttribute(
+      "href",
+      `/courses/${courseId}/study?tab=quiz`,
+    );
+    expect(screen.queryByText("Completed courses")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Recent activity" })).toBeNull();
   });
 

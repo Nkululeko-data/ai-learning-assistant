@@ -31,6 +31,8 @@ import {
 import type { CourseView } from "../../api/courses";
 import { friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
+import { AdminStatusChip } from "./AdminStatusChip";
 
 export function AdminCoursesPage() {
   const queryClient = useQueryClient();
@@ -113,7 +115,7 @@ export function AdminCoursesPage() {
         <Typography component="h1" variant="h4" fontWeight={700}>
           Courses
         </Typography>
-        <LinearProgress aria-label="Loading courses" />
+        <AdminLoadingSkeleton label="Loading courses" rows={4} />
       </Stack>
     );
   }
@@ -176,8 +178,16 @@ export function AdminCoursesPage() {
                     <Typography fontWeight={600}>{course.name}</Typography>
                   </TableCell>
                   <TableCell>{ownerName(course)}</TableCell>
-                  <TableCell>{course.status}</TableCell>
-                  <TableCell>{course.approvalStatus ?? "—"}</TableCell>
+                  <TableCell>
+                    <AdminStatusChip status={course.status} />
+                  </TableCell>
+                  <TableCell>
+                    {course.approvalStatus ? (
+                      <AdminStatusChip status={course.approvalStatus} />
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                       <Button

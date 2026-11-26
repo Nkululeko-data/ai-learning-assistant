@@ -151,7 +151,13 @@ describe("AdminDashboardPage", () => {
     expect(
       await screen.findByRole("heading", { name: "System summary" }),
     ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Welcome, Test administrator. Monitor platform activity and work that needs review.",
+      ),
+    ).toBeVisible();
     expect(await screen.findByText("Active users")).toBeVisible();
+    expect(screen.getAllByRole("definition")).toHaveLength(6);
     expect(screen.getByText("24")).toBeVisible();
     expect(screen.getByText("Approved enrolments")).toBeVisible();
     expect(screen.getByText("31")).toBeVisible();

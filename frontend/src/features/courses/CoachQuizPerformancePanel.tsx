@@ -66,9 +66,7 @@ function downloadQuizResults(quiz: QuizPerformance) {
     learner.submittedAt,
     learner.attempted ? "Yes" : "No",
   ]);
-  const csv = [header, ...rows]
-    .map((row) => row.map(csvCell).join(","))
-    .join("\r\n");
+  const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
@@ -117,7 +115,7 @@ function QuizReport({
   );
 
   return (
-    <Accordion variant="outlined">
+    <Accordion variant="outlined" className="learnova-quiz-report">
       <AccordionSummary>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -138,8 +136,14 @@ function QuizReport({
         <Stack spacing={2.5}>
           <Stack direction="row" flexWrap="wrap" gap={1}>
             <Chip label={`Completion ${quiz.completionRate}%`} variant="outlined" />
-            <Chip label={`Average ${percentage(quiz.averageScore)}`} variant="outlined" />
-            <Chip label={`Highest ${percentage(quiz.highestScore)}`} variant="outlined" />
+            <Chip
+              label={`Average ${percentage(quiz.averageScore)}`}
+              variant="outlined"
+            />
+            <Chip
+              label={`Highest ${percentage(quiz.highestScore)}`}
+              variant="outlined"
+            />
             <Chip label={`Lowest ${percentage(quiz.lowestScore)}`} variant="outlined" />
             <Chip label={`${quiz.questionCount} questions`} variant="outlined" />
           </Stack>
@@ -163,7 +167,9 @@ function QuizReport({
               >
                 <MenuItem value="all">All learners</MenuItem>
                 <MenuItem value="not_attempted">Not attempted</MenuItem>
-                <MenuItem value="below_threshold">Not attempted / below threshold</MenuItem>
+                <MenuItem value="below_threshold">
+                  Not attempted / below threshold
+                </MenuItem>
               </Select>
             </FormControl>
             {filter === "below_threshold" && (
@@ -177,7 +183,7 @@ function QuizReport({
                 labelId={`learner-sort-${quiz.quizId}`}
                 value={sort}
                 label="Sort by"
-                  onChange={(event) => onSortChange(event.target.value as LearnerSort)}
+                onChange={(event) => onSortChange(event.target.value as LearnerSort)}
               >
                 <MenuItem value="name">Name</MenuItem>
                 <MenuItem value="attempts">Attempts</MenuItem>
@@ -218,8 +224,7 @@ function QuizReport({
                       key={learner.userId}
                       sx={{
                         backgroundColor:
-                          !learner.attempted ||
-                          (learner.latestScore ?? 0) < threshold
+                          !learner.attempted || (learner.latestScore ?? 0) < threshold
                             ? "action.hover"
                             : undefined,
                       }}

@@ -57,9 +57,14 @@ export function QuizResultsPage() {
   }
 
   return (
-    <Stack spacing={2.5}>
+    <Stack className="learnova-quiz-results" spacing={2.5}>
       <div>
-        <Typography component="h1" variant="h4" fontWeight={700}>
+        <Typography
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+          className="learnova-page-heading"
+        >
           Quiz results
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
@@ -83,6 +88,7 @@ export function QuizResultsPage() {
           component="article"
           key={attempt.id}
           variant="outlined"
+          className="learnova-result-card"
           sx={{ p: { xs: 2, sm: 2.5 } }}
         >
           <Stack

@@ -20,6 +20,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { PencilLine, Sparkles } from "lucide-react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -616,18 +617,40 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
         </Typography>
       </Box>
 
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
         <Button
           variant={creationMethod === "ai" ? "contained" : "outlined"}
+          className="learnova-quiz-method-button"
+          aria-label="Generate with AI"
+          aria-pressed={creationMethod === "ai"}
+          startIcon={<Sparkles size={19} aria-hidden="true" />}
           onClick={() => setCreationMethod("ai")}
         >
-          Generate with AI
+          <Stack alignItems="flex-start" spacing={0.25}>
+            <Typography component="span" fontWeight={700}>
+              Generate with AI
+            </Typography>
+            <Typography component="span" variant="caption" sx={{ opacity: 0.8 }}>
+              Build a draft from course documents
+            </Typography>
+          </Stack>
         </Button>
         <Button
           variant={creationMethod === "manual" ? "contained" : "outlined"}
+          className="learnova-quiz-method-button"
+          aria-label="Create manually"
+          aria-pressed={creationMethod === "manual"}
+          startIcon={<PencilLine size={19} aria-hidden="true" />}
           onClick={() => setCreationMethod("manual")}
         >
-          Create manually
+          <Stack alignItems="flex-start" spacing={0.25}>
+            <Typography component="span" fontWeight={700}>
+              Create manually
+            </Typography>
+            <Typography component="span" variant="caption" sx={{ opacity: 0.8 }}>
+              Write each question and answer yourself
+            </Typography>
+          </Stack>
         </Button>
       </Stack>
 
@@ -637,6 +660,10 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
             <Stack spacing={2}>
               <Typography component="h3" variant="h6">
                 Generate a quiz draft
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                AI suggestions are a starting point. Review and edit every question
+                before publishing it for learners.
               </Typography>
               {!canGenerate && (
                 <Alert severity="warning">
@@ -1010,6 +1037,7 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                 <Box
                   key={question.id}
                   component="section"
+                  className="learnova-quiz-question"
                   aria-labelledby={`draft-question-${index}`}
                   sx={{ pt: 2, borderTop: 1, borderColor: "divider" }}
                 >

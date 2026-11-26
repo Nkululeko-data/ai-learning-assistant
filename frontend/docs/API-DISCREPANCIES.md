@@ -182,8 +182,8 @@ the F1 scaffold was added after approval.
 - Default the client base to `/api/v1`; use `VITE_API_BASE_URL`, send
   credentials for refresh cookies, and keep the access token in memory rather
   than persistent browser storage.
-- Configure Vite's local API proxy or direct CORS access; the backend default
-  CORS origin already allows `http://localhost:5173`. Production origins must
-  be configured by the operator.
+- Configure Vite's local API proxy or direct CORS access; the backend defaults
+  allow `http://localhost:5173` and `http://127.0.0.1:5173`. Production origins
+  must be configured by the operator.
 - Build the frontend as a separate multi-stage static Nginx image; keep the
   existing backend container and its single persistent data volume separate.

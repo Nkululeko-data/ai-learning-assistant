@@ -130,7 +130,7 @@ export function CourseDetailsPage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} className="learnova-course-management-workspace">
       <Box>
         <Stack
           direction={{ xs: "column", sm: "row" }}

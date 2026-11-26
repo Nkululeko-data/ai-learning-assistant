@@ -7,16 +7,23 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   FormControl,
   Grid,
   InputLabel,
   LinearProgress,
   MenuItem,
+  Paper,
   Select,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import {
   useInfiniteQuery,
   useMutation,
@@ -61,6 +68,10 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
     Record<string, string>
   >({});
   const [expandedLessonId, setExpandedLessonId] = useState<string | null>(null);
+  const [lessonToRemove, setLessonToRemove] = useState<{
+    index: number;
+    title: string;
+  } | null>(null);
   const [draft, setDraft] = useState<{
     courseId: string;
     lessons: LessonDraft[];
@@ -227,6 +238,19 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
     }));
   }
 
+  function removeLesson(index: number) {
+    const lesson = lessons[index];
+    setDraft((currentDraft) => ({
+      courseId,
+      lessons: (currentDraft?.courseId === courseId
+        ? currentDraft.lessons
+        : (lessonsQuery.data?.lessons ?? [])
+      ).filter((_currentLesson, currentIndex) => currentIndex !== index),
+    }));
+    setExpandedLessonId((current) => (current === lesson?.id ? null : current));
+    setLessonToRemove(null);
+  }
+
   function uploadVideoForLesson(lessonId: string, file: File) {
     const invalidType =
       !file.name.toLowerCase().endsWith(".mp4") ||
@@ -356,6 +380,7 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
               }
               disableGutters
               elevation={0}
+              className="learnova-lesson-editor"
               sx={{
                 overflow: "hidden",
                 border: 1,
@@ -445,7 +470,7 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
                       flexWrap="wrap"
                     >
                       <Typography component="h3" variant="h6" fontWeight={650}>
-                        Lesson details
+                        Lesson information
                       </Typography>
                       <Stack direction="row" spacing={0.5}>
                         <Button
@@ -468,18 +493,12 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
                           size="small"
                           color="error"
                           aria-label={`Remove lesson ${index + 1}`}
-                          onClick={() => {
-                            setDraft((currentDraft) => ({
-                              courseId,
-                              lessons: (currentDraft?.courseId === courseId
-                                ? currentDraft.lessons
-                                : (lessonsQuery.data?.lessons ?? [])
-                              ).filter((_, currentIndex) => currentIndex !== index),
-                            }));
-                            setExpandedLessonId((current) =>
-                              current === lesson.id ? null : current,
-                            );
-                          }}
+                          onClick={() =>
+                            setLessonToRemove({
+                              index,
+                              title: lesson.title.trim() || "Untitled lesson",
+                            })
+                          }
                         >
                           Remove
                         </Button>
@@ -508,165 +527,211 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
                       required
                       fullWidth
                     />
+                    <Divider />
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      justifyContent="space-between"
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      spacing={1}
+                    >
+                      <Box>
+                        <Typography component="h3" variant="h6" fontWeight={650}>
+                          Learning materials
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Add a PDF to the course library first, then attach it here. A
+                          lesson video is optional.
+                        </Typography>
+                      </Box>
+                      <Button
+                        component={RouterLink}
+                        to={`/courses/${courseId}/documents`}
+                        size="small"
+                      >
+                        Manage course files
+                      </Button>
+                    </Stack>
                     <Grid container spacing={2}>
                       <Grid size={{ xs: 12, md: 6 }}>
-                        <FormControl fullWidth>
-                          <InputLabel id={`lesson-pdf-label-${lesson.id}`}>
-                            Optional PDF
-                          </InputLabel>
-                          <Select
-                            labelId={`lesson-pdf-label-${lesson.id}`}
-                            label="Optional PDF"
-                            value={lesson.pdfDocumentId ?? ""}
-                            onChange={(event) => {
-                              const documentId = event.target.value || null;
-                              const document = coursePdfs.find(
-                                (item) => item.id === documentId,
-                              );
-                              updateLesson(index, {
-                                pdfDocumentId: documentId,
-                                pdfFilename: document?.filename ?? null,
-                              });
-                            }}
-                          >
-                            <MenuItem value="">No PDF</MenuItem>
-                            {lesson.pdfDocumentId &&
-                              !currentPdfIsListed &&
-                              lesson.pdfFilename && (
-                                <MenuItem value={lesson.pdfDocumentId}>
-                                  {lesson.pdfFilename}
-                                  {documentsQuery.hasNextPage
-                                    ? " (load more PDFs)"
-                                    : documentsQuery.isSuccess
-                                      ? " (unavailable)"
-                                      : ""}
-                                </MenuItem>
-                              )}
-                            {coursePdfs.map((document) => (
-                              <MenuItem key={document.id} value={document.id}>
-                                {document.filename}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
+                        <Paper
+                          variant="outlined"
+                          className="learnova-lesson-material-card"
+                          sx={{ height: "100%", p: { xs: 1.5, sm: 2 } }}
+                        >
+                          <Stack spacing={1.25}>
+                            <Typography fontWeight={700}>PDF notes</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Select a processed PDF from this course.
+                            </Typography>
+                            <FormControl fullWidth>
+                              <InputLabel id={`lesson-pdf-label-${lesson.id}`}>
+                                Optional PDF
+                              </InputLabel>
+                              <Select
+                                labelId={`lesson-pdf-label-${lesson.id}`}
+                                label="Optional PDF"
+                                value={lesson.pdfDocumentId ?? ""}
+                                onChange={(event) => {
+                                  const documentId = event.target.value || null;
+                                  const document = coursePdfs.find(
+                                    (item) => item.id === documentId,
+                                  );
+                                  updateLesson(index, {
+                                    pdfDocumentId: documentId,
+                                    pdfFilename: document?.filename ?? null,
+                                  });
+                                }}
+                              >
+                                <MenuItem value="">No PDF</MenuItem>
+                                {lesson.pdfDocumentId &&
+                                  !currentPdfIsListed &&
+                                  lesson.pdfFilename && (
+                                    <MenuItem value={lesson.pdfDocumentId}>
+                                      {lesson.pdfFilename}
+                                      {documentsQuery.hasNextPage
+                                        ? " (load more PDFs)"
+                                        : documentsQuery.isSuccess
+                                          ? " (unavailable)"
+                                          : ""}
+                                    </MenuItem>
+                                  )}
+                                {coursePdfs.map((document) => (
+                                  <MenuItem key={document.id} value={document.id}>
+                                    {document.filename}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          </Stack>
+                        </Paper>
                       </Grid>
                       <Grid size={{ xs: 12, md: 6 }}>
-                        <Stack spacing={1}>
-                          <FormControl fullWidth>
-                            <InputLabel id={`lesson-video-label-${lesson.id}`}>
-                              Optional lesson video
-                            </InputLabel>
-                            <Select
-                              labelId={`lesson-video-label-${lesson.id}`}
-                              label="Optional lesson video"
-                              value={lesson.videoDocumentId ?? ""}
-                              onChange={(event) => {
-                                const documentId = event.target.value || null;
-                                const document = courseVideos.find(
-                                  (item) => item.id === documentId,
-                                );
-                                updateLesson(index, {
-                                  videoDocumentId: documentId,
-                                  videoFilename:
-                                    document?.filename ??
-                                    (documentId ? lesson.videoFilename : null),
-                                  videoSizeBytes:
-                                    document?.sizeBytes ??
-                                    (documentId ? lesson.videoSizeBytes : null),
-                                  videoUrl: documentId ? null : lesson.videoUrl,
-                                });
-                              }}
-                            >
-                              <MenuItem value="">No uploaded video</MenuItem>
-                              {lesson.videoDocumentId &&
-                                !currentVideoIsListed &&
-                                lesson.videoFilename && (
-                                  <MenuItem value={lesson.videoDocumentId}>
-                                    {lesson.videoFilename}
-                                    {documentsQuery.hasNextPage
-                                      ? " (load more course files)"
-                                      : " (unavailable)"}
-                                  </MenuItem>
-                                )}
-                              {courseVideos.map((video) => (
-                                <MenuItem key={video.id} value={video.id}>
-                                  {video.filename} ·{" "}
-                                  {(video.sizeBytes / (1024 * 1024)).toFixed(1)} MB
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <Stack
-                            direction={{ xs: "column", sm: "row" }}
-                            spacing={1}
-                            alignItems={{ xs: "flex-start", sm: "center" }}
-                          >
-                            <Button
-                              component="label"
-                              variant="outlined"
-                              disabled={
-                                !canUploadVideo || videoUploadMutation.isPending
-                              }
-                              aria-label={`Upload video for lesson ${index + 1}`}
-                            >
-                              {videoUploadMutation.isPending &&
-                              videoUploadMutation.variables?.lessonId === lesson.id
-                                ? "Uploading..."
-                                : "Upload MP4"}
-                              <input
-                                hidden
-                                type="file"
-                                accept="video/mp4,.mp4"
+                        <Paper
+                          variant="outlined"
+                          className="learnova-lesson-material-card"
+                          sx={{ height: "100%", p: { xs: 1.5, sm: 2 } }}
+                        >
+                          <Stack spacing={1}>
+                            <Typography fontWeight={700}>Lesson video</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Optional. Choose an uploaded video or add an MP4.
+                            </Typography>
+                            <FormControl fullWidth>
+                              <InputLabel id={`lesson-video-label-${lesson.id}`}>
+                                Optional lesson video
+                              </InputLabel>
+                              <Select
+                                labelId={`lesson-video-label-${lesson.id}`}
+                                label="Optional lesson video"
+                                value={lesson.videoDocumentId ?? ""}
                                 onChange={(event) => {
-                                  const input = event.currentTarget;
-                                  const file = input.files?.[0];
-                                  input.value = "";
-                                  if (file) uploadVideoForLesson(lesson.id, file);
+                                  const documentId = event.target.value || null;
+                                  const document = courseVideos.find(
+                                    (item) => item.id === documentId,
+                                  );
+                                  updateLesson(index, {
+                                    videoDocumentId: documentId,
+                                    videoFilename:
+                                      document?.filename ??
+                                      (documentId ? lesson.videoFilename : null),
+                                    videoSizeBytes:
+                                      document?.sizeBytes ??
+                                      (documentId ? lesson.videoSizeBytes : null),
+                                    videoUrl: documentId ? null : lesson.videoUrl,
+                                  });
                                 }}
-                              />
-                            </Button>
-                            <Typography variant="body2" color="text.secondary">
-                              MP4 up to 100 MB. Save lessons to attach; unused uploads
-                              remain in the course library.
-                            </Typography>
-                          </Stack>
-                          {!canUploadVideo && (
-                            <Typography variant="body2" color="text.secondary">
-                              You need the document upload permission to add a video.
-                            </Typography>
-                          )}
-                          {videoValidationErrors[lesson.id] && (
-                            <Alert severity="error">
-                              {videoValidationErrors[lesson.id]}
-                            </Alert>
-                          )}
-                          {uploadError && (
-                            <ErrorNotice message={friendlyMessage(uploadError)} />
-                          )}
-                          {videoUploadMutation.isPending &&
-                            videoUploadMutation.variables?.lessonId === lesson.id && (
-                              <LinearProgress aria-label="Uploading lesson video" />
-                            )}
-                          {lesson.videoUrl && (
-                            <Alert
-                              severity="info"
-                              action={
-                                <Button
-                                  color="inherit"
-                                  size="small"
-                                  onClick={() =>
-                                    updateLesson(index, { videoUrl: null })
-                                  }
-                                >
-                                  Remove link
-                                </Button>
-                              }
+                              >
+                                <MenuItem value="">No uploaded video</MenuItem>
+                                {lesson.videoDocumentId &&
+                                  !currentVideoIsListed &&
+                                  lesson.videoFilename && (
+                                    <MenuItem value={lesson.videoDocumentId}>
+                                      {lesson.videoFilename}
+                                      {documentsQuery.hasNextPage
+                                        ? " (load more course files)"
+                                        : " (unavailable)"}
+                                    </MenuItem>
+                                  )}
+                                {courseVideos.map((video) => (
+                                  <MenuItem key={video.id} value={video.id}>
+                                    {video.filename} ·{" "}
+                                    {(video.sizeBytes / (1024 * 1024)).toFixed(1)} MB
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <Stack
+                              direction={{ xs: "column", sm: "row" }}
+                              spacing={1}
+                              alignItems={{ xs: "flex-start", sm: "center" }}
                             >
-                              This lesson still uses a previously saved external video
-                              link. Upload an MP4 to replace it.
-                            </Alert>
-                          )}
-                        </Stack>
+                              <Button
+                                component="label"
+                                variant="outlined"
+                                disabled={
+                                  !canUploadVideo || videoUploadMutation.isPending
+                                }
+                                aria-label={`Upload video for lesson ${index + 1}`}
+                              >
+                                {videoUploadMutation.isPending &&
+                                videoUploadMutation.variables?.lessonId === lesson.id
+                                  ? "Uploading..."
+                                  : "Upload MP4"}
+                                <input
+                                  hidden
+                                  type="file"
+                                  accept="video/mp4,.mp4"
+                                  onChange={(event) => {
+                                    const input = event.currentTarget;
+                                    const file = input.files?.[0];
+                                    input.value = "";
+                                    if (file) uploadVideoForLesson(lesson.id, file);
+                                  }}
+                                />
+                              </Button>
+                              <Typography variant="body2" color="text.secondary">
+                                MP4 up to 100 MB. Save lessons to attach; unused uploads
+                                remain in the course library.
+                              </Typography>
+                            </Stack>
+                            {!canUploadVideo && (
+                              <Typography variant="body2" color="text.secondary">
+                                You need the document upload permission to add a video.
+                              </Typography>
+                            )}
+                            {videoValidationErrors[lesson.id] && (
+                              <Alert severity="error">
+                                {videoValidationErrors[lesson.id]}
+                              </Alert>
+                            )}
+                            {uploadError && (
+                              <ErrorNotice message={friendlyMessage(uploadError)} />
+                            )}
+                            {videoUploadMutation.isPending &&
+                              videoUploadMutation.variables?.lessonId === lesson.id && (
+                                <LinearProgress aria-label="Uploading lesson video" />
+                              )}
+                            {lesson.videoUrl && (
+                              <Alert
+                                severity="info"
+                                action={
+                                  <Button
+                                    color="inherit"
+                                    size="small"
+                                    onClick={() =>
+                                      updateLesson(index, { videoUrl: null })
+                                    }
+                                  >
+                                    Remove link
+                                  </Button>
+                                }
+                              >
+                                This lesson still uses a previously saved external video
+                                link. Upload an MP4 to replace it.
+                              </Alert>
+                            )}
+                          </Stack>
+                        </Paper>
                       </Grid>
                     </Grid>
                     {!currentPdfIsListed &&
@@ -696,6 +761,33 @@ export function CourseLessonsEditor({ courseId }: { courseId: string }) {
           );
         })}
       </Stack>
+      <Dialog
+        open={lessonToRemove !== null}
+        onClose={() => setLessonToRemove(null)}
+        aria-labelledby="remove-course-lesson-title"
+      >
+        <DialogTitle id="remove-course-lesson-title">
+          Remove lesson from course?
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            “{lessonToRemove?.title}” will be removed from your unsaved lesson changes.
+            Save the lesson list to apply this change to the course.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLessonToRemove(null)}>Keep lesson</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              if (lessonToRemove) removeLesson(lessonToRemove.index);
+            }}
+          >
+            Remove lesson
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

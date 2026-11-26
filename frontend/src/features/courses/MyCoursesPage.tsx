@@ -3,8 +3,8 @@ import {
   Box,
   Button,
   Chip,
+  Grid,
   LinearProgress,
-  Paper,
   Stack,
   Typography,
 } from "@mui/material";
@@ -15,6 +15,7 @@ import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { CourseManagementPage } from "./CourseManagementPage";
+import { CourseCard, CourseCardSkeleton } from "./CourseCard";
 
 const pageSize = 20;
 
@@ -49,7 +50,12 @@ function LearnerCourses() {
   return (
     <Stack spacing={2.5}>
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={700}>
+        <Typography
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+          className="learnova-page-heading"
+        >
           My courses
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
@@ -58,6 +64,15 @@ function LearnerCourses() {
       </Box>
       {enrolmentsQuery.isLoading && (
         <LinearProgress aria-label="Loading your courses" />
+      )}
+      {enrolmentsQuery.isLoading && (
+        <Grid container spacing={2} aria-hidden="true">
+          {Array.from({ length: 3 }, (_, index) => (
+            <Grid key={index} size={{ xs: 12, sm: 6, xl: 4 }}>
+              <CourseCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
       )}
       {enrolmentsQuery.isError && (
         <Stack spacing={1} alignItems="flex-start">
@@ -79,79 +94,71 @@ function LearnerCourses() {
             You have not requested access to a course yet.
           </Alert>
         )}
-      {enrolments.map((enrolment) => (
-        <Paper
-          component="article"
-          key={enrolment.id}
-          variant="outlined"
-          sx={{ p: { xs: 2, sm: 2.5 } }}
-        >
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "flex-start", sm: "center" }}
-            spacing={1.5}
-          >
-            <Box>
-              <Typography component="h2" variant="h6" fontWeight={650}>
-                {enrolment.course.name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {enrolment.status === "approved"
-                  ? enrolment.course.status === "archived"
-                    ? "You have access to this archived course."
-                    : "You are enrolled in this course."
-                  : enrolment.status === "pending"
-                    ? "Your request is waiting for the coach."
-                    : enrolment.status === "rejected"
-                      ? "Your request was not approved."
-                      : "Your access to this course was removed."}
-              </Typography>
-              {enrolment.decisionNote && (
-                <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  Coach note: {enrolment.decisionNote}
-                </Typography>
-              )}
-            </Box>
-            <Stack
-              direction="row"
-              alignItems="center"
-              spacing={1}
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Chip
-                size="small"
-                label={
-                  enrolment.status === "approved"
-                    ? "Approved"
-                    : enrolment.status === "pending"
-                      ? "Pending"
-                      : enrolment.status === "rejected"
-                        ? "Not approved"
-                        : "Removed"
-                }
-                color={
-                  enrolment.status === "approved"
-                    ? "success"
-                    : enrolment.status === "pending"
-                      ? "warning"
-                      : "default"
-                }
-              />
-              {enrolment.status === "approved" && (
-                <Button
-                  component={RouterLink}
-                  to={`/courses/${enrolment.courseId}`}
-                  variant="outlined"
-                >
-                  Open course
-                </Button>
-              )}
-            </Stack>
-          </Stack>
-        </Paper>
-      ))}
+      <Grid container spacing={2}>
+        {enrolments.map((enrolment) => (
+          <Grid key={enrolment.id} size={{ xs: 12, sm: 6, xl: 4 }}>
+            <CourseCard
+              course={enrolment.course}
+              showViewAction={false}
+              actions={
+                <Stack spacing={1} width="100%">
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    spacing={1}
+                  >
+                    <Chip
+                      size="small"
+                      label={
+                        enrolment.status === "approved"
+                          ? "Approved"
+                          : enrolment.status === "pending"
+                            ? "Pending"
+                            : enrolment.status === "rejected"
+                              ? "Not approved"
+                              : "Removed"
+                      }
+                      color={
+                        enrolment.status === "approved"
+                          ? "success"
+                          : enrolment.status === "pending"
+                            ? "warning"
+                            : "default"
+                      }
+                    />
+                    {enrolment.status === "approved" && (
+                      <Button
+                        component={RouterLink}
+                        to={`/courses/${enrolment.courseId}`}
+                        variant="contained"
+                      >
+                        Open course
+                      </Button>
+                    )}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    {enrolment.status === "approved"
+                      ? enrolment.course.status === "archived"
+                        ? "You have access to this archived course."
+                        : "You are enrolled in this course."
+                      : enrolment.status === "pending"
+                        ? "Your request is waiting for the coach."
+                        : enrolment.status === "rejected"
+                          ? "Your request was not approved."
+                          : "Your access to this course was removed."}
+                  </Typography>
+                  {enrolment.decisionNote && (
+                    <Typography variant="body2" color="text.secondary">
+                      Coach note: {enrolment.decisionNote}
+                    </Typography>
+                  )}
+                </Stack>
+              }
+            />
+          </Grid>
+        ))}
+      </Grid>
       {enrolmentsQuery.isFetchNextPageError && (
         <ErrorNotice message={friendlyMessage(enrolmentsQuery.error)} />
       )}

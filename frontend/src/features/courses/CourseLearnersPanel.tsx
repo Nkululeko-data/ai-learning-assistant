@@ -106,7 +106,11 @@ export function CourseLearnersPanel({
         <Alert severity="info">No learners have joined this course yet.</Alert>
       )}
       {learners.length > 0 && (
-        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+        <Paper
+          variant="outlined"
+          className="learnova-roster-card"
+          sx={{ borderRadius: 2 }}
+        >
           <List disablePadding>
             {learners.map((learner, index) => (
               <Fragment key={learner.id}>
