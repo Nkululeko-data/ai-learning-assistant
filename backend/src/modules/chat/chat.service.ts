@@ -165,6 +165,7 @@ export class ChatService {
         userId: actor.id,
         type: "question",
         groundingStatus: result.groundingStatus,
+        retrievalScoreTop: result.retrievalScoreTop,
         usedPersonalScope: result.usedPersonalScope,
         citedCourseDocumentIds: result.usedPersonalScope
           ? []

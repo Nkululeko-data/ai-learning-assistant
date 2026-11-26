@@ -12,6 +12,7 @@ import {
 } from "./infra/sqlite/database";
 import { createPostgresPool, isPostgresReady } from "./infra/postgres/pool";
 import {
+  assertExpectedSchemaVersion,
   EXPECTED_SCHEMA_VERSION,
   getSchemaVersion,
 } from "./infra/postgres/migrate";
@@ -96,11 +97,7 @@ export async function startServer(): Promise<Server> {
       config.embeddingDimension,
     );
     const schemaVersion = await getSchemaVersion(postgresPool);
-    if (schemaVersion !== EXPECTED_SCHEMA_VERSION) {
-      throw new Error(
-        `PostgreSQL schema version ${schemaVersion} is not ready; run npm run db:migrate first`,
-      );
-    }
+    assertExpectedSchemaVersion(schemaVersion);
     const systemStore = createSystemStore(postgresPool, mongoDatabase);
     await systemStore.store.initialize();
     await systemStore.mongoStore.initialize();

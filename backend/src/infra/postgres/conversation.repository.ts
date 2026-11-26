@@ -58,12 +58,16 @@ export class PgConversationRepository implements ConversationRepositoryPort {
   public constructor(private readonly pool: Pool) {}
 
   public async dailyTokenUsage(userId: string, usageDate: string): Promise<number> {
-    const result = await this.pool.query<{ token_count: number }>(
+    const result = await this.pool.query<{ token_count: number | string }>(
       `SELECT token_count FROM chat_daily_usage
        WHERE user_id = $1 AND usage_date = $2`,
       [userId, usageDate],
     );
-    return result.rows[0]?.token_count ?? 0;
+    const tokenCount = Number(result.rows[0]?.token_count ?? 0);
+    if (!Number.isSafeInteger(tokenCount) || tokenCount < 0) {
+      throw new Error("Stored chat token usage is invalid");
+    }
+    return tokenCount;
   }
 
   public async reserveDailyRequest(

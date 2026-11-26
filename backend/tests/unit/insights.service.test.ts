@@ -67,6 +67,7 @@ test("B10 hides aggregate insights below the minimum cohort size", async () => {
     userId: learnerId,
     type: "question",
     groundingStatus: "insufficient",
+    retrievalScoreTop: 0.8,
     usedPersonalScope: false,
     citedCourseDocumentIds: [],
   });

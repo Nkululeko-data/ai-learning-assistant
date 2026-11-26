@@ -490,6 +490,7 @@ export const activityEventSchema = z
     groundingStatus: z
       .enum(["grounded", "insufficient", "unverified"])
       .nullable(),
+    retrievalScoreTop: z.number().finite().nullable().optional(),
     usedPersonalScope: z.boolean(),
     citedCourseDocumentIds: z.array(idSchema).max(50),
     createdAt: timestampSchema,
