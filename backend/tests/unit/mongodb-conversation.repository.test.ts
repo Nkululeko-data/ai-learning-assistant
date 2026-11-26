@@ -4,6 +4,65 @@ import type { ConversationExchange } from "../../src/infra/sqlite/conversation.r
 import { MongoConversationRepository } from "../../src/infra/mongodb/conversation.repository";
 
 describe("MongoConversationRepository", () => {
+  test("finds user question text and its course without returning assistant text", async () => {
+    const userMessage = {
+      id: "00000000-0000-4000-8000-000000000010",
+      conversationId: "00000000-0000-4000-8000-000000000001",
+      role: "user",
+      content: "Question text",
+      createdAt: "2026-11-26T08:00:00.000Z",
+    };
+    const assistantMessage = {
+      id: "00000000-0000-4000-8000-000000000011",
+      conversationId: userMessage.conversationId,
+      role: "assistant",
+      content: "Answer text",
+      createdAt: "2026-11-26T08:00:00.001Z",
+    };
+    const cursor = (documents: Document[]) => ({
+      sort: jest.fn().mockReturnThis(),
+      toArray: jest.fn().mockResolvedValue(documents),
+    });
+    const conversationCollection = {
+      find: jest.fn(() =>
+        cursor([
+          {
+            id: userMessage.conversationId,
+            userId: "00000000-0000-4000-8000-000000000002",
+            courseId: "00000000-0000-4000-8000-000000000003",
+          },
+        ]),
+      ),
+    };
+    const messageCollection = {
+      find: jest.fn((query: Document) =>
+        cursor(query.role === "user" ? [userMessage] : [assistantMessage]),
+      ),
+    };
+    const database = {
+      collection: jest.fn((name: string) =>
+        name === "conversations" ? conversationCollection : messageCollection,
+      ),
+    } as unknown as Db;
+    const repository = new MongoConversationRepository(
+      {} as MongoClient,
+      database,
+      {} as Pool,
+    );
+
+    const result = await repository.findUserMessagesByIds([userMessage.id]);
+
+    expect(result).toEqual([
+      {
+        id: userMessage.id,
+        userId: "00000000-0000-4000-8000-000000000002",
+        courseId: "00000000-0000-4000-8000-000000000003",
+        content: "Question text",
+        assistantMessageId: assistantMessage.id,
+      },
+    ]);
+  });
+
   test("stores a conversation exchange in MongoDB collections within a transaction", async () => {
     const conversations: Document[] = [];
     const messages: Document[] = [];
@@ -51,6 +110,7 @@ describe("MongoConversationRepository", () => {
       executionId: "00000000-0000-4000-8000-000000000004",
       intent: "question",
       groundingStatus: "grounded",
+      answerSource: "course_material",
       citations: [],
       retrievalScoreTop: 0.9,
     };

@@ -4,25 +4,33 @@
 
 ## Storage migration update (2026-11-25)
 
-The runtime storage implementation now uses Neon PostgreSQL for structured
-application records and MongoDB for conversations and messages. Daily chat
-quotas are stored in Neon. `npm run db:migrate` applies the additive Neon
-schema migration; `npm run db:import-legacy` imports available JSON and SQLite
-records without deleting source files. Runtime startup requires both
-databases. Original uploads are stored in MongoDB Atlas GridFS
-(`document_uploads`); generated retrieval chunk files remain in `DATA_DIR`.
-`npm run uploads:migrate-gridfs` dry-runs legacy upload migration;
-`npm run uploads:migrate-gridfs -- --apply` copies and verifies available
-files while preserving local copies. JSON/SQLite application stores are
-retained only as migration sources and test fixtures.
+The runtime uses a hybrid persistence layout. Authentication and
+authorization, courses, enrolments, feedback, activity, analytics, quiz
+attempts, audit logs, and configuration history use Neon PostgreSQL.
+Authentication uses the PostgreSQL-backed system collections, even though its
+repository adapter retains the legacy `JsonAuthRepository` name. MongoDB Atlas
+stores document metadata and chunks, jobs and scheduler state, generated
+learning content, AI execution metadata, and original uploads in the
+`document_uploads` GridFS bucket. SQLite in `DATA_DIR` remains active for
+conversations, messages, and daily chat usage.
+
+`npm run db:migrate` upgrades the Neon schema, and `npm run db:import-legacy`
+imports legacy records without deleting their source files. Legacy JSON files
+are not the runtime source for the PostgreSQL-backed collections. Run
+`npm run uploads:migrate-gridfs` for a dry run and
+`npm run uploads:migrate-gridfs -- --apply` to copy and verify available local
+upload files; local copies are preserved. Runtime startup requires both
+PostgreSQL and MongoDB. Continue to run a single backend instance while SQLite
+and process-local caches and rate-limits remain active.
 
 ## Current position
 
-**Latest completed backend phase: B10 — Feedback and course insights.** Its
-features are implemented, and the backend tests, typecheck, and build pass.
+**Backend feature phases B0-B11 are implemented.** The persistence cutover
+and release gates are not complete: SQLite conversations and daily chat usage
+remain active, and database migration and recovery still require deployment
+verification.
 
-**Current planned phase: B11 — Administrative operations.** B11 has not
-started yet.
+**Current focus: B12 — Release verification and handover.**
 
 The repository also includes a React frontend under `frontend/`. Learner course
 pages now present an ordered curriculum of lessons; course owners can edit
@@ -65,10 +73,11 @@ artifacts, not runtime functions.
 - [`bootstrap.ts`](../backend/scripts/bootstrap.ts):
   `bootstrapSystem()` initializes storage and seeds baseline data.
 - [`json-store.ts`](../backend/src/infra/jsonstore/json-store.ts):
-  `JsonStore.initialize()`, collection `initialize()`, and collection
-  `insert()`, `update()`, and `remove()` manage JSON persistence.
+  legacy `JsonStore` implementation retained for migration and test support;
+  runtime system collections are registered against PostgreSQL and MongoDB.
 - [`database.ts`](../backend/src/infra/sqlite/database.ts):
-  `openConversationDatabase()` initializes conversation storage.
+  `openConversationDatabase()` initializes the active SQLite storage for
+  conversations, messages, and daily chat usage.
 
 ### B3 — Accounts and access control
 
@@ -77,6 +86,9 @@ artifacts, not runtime functions.
 - [`auth.service.ts`](../backend/src/modules/auth/auth.service.ts):
   `AuthService.register()`, `login()`, `refresh()`, `logout()`, and
   `changePassword()` implement account and session operations.
+- Authentication records are persisted through the PostgreSQL-backed system
+  collections. The `JsonAuthRepository` name refers to its collection adapter,
+  not to JSON-file persistence.
 - The same service implements `decideCoachRequest()`, `changeUserRole()`,
   and `setPermissionOverride()` for selected admin actions.
 - [`auth.middleware.ts`](../backend/src/modules/auth/auth.middleware.ts):
@@ -176,7 +188,10 @@ typecheck, and build pass.
 - [`insights.service.ts`](../backend/src/modules/insights/insights.service.ts):
   `InsightsService.recordActivity()` records privacy-safe activity;
   `getInsights()` returns course aggregates; `refreshGapReport()` queues
-  background work; `generateGapReport()` creates a report.
+  background work; `generateGapReport()` clusters course-scoped insufficient-
+  grounding questions and missed course-visible quiz prompts, aggregates
+  feedback ratings, enforces per-topic cohort thresholds, and compares topics
+  with the preceding period without persisting raw questions or feedback comments.
 - [`app.ts`](../backend/src/app.ts): `createApp()` mounts the feedback and
   insights routers when their dependencies are provided.
 
@@ -207,9 +222,9 @@ The SQLite mismatch is resolved:
   `openConversationDatabase()` reads the message schema with a prepared
   `PRAGMA table_info` query.
 - [`conversation.repository.ts`](../backend/src/infra/sqlite/conversation.repository.ts)
-  now uses Node's `DatabaseSync` API for queries and transactions, validates
-  stored row values, and no longer imports the undeclared `better-sqlite3`
-  package.
+  remains the active runtime store for conversations, messages, and daily chat
+  usage. It uses Node's `DatabaseSync` API, validates stored row values, and
+  does not depend on `better-sqlite3`.
 - [`conversation.repository.test.ts`](../backend/tests/unit/conversation.repository.test.ts)
   verifies that a failed assistant-message insert rolls back the full exchange.
 

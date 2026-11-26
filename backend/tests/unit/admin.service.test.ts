@@ -74,6 +74,7 @@ test("privacy erasure tombstones identity and removes personal content", async (
     executionId: "00000000-0000-4000-8000-000000000006",
     intent: "question",
     groundingStatus: "grounded",
+    answerSource: "course_material",
     citations: [],
     retrievalScoreTop: 0.5,
   });

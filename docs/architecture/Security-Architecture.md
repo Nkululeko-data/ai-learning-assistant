@@ -39,14 +39,14 @@
 ## File and input handling
 
 - Permit PDF, DOCX and TXT only after extension allowlist, MIME validation and file-content sniffing.
-- Enforce the 10 MB upload limit and 50 MB expanded DOCX/extracted-text limit. Store source uploads in the private MongoDB Atlas GridFS bucket under random storage keys; keep generated chunk files under private persistent storage. Never derive storage keys or paths from user filenames.
+- Enforce the 10 MB upload limit and 50 MB expanded DOCX/extracted-text limit. Store source uploads in the private MongoDB Atlas GridFS bucket under random storage keys. Never derive storage keys or paths from user filenames.
 - Treat uploaded text, retrieved chunks, conversation history and external content as untrusted data. Delimit evidence and never promote it to system instructions.
 - Never execute uploaded files or render uploaded content as HTML.
 - Use parameterised SQL only. Apply request body limits, security headers, CORS allowlists and validation to every endpoint.
 
 ## AI provider privacy and safety
 
-Document and personal-note text and chat questions are sent to Google Gemini for embeddings. Bounded conversation history and retrieved evidence may be sent to the configured LLM provider for generation. This data flow must be disclosed in the user-facing upload/privacy notices and in deployment documentation before a user uploads a document or personal note or asks a question. OCR is not performed; low-text PDFs fail with a safe diagnostic.
+Document and personal-note text and chat questions are sent to Google Gemini for embeddings. The asynchronous gap-report job may re-embed course-scoped questions with insufficient grounding and prompts from missed course-visible quiz items to form aggregate topics. It excludes personal-scope questions and private quizzes, and stores only cohort-qualified themes, source counts, trend counts, and suggested teaching actions, never question text or feedback comments. Empty reports distinguish no qualifying gap signals from signals withheld below the topic cohort threshold. Overall counts are suppressed when hidden topics or unprocessed questions could be inferred from them. Bounded conversation history and retrieved evidence may be sent to the configured LLM provider for generation. These data flows must be disclosed in user-facing privacy notices and deployment documentation. OCR is not performed; low-text PDFs fail with a safe diagnostic.
 
 Provider access is isolated behind adapters; provider credentials are environment/secret-manager values. Logs and JSON `agent_executions` contain metadata only: no prompts, outputs, document text or question text. Conversation bodies are stored separately in the caller-owned SQLite conversation store. Production tracing to external services is forced off and startup fails if tracing is enabled.
 
@@ -56,8 +56,8 @@ Chat requests are limited per authenticated user by a short fixed window and by 
 
 ## Storage, deletion and recovery
 
-- JSON writes use a per-collection write queue, temporary file, flush and atomic rename. The runtime is single-writer and single-instance.
-- Source uploads live in MongoDB Atlas GridFS; generated chunk files and local application data live under private persistent data directories.
+- Authentication/authorization and selected relational records use PostgreSQL-backed system collections. Document metadata, extracted chunks and embeddings, jobs, generated learning content, and AI execution metadata use MongoDB Atlas; source uploads use the private GridFS bucket. Conversations, messages, and daily chat usage remain in SQLite.
+- Keep the runtime single-instance while SQLite and process-local state remain active. JSON files are legacy migration inputs, not the active authentication store.
 - Cross-store workflows are idempotent jobs; reconciliation detects missing/orphaned records and files.
 - Personal notes and conversations are hard-deleted when requested. User erasure deletes personal content and conversations, tombstones identity fields and pseudonymizes analytics identities. Audit records contain no content.
 - Backups are access-controlled, encrypted at rest by the deployment platform, and retained for the configured period. The privacy notice must explain that erased data may remain in retained backups until they expire.

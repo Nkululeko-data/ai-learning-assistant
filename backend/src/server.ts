@@ -192,6 +192,8 @@ export async function startServer(): Promise<Server> {
     new InsightsRepository(collections),
     jobService,
     config,
+    conversationRepository,
+    embeddingProvider,
   );
   const adminService = new AdminService(
     collections,
@@ -237,12 +239,15 @@ export async function startServer(): Promise<Server> {
     {
       ingest: (job, signal) => documentIngestionService.ingest(job, signal),
       cleanup: (job, signal) => documentIngestionService.cleanup(job, signal),
-      cluster: async (job) => {
+      cluster: async (job, signal) => {
         const courseId = job.payload.courseId;
         if (typeof courseId !== "string") {
           throw new Error("Gap-report job payload is missing courseId");
         }
-        const report = await insightsService.generateGapReport(courseId);
+        const report = await insightsService.generateGapReport(
+          courseId,
+          signal,
+        );
         return { gapReportId: report.id };
       },
       erase: async (job) => {

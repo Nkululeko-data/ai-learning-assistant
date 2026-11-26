@@ -1,6 +1,7 @@
 import type { ChatGraphState, ChatNodeUpdate } from "../graphs/chat-state";
 import { rewrittenQuerySchema } from "../schemas/chat.schemas";
 import type { ChatNodeDependencies } from "./chat-node-dependencies";
+import { selectChatHistory } from "./chat-history";
 
 export async function rewriteQueryNode(
   state: ChatGraphState,
@@ -10,7 +11,7 @@ export async function rewriteQueryNode(
     return { rewrittenQuery: state.question };
   }
 
-  const history = selectHistory(
+  const history = selectChatHistory(
     state.history,
     dependencies.config.chatHistoryWindow,
     dependencies.config.chatHistoryTokenBudget,
@@ -33,6 +34,15 @@ export async function rewriteQueryNode(
     ],
     dependencies.signal,
   );
+  if (
+    dependencies.config.environment !== "production" &&
+    process.env.CHAT_LOG_REWRITTEN_QUERY === "true"
+  ) {
+    console.debug("Chat retrieval query rewritten", {
+      requestId: state.requestId,
+      rewrittenQuery: generated.value.query,
+    });
+  }
   return {
     rewrittenQuery: generated.value.query,
     execution: {
@@ -46,24 +56,4 @@ export async function rewriteQueryNode(
         (generated.provider === "groq" ? 1 : 0),
     },
   };
-}
-
-function selectHistory(
-  history: ChatGraphState["history"],
-  windowSize: number,
-  tokenBudget: number,
-  question: string,
-): ChatGraphState["history"] {
-  const maximumMessages = windowSize * 2;
-  const remaining = Math.max(0, tokenBudget * 4 - question.length);
-  if (maximumMessages === 0 || remaining === 0) return [];
-
-  const selected: ChatGraphState["history"] = [];
-  let usedCharacters = 0;
-  for (const message of history.slice(-maximumMessages).reverse()) {
-    if (usedCharacters + message.content.length > remaining) break;
-    selected.unshift(message);
-    usedCharacters += message.content.length;
-  }
-  return selected;
 }

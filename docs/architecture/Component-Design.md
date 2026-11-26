@@ -17,10 +17,10 @@
 | `chat` / `conversations` | Coordinate chat graph, own conversation history and feedback references | Chat and conversation services | GraphRunner, retrieval, SQLite repository |
 | `learning` / `quizzes` | Generate summaries, flashcards and quizzes; publish and score attempts | Learning and quiz services | GraphRunner, retrieval, repositories |
 | `feedback` | Store learner ratings and comments under privacy rules | Feedback service | Feedback repository, message reference |
-| `insights` | Aggregate signals, enforce cohort thresholds, persist gap reports | Insights service and job | Events, feedback, SQLite insights job, graph |
-| `jobs` | Enqueue, claim, retry, dead-letter and report long-running work | Job service and runner | JSON job repository, handlers |
+| `insights` | Aggregate signals, enforce cohort thresholds, persist gap reports | Insights service and job | PostgreSQL activity/feedback/quiz records, SQLite messages, Gemini embeddings, MongoDB jobs |
+| `jobs` | Enqueue, claim, retry, dead-letter and report long-running work | Job service and runner | MongoDB job repository, handlers |
 | `admin` / `audit` | User/config/job administration and append-only audit | Admin service | Domain services, audit repository |
-| `jsonstore` | Atomic single-writer JSON collections, validation, cache and indexes | Store primitives used by repositories | Filesystem |
+| `jsonstore` | Legacy collection contracts and JSON import/test support | Legacy store and migration interfaces | Filesystem |
 | `sqlite` | Conversations/messages schema and repository | Conversation repository | Node built-in `node:sqlite` (`DatabaseSync`, experimental; Node 22.5+) |
 | `storage` | Random-key private upload storage and deletion | Upload storage adapter | MongoDB Atlas GridFS |
 | `ai/graphs` and `ai/nodes` | Explicit typed AI workflows | GraphRunner implementations | Injected services and provider ports |
@@ -40,7 +40,7 @@
 
 ## B3 authentication boundaries
 
-- The auth service depends on `AuthRepository` and the permission service; JSON collections are accessed through the repository adapter.
+- The auth service depends on `AuthRepository` and the permission service; runtime system-collection bindings persist authentication records in PostgreSQL.
 - Authentication responses expose a narrow safe-user projection. Password and reset-token hashes are never serialized.
 - Access tokens contain `userId`, current role and `permsVersion`; every protected request re-reads the active user, validates token version, and resolves current permissions.
 - Refresh tokens are opaque, stored as SHA-256 hashes, rotated on every use, and revoked family-wide if a used/revoked token is replayed.
@@ -60,4 +60,4 @@
 - **Document ingestion:** upload service -> safe file adapter -> document/job repositories -> job runner -> extraction/chunking/embedding -> chunk repository.
 - **Grounded chat:** chat service -> access policy -> GraphRunner -> retrieval -> evidence gate -> generation -> citation validator -> conversation repository -> deduplicated activity event.
 - **Learning content:** learning service -> selection access checks -> GraphRunner -> context/source validation -> learning repository; coach quizzes require a separate publish action.
-- **Coach insights:** scheduled job -> aggregate signals -> clustering/labeling -> cohort threshold -> gap report; no learner question text leaves the job or reaches the coach response.
+- **Coach insights:** scheduled job -> select course-scoped insufficient-grounding events and incorrect attempts on course-visible quizzes -> read matching questions/prompts and feedback ratings -> transient Gemini embeddings and in-memory clustering -> per-topic cohort threshold -> theme/count/feedback report. Personal-scope questions, private quizzes, raw questions, and feedback comments are excluded from the report.

@@ -42,6 +42,7 @@ describe("ConversationRepository", () => {
       executionId,
       intent: "question",
       groundingStatus: "grounded",
+      answerSource: "course_material",
       citations: [
         {
           marker: 1,
@@ -73,6 +74,7 @@ describe("ConversationRepository", () => {
       documentName: "Databases.txt",
       pageStart: 2,
     });
+    expect(messages[1]?.answerSource).toBe("course_material");
     expect(saved.userMessageId).not.toBe(saved.assistantMessageId);
 
     repository.saveExchange({
@@ -86,9 +88,12 @@ describe("ConversationRepository", () => {
       executionId: "00000000-0000-4000-8000-000000000008",
       intent: "question",
       groundingStatus: "insufficient",
+      answerSource: "general_knowledge",
       citations: [],
       retrievalScoreTop: null,
     });
+    expect(repository.listMessages("00000000-0000-4000-8000-000000000007")[1]?.answerSource)
+      .toBe("general_knowledge");
     const firstPage = repository.listConversations(userId, undefined, 1);
     expect(firstPage.items.map(({ id }) => id)).toEqual([conversationId]);
     expect(firstPage.nextCursor).toBeTruthy();
@@ -125,6 +130,7 @@ describe("ConversationRepository", () => {
         executionId,
         intent: "question",
         groundingStatus: "grounded",
+        answerSource: null,
         citations: [],
         retrievalScoreTop: null,
       }),
@@ -155,5 +161,17 @@ describe("ConversationRepository", () => {
       request_count: 1,
       token_count: 39,
     });
+  });
+
+  test("adds the answer source column when opening a legacy conversation database", () => {
+    database.exec("ALTER TABLE messages DROP COLUMN answer_source");
+    database.close();
+
+    database = openConversationDatabase(dataDirectory);
+
+    const columns = database
+      .prepare("PRAGMA table_info(messages)")
+      .all() as Array<{ name: string }>;
+    expect(columns.some((column) => column.name === "answer_source")).toBe(true);
   });
 });

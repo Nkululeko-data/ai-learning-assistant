@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { chatIntentSchema } from "../../ai/schemas/chat.schemas";
 import type {
+  AnswerSource,
   GroundingStatus,
   ValidatedCitation,
 } from "../../ai/graphs/chat-state";
@@ -12,6 +13,7 @@ import type {
 import type {
   ConversationExchange,
   ConversationMessageRecord,
+  CourseQuestionRecord,
   ConversationRecord,
 } from "../sqlite/conversation.repository";
 
@@ -47,8 +49,17 @@ interface MessageRow extends QueryResultRow {
   execution_id: string | null;
   intent: string | null;
   grounding_status: GroundingStatus | null;
+  answer_source: AnswerSource | null;
   citations: unknown;
   retrieval_score_top: number | null;
+}
+
+interface CourseQuestionRow extends QueryResultRow {
+  id: string;
+  user_id: string;
+  course_id: string;
+  content: string;
+  assistant_message_id: string | null;
 }
 
 /**
@@ -113,6 +124,38 @@ export class PgConversationRepository implements ConversationRepositoryPort {
       [id],
     );
     return result.rows[0] ? mapMessage(result.rows[0]) : null;
+  }
+
+  public async findUserMessagesByIds(
+    ids: string[],
+  ): Promise<CourseQuestionRecord[]> {
+    const messageIds = ids.filter((id) => z.string().uuid().safeParse(id).success);
+    if (messageIds.length === 0) return [];
+    const result = await this.pool.query<CourseQuestionRow>(
+      `SELECT message.id, conversation.user_id, conversation.course_id,
+              message.content, answer.id AS assistant_message_id
+       FROM messages AS message
+       JOIN conversations AS conversation
+         ON conversation.id = message.conversation_id
+       LEFT JOIN LATERAL (
+         SELECT candidate.id
+         FROM messages AS candidate
+         WHERE candidate.conversation_id = message.conversation_id
+           AND candidate.role = 'assistant'
+           AND candidate.created_at > message.created_at
+         ORDER BY candidate.created_at, candidate.id
+         LIMIT 1
+       ) AS answer ON TRUE
+       WHERE message.role = 'user' AND message.id = ANY($1::uuid[])`,
+      [messageIds],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      courseId: row.course_id,
+      content: row.content,
+      assistantMessageId: row.assistant_message_id,
+    }));
   }
 
   public async listConversations(
@@ -208,15 +251,16 @@ export class PgConversationRepository implements ConversationRepositoryPort {
       const citationIds = exchange.citations;
       const insert = `INSERT INTO messages(
         id, conversation_id, role, content, created_at, execution_id, intent,
-        grounding_status, cited_chunk_ids, cited_document_ids,
+        grounding_status, answer_source, cited_chunk_ids, cited_document_ids,
         retrieval_score_top, citations
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`;
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`;
       await client.query(insert, [
         userMessageId,
         exchange.conversationId,
         "user",
         exchange.question,
         createdAt,
+        null,
         null,
         null,
         null,
@@ -234,6 +278,7 @@ export class PgConversationRepository implements ConversationRepositoryPort {
         exchange.executionId,
         exchange.intent,
         exchange.groundingStatus,
+        exchange.answerSource,
         citationIds.map(({ chunkId }) => chunkId),
         citationIds.map(({ documentId }) => documentId),
         exchange.retrievalScoreTop,
@@ -322,6 +367,7 @@ function mapMessage(row: MessageRow): ConversationMessageRecord {
     executionId: row.execution_id,
     intent,
     groundingStatus: row.grounding_status,
+    answerSource: row.answer_source,
     citations: citationsSchema.parse(row.citations) as ValidatedCitation[],
     retrievalScoreTop: row.retrieval_score_top,
   };

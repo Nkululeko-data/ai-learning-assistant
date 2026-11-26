@@ -46,9 +46,11 @@ served at `/api/docs`, with the published contract at `/openapi.json`.
 
 ## Data and backup
 
-The persistent volume contains private uploads, generated chunk files, legacy
-JSON/SQLite data (until it is retired), and local file snapshots. Neon stores
-structured application records; MongoDB stores conversations and messages.
+The persistent volume contains the active SQLite database for conversations,
+messages, and daily chat usage, plus legacy JSON/upload migration inputs and
+local snapshots. Neon stores authentication, course, and selected operational
+records; MongoDB stores document/AI data and original uploads in GridFS.
+Conversations have not yet been cut over to PostgreSQL.
 
 Create a snapshot:
 
@@ -98,8 +100,9 @@ controlled by the deployment platform.
 
 ## Known limitations
 
-- Neon and MongoDB are runtime stores. JSON collections and SQLite remain
-  supported only as one-time migration sources and in isolated tests.
+- Neon and MongoDB are runtime stores, and SQLite remains active for
+  conversations, messages, and daily chat usage. JSON files are legacy
+  migration sources and test fixtures.
 - Inception API support is scheduled to end December 28, 2026; test a replacement
   provider before that date.
 - The offline AI evaluation suite verifies deterministic citation and grounding

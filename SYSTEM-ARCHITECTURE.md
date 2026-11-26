@@ -1,5 +1,10 @@
 # AI Learning Assistant - System Architecture
 
+> **Historical design reference:** many detailed diagrams below describe the
+> original JSON/SQLite architecture and are not the current runtime. For the
+> verified storage map, use [docs/architecture/Architecture.md](docs/architecture/Architecture.md)
+> and [docs/current-project-status.md](docs/current-project-status.md).
+
 ## Table of Contents
 1. [System Overview](#system-overview)
 2. [High-Level Architecture](#high-level-architecture)
@@ -20,7 +25,8 @@ The AI Learning Assistant is a **modular monolith** built as a single-process No
 - **Architecture Style**: Modular monolith with strict layering
 - **Runtime**: Node.js (v22.13.0+) with TypeScript (strict mode)
 - **API**: REST under `/api/v1` with OpenAPI documentation
-- **Persistence**: JSON file stores + SQLite for conversations
+- **Persistence**: PostgreSQL-backed system collections, MongoDB Atlas for
+  documents/AI data and GridFS uploads, SQLite for conversations and usage
 - **AI Orchestration**: LangGraph.js with explicit graph nodes
 - **Process Model**: Single process (API + job runner + scheduler)
 
@@ -1447,7 +1453,7 @@ This AI Learning Assistant system is architected as a **modular monolith** with 
 - **Layered architecture** with strict top-down dependencies
 - **LangGraph.js** provides explicit AI workflow orchestration  
 - **Repository pattern** enables database migration path
-- **Dual-store persistence** (JSON + SQLite) suitable for classroom scale
+- **Hybrid persistence** across PostgreSQL, MongoDB Atlas, and SQLite
 - **Two-gate authorization** ensures data isolation
 - **Deterministic citation validation** guarantees answer grounding
 - **Background job system** handles async operations

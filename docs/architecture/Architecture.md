@@ -4,14 +4,16 @@
 
 ### Current runtime storage (2026-11)
 
-The deployed backend uses Neon PostgreSQL for structured application data and
-MongoDB for conversations and messages. Chat quota counters remain in Neon.
-`backend/scripts/migrate-legacy-data.ts` imports JSON collections and SQLite
-conversation history idempotently; it does not delete the source files.
-Original uploads use MongoDB Atlas GridFS (`document_uploads`); generated
-retrieval chunk files remain in `DATA_DIR`.
-The original JSON/SQLite storage decisions below describe the initial design,
-not the current runtime.
+The current runtime is hybrid. Authentication and authorization, courses,
+enrolments, feedback, activity, analytics, quiz attempts, audit logs, and
+configuration history use Neon PostgreSQL. Authentication's repository
+adapter is named `JsonAuthRepository`, but its system collections are
+registered on the PostgreSQL store. MongoDB Atlas stores document metadata and
+chunks, jobs and scheduler state, generated learning content, AI execution
+metadata, and source uploads in GridFS (`document_uploads`). SQLite in
+`DATA_DIR` remains active for conversations, messages, and daily chat usage.
+The legacy JSON and local upload files are migration inputs or retained
+copies, not the runtime source of PostgreSQL-backed collections.
 
 ## Authority and scope
 
@@ -46,13 +48,14 @@ Modules communicate through their exported `index.ts` service surface. Repositor
 | Runtime | Node.js current LTS, TypeScript strict mode |
 | API | Express REST, `/api/v1` |
 | Validation | Zod for environment, request, response and AI schemas |
-| Primary data | Neon PostgreSQL for relational and other structured application records |
-| Conversations | MongoDB conversations and messages; Neon chat quota counters |
+| Primary data | Neon PostgreSQL for authentication, courses, enrolments, and selected operational records |
+| Documents and AI data | MongoDB Atlas for document metadata, chunks, jobs, learning content, execution metadata, and GridFS uploads |
+| Conversations | SQLite conversations, messages, and daily chat usage (migration target: Neon PostgreSQL) |
 | Retrieval | Access-filtered in-process BM25 keyword and cosine-vector search, combined with weighted reciprocal-rank fusion |
 | Orchestration | LangGraph.js with stateless graphs |
 | LLM | Inception Labs primary, Groq fallback |
 | Embeddings | Gemini `gemini-embedding-001`; no embedding fallback |
-| Background work | Neon-backed in-process job runner and scheduler |
+| Background work | MongoDB-backed in-process job runner and scheduler |
 | Auth | Short-lived JWT access tokens, rotating opaque refresh tokens, argon2 password hashes |
 | Files | Private MongoDB Atlas GridFS bucket; PDF, DOCX and TXT ingestion |
 | Tests | Jest, Supertest, isolated integration tests and an on-demand AI evaluation suite |
@@ -72,8 +75,9 @@ The detailed field-level data model is in [Database-Design.md](./Database-Design
 ## Runtime and scaling constraints
 
 Run one backend process for now and mount `data/` on persistent storage for
-generated chunks and other local data. MongoDB GridFS stores source uploads.
-The Neon adapter hydrates synchronous
+SQLite conversations, messages, daily usage, and local backup/migration data.
+MongoDB stores document chunks and GridFS source uploads. PostgreSQL-backed
+collections hydrate synchronous
 process-local read indexes at startup, and job ownership is in-process; do not
 run multiple API instances until cache invalidation and distributed job
 ownership are addressed.
@@ -84,17 +88,17 @@ LangChain/LangSmith tracing is forced off. Provider calls are made only through 
 
 The following decisions are incorporated from the supplied design decisions and their recommendations:
 
-- MongoDB for conversation history; active-course discovery shows only name and description.
-- Topic clustering uses embeddings, clustering and LLM labels; coach summaries are theme-level.
+- SQLite for conversation history pending migration to PostgreSQL; active-course discovery shows only name and description.
+- Gap reports cluster course-scoped insufficient-grounding questions and missed course-visible quiz prompts with transient Gemini embeddings, label topics from repeated terms, and return cohort-qualified themes with evidence-source counts and targeted teaching actions. Empty reports distinguish no gap signals from signals withheld below the topic cohort threshold. Personal-scope questions, private quizzes, raw question text, and feedback comments are excluded from reports.
 - `minCohortSize` defaults to 3 and is configurable.
 - Pending coach applicants retain learner access.
-- Feedback comment text remains hidden from coaches; re-request cool-down is configurable (24 hours); question embeddings are recomputed for clustering; conversation deletion is a hard delete.
+- Feedback comment text remains hidden from coaches; re-request cool-down is configurable (24 hours); gap-report question embeddings are recomputed in memory for clustering; conversation deletion is a hard delete.
 - Active course discovery exposes only name and description; a deactivated coach's courses may be reassigned to an active coach or archived.
 - The architecture/provider deviations below remain subject to the coach approval explicitly required by the design decisions.
 
 | Item | Status before implementation |
 |---|---|
-| JSON + SQLite instead of MongoDB/Atlas | Superseded: Neon and MongoDB are runtime stores |
+| JSON and SQLite initial persistence | JSON is now a legacy import source; SQLite remains active only for conversations, messages, and daily usage |
 | Single instance and in-process jobs | Current limitation from process-local indexes and in-process workers |
 | Inception/Groq and Gemini instead of the brief's provider choices | Proposed; coach approval and privacy notice required |
 | LangGraph.js | Proposed; coach approval and written rationale required |

@@ -128,6 +128,7 @@ function createInitialState(): ChatGraphState {
     retrieved: [],
     contextChunks: [],
     groundingStatus: null,
+    answerSource: null,
     answerDraft: null,
     answer: null,
     message: null,
@@ -166,6 +167,7 @@ function createDependencies(
         queryUnderstanding: "Classify the request.",
         rewriteQuery: "Rewrite the request.",
         answer: "Answer from evidence only.",
+        generalKnowledge: "Answer from general knowledge only.",
       },
       signal: new AbortController().signal,
     },
@@ -211,9 +213,15 @@ describe("chat graph", () => {
     expect(JSON.stringify(executions)).not.toContain("What is a database?");
   });
 
-  test("stops at the evidence gate when no eligible chunks are found", async () => {
+  test("answers from general knowledge when no eligible course chunks are found", async () => {
     const { dependencies, primary } = createDependencies(
-      [JSON.stringify({ intent: "question" })],
+      [
+        JSON.stringify({ intent: "question" }),
+        JSON.stringify({
+          answer: "A database is an organized collection of data.",
+          refusal: false,
+        }),
+      ],
       [],
     );
     const executions: Array<{ node: string }> = [];
@@ -227,17 +235,68 @@ describe("chat graph", () => {
     );
 
     expect(result.groundingStatus).toBe("insufficient");
-    expect(result.answer).toBeNull();
-    expect(primary.calls).toHaveLength(1);
+    expect(result.answerSource).toBe("general_knowledge");
+    expect(result.answer).toBe("A database is an organized collection of data.");
+    expect(result.citations).toEqual([]);
+    expect(primary.calls).toHaveLength(2);
     expect(executions.map(({ node }) => node)).not.toContain("answerGeneration");
+    expect(executions.map(({ node }) => node)).toContain("generalKnowledge");
   });
 
-  test("suppresses a draft whose citation does not match the issued marker and chunk", async () => {
+  test("resolves follow-up references before embedding the retrieval query", async () => {
+    const rewrittenQuery =
+      "What neural network architectures are used in transformer models?";
+    const { dependencies, primary, embeddingProvider } = createDependencies([
+      JSON.stringify({ intent: "question" }),
+      JSON.stringify({ query: rewrittenQuery }),
+      JSON.stringify({
+        answer: "Transformer models use neural network architectures.",
+        refusal: false,
+      }),
+    ], []);
+    const state = {
+      ...createInitialState(),
+      question: "What neural networks are used in these models?",
+      history: [
+        { role: "user" as const, content: "Explain transformer models." },
+        { role: "assistant" as const, content: "They process sequences using attention." },
+      ],
+    };
+
+    const previousTraceSetting = process.env.CHAT_LOG_REWRITTEN_QUERY;
+    const debug = jest.spyOn(console, "debug").mockImplementation(() => {});
+    process.env.CHAT_LOG_REWRITTEN_QUERY = "true";
+    try {
+      await runChatGraph(state, dependencies, async () => {});
+
+      expect(embeddingProvider.calls).toEqual([[rewrittenQuery]]);
+      expect(primary.calls[1]?.messages[1]?.content).toContain(
+        "What neural networks are used in these models?",
+      );
+      expect(debug).toHaveBeenCalledWith("Chat retrieval query rewritten", {
+        requestId: "request-1",
+        rewrittenQuery,
+      });
+    } finally {
+      debug.mockRestore();
+      if (previousTraceSetting === undefined) {
+        delete process.env.CHAT_LOG_REWRITTEN_QUERY;
+      } else {
+        process.env.CHAT_LOG_REWRITTEN_QUERY = previousTraceSetting;
+      }
+    }
+  });
+
+  test("uses a general-knowledge fallback when a draft citation is invalid", async () => {
     const { dependencies } = createDependencies([
       JSON.stringify({ intent: "question" }),
       JSON.stringify({
         answer: "A database organizes data [1].",
         citations: [{ marker: 1, chunkId: "invented-chunk" }],
+        refusal: false,
+      }),
+      JSON.stringify({
+        answer: "A database is an organized collection of data.",
         refusal: false,
       }),
     ]);
@@ -248,15 +307,20 @@ describe("chat graph", () => {
       async () => {},
     );
 
-    expect(result.groundingStatus).toBe("unverified");
-    expect(result.answer).toBeNull();
+    expect(result.groundingStatus).toBe("insufficient");
+    expect(result.answerSource).toBe("general_knowledge");
+    expect(result.answer).toBe("A database is an organized collection of data.");
     expect(result.citations).toEqual([]);
   });
 
-  test("turns an explicit model refusal into an insufficient-material response", async () => {
+  test("uses a general-knowledge fallback after the course-answer model refuses", async () => {
     const { dependencies } = createDependencies([
       JSON.stringify({ intent: "question" }),
       JSON.stringify({ answer: "", citations: [], refusal: true }),
+      JSON.stringify({
+        answer: "A database is an organized collection of data.",
+        refusal: false,
+      }),
     ]);
 
     const result = await runChatGraph(
@@ -266,9 +330,10 @@ describe("chat graph", () => {
     );
 
     expect(result.groundingStatus).toBe("insufficient");
-    expect(result.answer).toBeNull();
+    expect(result.answerSource).toBe("general_knowledge");
+    expect(result.answer).toBe("A database is an organized collection of data.");
     expect(result.citations).toEqual([]);
-    expect(result.message).toMatch(/course material doesn't cover/i);
+    expect(result.message).toBeNull();
   });
 
   test("routes explicit learning-content requests without embedding or generation", async () => {
@@ -303,7 +368,10 @@ describe("chat graph", () => {
     ]);
     const state = {
       ...createInitialState(),
-      history: [{ role: "user" as const, content: injectedText }],
+      history: [
+        { role: "user" as const, content: injectedText },
+        { role: "assistant" as const, content: "I can help with course questions." },
+      ],
     };
 
     await runChatGraph(state, dependencies, async () => {});
@@ -318,6 +386,57 @@ describe("chat graph", () => {
       content: dependencies.prompts.answer,
     });
     expect(primary.calls[2]?.messages[1]?.content).toContain(injectedText);
+  });
+
+  test("bounds complete conversation turns in both rewrite and answer prompts", async () => {
+    const history = [
+      { role: "user" as const, content: "Earlier question" },
+      {
+        role: "assistant" as const,
+        content: "An older answer that should be excluded from this prompt.",
+      },
+      { role: "user" as const, content: "What about the join type?" },
+      {
+        role: "assistant" as const,
+        content: "The latest answer explains the relevant join type.",
+      },
+    ];
+    const { dependencies, primary } = createDependencies([
+      JSON.stringify({ intent: "explanation" }),
+      JSON.stringify({ query: "Explain the join type in context." }),
+      JSON.stringify({
+        answer: "A left join keeps every row from the left table [1].",
+        citations: [{ marker: 1, chunkId: `${documentId}:0` }],
+        refusal: false,
+      }),
+    ]);
+    const budgetedDependencies = {
+      ...dependencies,
+      config: {
+        ...dependencies.config,
+        chatHistoryWindow: 2,
+        chatHistoryTokenBudget: 35,
+      },
+    };
+
+    await runChatGraph(
+      {
+        ...createInitialState(),
+        question: "Can you explain further?",
+        history,
+      },
+      budgetedDependencies,
+      async () => {},
+    );
+
+    const rewriteRequest = JSON.parse(
+      primary.calls[1]?.messages[1]?.content ?? "{}",
+    ) as { history: typeof history };
+    const answerRequest = JSON.parse(
+      primary.calls[2]?.messages[1]?.content ?? "{}",
+    ) as { history: typeof history };
+    expect(rewriteRequest.history).toEqual(history.slice(-2));
+    expect(answerRequest.history).toEqual(history.slice(-2));
   });
 
   test("records and rejects a node that exceeds its configured timeout", async () => {

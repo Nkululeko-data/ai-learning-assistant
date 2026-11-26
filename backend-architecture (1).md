@@ -6,11 +6,11 @@
 
 **Companion documents:** `design-decisions.md` (product and access decisions), `Database-Design.md` (field-level data specification; wins over section 5 here on field-level detail), and the original Capstone 01 brief. If this file and `design-decisions.md` disagree, `design-decisions.md` wins and this file must be corrected.
 
-**Persistence status:** The approved target is Neon PostgreSQL plus MongoDB Atlas. The migration is partial: production still wires JSON auth and SQLite conversations, and other features still use JSON collections. Treat storage descriptions below as the legacy design unless explicitly marked current. Do not remove legacy storage or enable multiple application instances until the migration plan's verification and cutover gates pass.
+**Persistence status:** The current runtime uses Neon PostgreSQL for authentication and authorization, courses, enrolments, and selected operational records; MongoDB Atlas for documents, chunks, jobs, learning content, execution metadata, and GridFS uploads; and SQLite for conversations, messages, and daily chat usage. Authentication is persisted in PostgreSQL-backed system collections even though its collection adapter is still named `JsonAuthRepository`. The migration is partial; do not remove legacy sources or enable multiple instances until all remaining local-state and verification gates pass.
 
 **What changed from v1**
 - The approved target is **Neon PostgreSQL** for relational data and **MongoDB Atlas** for documents, chunks, and jobs. The implementation is in a transitional hybrid state; see `backend/database-implementation-neon-mongo.md`.
-- Keep one application instance while JSON and SQLite repositories remain active. Mongo-backed job leases do not make all other current writers multi-instance safe.
+- Keep one application instance while SQLite repositories, process-local caches, and in-memory rate limits remain active. Mongo-backed job leases do not make all other current state multi-instance safe.
 - Atlas Vector Search is the target retrieval backend; the deployed database index and environment must be verified before relying on it.
 - Citation validator is **deterministic** (cited IDs must exist in the context set).
 - Added: bootstrap/seed script, token lifecycle, query rewriting from conversation history, quiz answer-key protection, concrete contracts, error catalogue, retention and erasure rules, config management, CI and operations, diagrams, and test pass criteria.
@@ -37,7 +37,7 @@
 | Runtime / language | Node.js (current LTS) + TypeScript, **strict mode** |
 | HTTP framework | Express.js, REST under `/api/v1` |
 | Validation | Zod (requests, responses, config, agent I/O) |
-| Primary persistence | Neon PostgreSQL for migrated relational data; JSON stores remain active for unconverted modules |
+| Primary persistence | Neon PostgreSQL for active relational data; legacy JSON files remain migration inputs |
 | Conversation history | Currently SQLite via Node's built-in `node:sqlite`; planned migration target is Neon PostgreSQL |
 | Document and job persistence | MongoDB Atlas for migrated documents, chunks, jobs, and scheduler state |
 | Vector search | Atlas Vector Search over MongoDB-backed chunks |
@@ -58,7 +58,7 @@ Pin exact dependency versions (lockfile committed). LangGraph.js in particular c
 
 ## 3. Architectural style
 
-**Modular monolith.** Domain modules are isolated. No microservices. The API and job runner currently run in one Node process. Keep a single application instance while active JSON/SQLite persistence, in-memory rate limiting, and local upload storage remain; re-evaluate only after the remaining cutovers and shared-storage work are verified.
+**Modular monolith.** Domain modules are isolated. No microservices. The API and job runner currently run in one Node process. Keep a single application instance while SQLite persistence, process-local caches, and in-memory rate limiting remain; re-evaluate only after the remaining cutovers and shared-state work are verified.
 
 ### 3.1 Layers (strict, top-down dependencies only)
 
@@ -104,7 +104,7 @@ backend/
       validation/              # deterministic citation validator
       evaluation/              # eval runner, datasets, fixtures
     infra/
-      jsonstore/               # legacy JSON store engine; still active for unconverted modules
+      jsonstore/               # legacy collection contracts and JSON import/test support
       sqlite/                  # legacy SQLite conversations and daily chat usage
       postgres/                # Neon PostgreSQL client and migrations
       mongo/                   # MongoDB client, indexes, and Atlas readiness
@@ -127,17 +127,16 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 
 ### 5.1 Stores
 
-| Store | Current runtime | Target / migrated contents |
+| Store | Current runtime | Remaining migration / operational work |
 |---|---|---|
-| Relational data | JSON remains for auth and unconverted modules; courses and enrolments use PostgreSQL | Neon PostgreSQL for users/access, courses, enrolments, conversations, and other relational records as cut over |
-| Documents, chunks, jobs | MongoDB Atlas | MongoDB Atlas for document metadata, chunks, jobs, and scheduler state |
-| Other feature data | JSON collections remain active | Migration and repository cutover are still required |
-| Conversations | SQLite (`data/sqlite/conversations.db`) | Neon PostgreSQL; not yet cut over |
-| Uploaded files | Local private disk (`data/uploads/`), outside any web root | Persistent private storage shared by replicas before multi-instance operation |
+| Relational data | PostgreSQL-backed system collections for authentication, authorization, courses, enrolments, feedback, activity, analytics, quiz attempts, audit, and config history | Verify migration and recovery against isolated deployment databases |
+| Documents and AI data | MongoDB Atlas for documents, chunks, jobs, scheduler state, generated learning content, AI executions, and GridFS upload bytes | Complete migration verification and backups |
+| Conversations and usage | SQLite (`data/sqlite/conversations.db`) for conversations, messages, and daily chat usage | Migrate to Neon PostgreSQL and verify before retiring SQLite |
+| Legacy source files | JSON migration inputs and retained local upload copies; not the source for runtime PostgreSQL-backed collections | Retain until migration and backup verification are approved |
 
-### 5.2 Legacy JSON store engine (still active)
+### 5.2 Legacy JSON collection interfaces and migration sources
 
-- The engine remains required by production auth and other unconverted modules. Keep it until every dependent module is migrated and the remaining data is verified in its target.
+- The legacy JSON engine is not the active runtime store. Production collections are registered against PostgreSQL and MongoDB; JSON files remain migration inputs and test fixtures.
 - **Layout:** one file per collection (`users.json`, `courses.json`, ...) containing an array of records. Legacy chunks were stored per document; active chunks now use MongoDB.
 - **Single writer:** all writes go through one in-process store. Each collection has a **write queue (mutex)**; read-modify-write happens inside it.
 - **Atomic writes:** write to `<file>.tmp`, flush (`fsync`), then **rename** over the real file. A crash never leaves a half-written file.
@@ -147,7 +146,7 @@ Each module folder: `<name>.routes.ts`, `.controller.ts`, `.service.ts`, `.repos
 - **Soft delete helper:** records that are stashed carry `status`; default repository queries exclude non-active records through one shared helper (do not re-implement the filter per module).
 - **Optimistic versioning:** records that can be edited concurrently (`quizzes`, `courses`) carry an integer `version`; an update with a stale version throws `ConflictError`.
 - **Schema versioning:** `data/json/_meta.json` holds `schemaVersion`. Migrations are ordered scripts in `scripts/migrations/`, run at startup (and by bootstrap), each idempotent. Every record shape is validated with Zod on load; invalid records fail startup with a clear message (never silently dropped).
-- **Backups:** the store takes a snapshot (copy of `data/json` and the SQLite file) at startup, and a nightly scheduled backup job keeps the last N (config). `scripts/restore.ts` restores a chosen snapshot. Document in the README.
+- **Backups:** legacy JSON snapshots and the active SQLite file are local backup inputs. PostgreSQL and MongoDB data, including GridFS uploads, require their provider backup/restore facilities.
 - **Limits:** designed for classroom scale (thousands of records, roughly 20,000 chunks at 1024 dimensions). If a collection file exceeds a configured size, log a warning recommending migration to a real database.
 
 ### 5.3 Legacy JSON collection catalog
@@ -200,14 +199,14 @@ INDEX messages(grounding_status)
 
 ### 5.5 Cross-store consistency rules
 
-- **Access check first.** Course and enrolment checks use PostgreSQL; auth and some unconverted access records still use JSON. Validate access before querying Mongo chunks or private content.
+- **Access check first.** Authentication, course, and enrolment records use PostgreSQL-backed system collections. Validate access before querying Mongo chunks or private content.
 - **No transactions across stores.** Multi-step operations (document delete, user/course stash, erasure) run as **idempotent jobs** so a failure midway can retry.
-- **Current chat writes** use SQLite messages and JSON `activity_events`; the message is written first, then the event with `dedupeKey = messageId`. The conversation store cutover is pending.
+- **Current chat writes** use SQLite messages and PostgreSQL `activity_events`; the message is written first, then the event with `dedupeKey = messageId`. The conversation store cutover is pending.
 - Reconciliation also finds chunks/documents whose course or owner is missing or stashed.
 
 ### 5.6 Database migration and cutover
 
-The migration is tracked phase-by-phase in `backend/database-implementation-neon-mongo.md`. PostgreSQL currently backs courses/enrolments; MongoDB backs document metadata, chunks, jobs, and scheduler state. Auth remains JSON-backed, conversations remain SQLite-backed, and other JSON records are not fully migrated. Do not remove legacy implementations, claim full cutover, or enable multiple instances until all remaining repositories and data are migrated and tested against isolated databases.
+The migration is tracked phase-by-phase in `backend/database-implementation-neon-mongo.md`. PostgreSQL backs authentication/authorization, courses, enrolments, and selected operational collections; MongoDB backs document metadata, chunks, jobs, generated learning content, execution metadata, and GridFS uploads. Conversations, messages, and daily chat usage remain SQLite-backed. Do not remove legacy implementations, claim full cutover, or enable multiple instances until remaining local persistence and process-local state are migrated or made shared, and verified against isolated databases.
 
 ---
 
@@ -415,7 +414,7 @@ ingest job
 
 `RetrievalService.search(user, courseId, queryEmbedding, opts)` is the **only** way to read chunks.
 
-1. **Access gate:** the course must be `active`, and the user must be the course owner or an `approved` enrolled learner. Course/enrolment checks use PostgreSQL; auth and unconverted access records may still use JSON. Otherwise return no content (`ENROLMENT_REQUIRED`).
+1. **Access gate:** the course must be `active`, and the user must be the course owner or an `approved` enrolled learner. Authentication, course, and enrolment checks use PostgreSQL-backed system collections. Otherwise return no content (`ENROLMENT_REQUIRED`).
 2. **Filter first, then score:** candidate chunks are those where
    `courseId = X AND embeddingModel = current AND ( scope = 'course' OR (scope = 'personal' AND ownerId = currentUser) )`.
    Cosine similarity is computed **only over the filtered candidates**, never over everything and filtered afterwards.
@@ -718,8 +717,8 @@ Resolved since v1: OPEN-4 ("specialized" quiz = generated from content the learn
 
 ## 24. Deviations from the brief (need coach approval; document in `Architecture.md`)
 
-1. **Persistence cutover is partial:** PostgreSQL and MongoDB Atlas are wired for selected modules, while JSON and SQLite remain active elsewhere. Do not describe the target as fully deployed.
-2. **Single instance / single process remains required** until active JSON/SQLite writers and process-local rate limiting are addressed; original uploads now use MongoDB Atlas GridFS.
+1. **Persistence cutover is partial:** PostgreSQL and MongoDB Atlas are wired for selected modules, while SQLite remains active for conversation and usage data. Do not describe the target as fully deployed.
+2. **Single instance / single process remains required** until SQLite persistence and process-local caches/rate limits are addressed; original uploads now use MongoDB Atlas GridFS.
 3. **LLM providers** are Inception Labs and Groq (brief: Claude and OpenAI; alternatives allowed with documented approval).
 4. **LangGraph.js** for orchestration (brief allows LangChain.js or a custom layer).
 5. **Deterministic citation validation** as the runtime gate; semantic faithfulness is measured offline.
