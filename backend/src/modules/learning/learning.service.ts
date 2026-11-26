@@ -40,6 +40,10 @@ import type {
 import type { ConversationRepositoryPort } from "../../infra/mongodb/conversation.repository";
 import type { JsonLearningExecutionRepository } from "./learning-execution.repository";
 import { LearningRepository } from "./learning.repository";
+import {
+  calculateQuizPerformance,
+  type QuizPerformance,
+} from "./quiz-performance";
 
 type LearningVisibility = "course" | "private";
 type LearningContentKind = "summary" | "flashcards" | "quiz";
@@ -77,6 +81,9 @@ export interface QuizLearnerView {
   origin: QuizRecord["origin"];
   visibility: QuizRecord["visibility"];
   status: QuizRecord["status"];
+  dueAt: string | null;
+  maxAttempts: number | null;
+  showFeedback: boolean;
   title: string;
   description?: string;
   questions: QuizLearnerQuestion[];
@@ -84,6 +91,14 @@ export interface QuizLearnerView {
   sourceChunkIds: string[];
   publishedAt: string | null;
   createdAt: string;
+  attemptSummary: {
+    status: "not_started" | "in_progress" | "completed";
+    attemptCount: number;
+    bestScore: number | null;
+    bestScorePercent: number | null;
+    attemptId: string | null;
+    answers: QuizAttemptRecord["answers"];
+  };
 }
 
 export interface QuizAttemptResult {
@@ -96,6 +111,26 @@ export interface QuizAttemptResult {
     correctOptionIds?: string[];
     explanation: string;
     correct: boolean;
+  }>;
+}
+
+export interface QuizAttemptReview {
+  attemptId: string;
+  courseId: string;
+  quizTitle: string;
+  score: number;
+  maxScore: number;
+  submittedAt: string;
+  showFeedback: boolean;
+  questions: Array<{
+    questionId: string;
+    type: QuizRecord["questions"][number]["type"];
+    prompt: string;
+    options: Array<{ id: string; text: string }>;
+    selectedOptionIds: string[];
+    correctOptionIds?: string[];
+    correct?: boolean;
+    explanation?: string;
   }>;
 }
 
@@ -380,6 +415,10 @@ export class LearningService {
       visibility,
       ownerId,
       status: actor.role === "coach" ? "draft" : "published",
+      dueAt: actor.role === "coach" ? (input.dueAt ?? null) : null,
+      maxAttempts: actor.role === "coach" ? (input.maxAttempts ?? null) : null,
+      showFeedback:
+        actor.role === "coach" ? (input.showFeedback ?? true) : true,
       title: generated.value.title,
       questions: generated.value.questions.map((question) => ({
         ...question,
@@ -403,6 +442,9 @@ export class LearningService {
       title: string;
       sourceDocumentIds: string[];
       questions: QuizQuestionContent[];
+      dueAt?: string | null;
+      maxAttempts?: number | null;
+      showFeedback?: boolean;
     },
     requestId: string,
   ): Promise<QuizRecord> {
@@ -428,6 +470,9 @@ export class LearningService {
       visibility: "course",
       ownerId: null,
       status: "draft",
+      dueAt: input.dueAt ?? null,
+      maxAttempts: input.maxAttempts ?? null,
+      showFeedback: input.showFeedback ?? true,
       title: input.title,
       questions: input.questions.map((question) => ({
         ...question,
@@ -455,6 +500,9 @@ export class LearningService {
       title: string;
       description?: string | undefined;
       questions: ManualQuizQuestion[];
+      dueAt?: string | null;
+      maxAttempts?: number | null;
+      showFeedback?: boolean;
     },
     requestId: string,
   ): Promise<QuizRecord> {
@@ -469,6 +517,9 @@ export class LearningService {
       visibility: "course",
       ownerId: null,
       status: "draft",
+      dueAt: input.dueAt ?? null,
+      maxAttempts: input.maxAttempts ?? null,
+      showFeedback: input.showFeedback ?? true,
       title: input.title,
       ...(input.description !== undefined
         ? { description: input.description }
@@ -498,6 +549,9 @@ export class LearningService {
       title?: string;
       description?: string;
       questions?: UpdateQuizQuestion[];
+      dueAt?: string | null;
+      maxAttempts?: number | null;
+      showFeedback?: boolean;
     },
     requestId: string,
   ): Promise<QuizRecord> {
@@ -541,6 +595,13 @@ export class LearningService {
         title: input.title ?? quiz.title,
         ...(input.description !== undefined
           ? { description: input.description }
+          : {}),
+        ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
+        ...(input.maxAttempts !== undefined
+          ? { maxAttempts: input.maxAttempts }
+          : {}),
+        ...(input.showFeedback !== undefined
+          ? { showFeedback: input.showFeedback }
           : {}),
         questions,
         sourceChunkIds: unique(
@@ -628,6 +689,54 @@ export class LearningService {
     });
   }
 
+  public async unpublishQuiz(
+    actor: AuthenticatedUser,
+    quizId: string,
+    version: number,
+    requestId: string,
+  ): Promise<QuizRecord> {
+    return this.repository.withMutationLock(async () => {
+      const quiz = await this.requireQuizOwner(actor, quizId);
+      if (quiz.version !== version) {
+        throw new ConflictError("Quiz version is stale");
+      }
+      if (quiz.status !== "published") {
+        throw new ConflictError("Only a published quiz can be unpublished");
+      }
+      const updatedAt = new Date().toISOString();
+      const updated = await this.repository.updateQuiz(quiz.id, (current) => ({
+        ...current,
+        status: "draft",
+        publishedAt: null,
+        updatedAt,
+      }));
+      await this.audit(actor, "quiz.unpublished", "quiz", quiz.id, requestId, {
+        version: updated.version,
+        status: updated.status,
+      });
+      return updated;
+    });
+  }
+
+  public async getCourseQuizPerformance(
+    actor: AuthenticatedUser,
+    courseId: string,
+  ): Promise<QuizPerformance[]> {
+    await this.requireCourseOwner(actor, courseId);
+    const learners = this.repository.listApprovedLearnersForCourse(courseId);
+    return this.repository
+      .listQuizzes(courseId)
+      .filter((quiz) => quiz.origin === "coach")
+      .sort((left, right) => left.title.localeCompare(right.title))
+      .map((quiz) =>
+        calculateQuizPerformance(
+          quiz,
+          this.repository.listAttemptsByQuiz(quiz.id),
+          learners,
+        ),
+      );
+  }
+
   public async listQuizzes(
     actor: AuthenticatedUser,
     courseId: string,
@@ -665,50 +774,114 @@ export class LearningService {
     actor: AuthenticatedUser,
     quizId: string,
     answers: QuizAttemptAnswer[],
+    attemptId?: string,
   ): Promise<QuizAttemptResult> {
-    const quiz = this.repository.getQuiz(quizId);
-    if (!quiz) throw new NotFoundError("Quiz not found");
-    await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
-    if (
-      actor.role !== "learner" ||
-      !this.canViewQuiz(actor, quiz) ||
-      quiz.status !== "published"
-    ) {
-      throw new NotFoundError("Quiz not found");
-    }
-    if (answers.length !== quiz.questions.length) {
-      throw new AppError(
-        "VALIDATION_FAILED",
-        422,
-        "Answers must be supplied for every quiz question",
+    return this.repository.withMutationLock(async () => {
+      const quiz = this.repository.getQuiz(quizId);
+      if (!quiz) throw new NotFoundError("Quiz not found");
+      await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
+      if (
+        actor.role !== "learner" ||
+        !this.canViewQuiz(actor, quiz) ||
+        quiz.status !== "published"
+      ) {
+        throw new NotFoundError("Quiz not found");
+      }
+      const submittedAt = new Date().toISOString();
+      if (quiz.dueAt && Date.parse(quiz.dueAt) < Date.parse(submittedAt)) {
+        throw new ConflictError("The quiz due date has passed");
+      }
+      const quizAttempts = this.repository.listAttemptsByQuiz(quiz.id);
+      const completedAttempts = quizAttempts.filter(
+        (attempt) =>
+          attempt.userId === actor.id &&
+          (attempt.status ?? "submitted") === "submitted",
       );
-    }
-    const answersByQuestion = new Map(
-      answers.map((answer) => [answer.questionId, answer]),
-    );
-    const results = quiz.questions.map((question) => {
-      const answer = answersByQuestion.get(question.id);
-      if (!answer) {
+      if (
+        quiz.maxAttempts !== undefined &&
+        quiz.maxAttempts !== null &&
+        completedAttempts.length >= quiz.maxAttempts
+      ) {
+        throw new ConflictError(
+          "The maximum number of quiz attempts has been reached",
+        );
+      }
+      const activeAttempt = attemptId
+        ? this.repository.getAttempt(attemptId)
+        : quizAttempts.find(
+            (attempt) =>
+              attempt.userId === actor.id &&
+              attempt.status === "in_progress" &&
+              !attempt.submittedAt,
+          );
+      if (
+        attemptId &&
+        (!activeAttempt ||
+          activeAttempt.quizId !== quiz.id ||
+          activeAttempt.userId !== actor.id ||
+          activeAttempt.status !== "in_progress")
+      ) {
+        throw new NotFoundError("Quiz attempt not found");
+      }
+      if (answers.length !== quiz.questions.length) {
         throw new AppError(
           "VALIDATION_FAILED",
           422,
           "Answers must be supplied for every quiz question",
         );
       }
-      if (question.type === "multiple_choice") {
-        if (!("selectedOptionIds" in answer)) {
+      const answersByQuestion = new Map(
+        answers.map((answer) => [answer.questionId, answer]),
+      );
+      const results = quiz.questions.map((question) => {
+        const answer = answersByQuestion.get(question.id);
+        if (!answer) {
           throw new AppError(
             "VALIDATION_FAILED",
             422,
-            "Multiple-choice questions require a selection for every correct answer",
+            "Answers must be supplied for every quiz question",
           );
         }
-        const selectedOptionIds = answer.selectedOptionIds;
+        if (question.type === "multiple_choice") {
+          if (!("selectedOptionIds" in answer)) {
+            throw new AppError(
+              "VALIDATION_FAILED",
+              422,
+              "Multiple-choice questions require a selection for every correct answer",
+            );
+          }
+          const selectedOptionIds = answer.selectedOptionIds;
+          if (
+            selectedOptionIds.some(
+              (selectedId) =>
+                !question.options.some((option) => option.id === selectedId),
+            )
+          ) {
+            throw new AppError(
+              "VALIDATION_FAILED",
+              422,
+              "An answer references an unknown question or option",
+            );
+          }
+          const correctOptionIds = question.correctOptionIds;
+          return {
+            questionId: question.id,
+            selectedOptionIds,
+            correctOptionIds,
+            explanation: question.explanation ?? "",
+            correct: sameStringSet(selectedOptionIds, correctOptionIds),
+          };
+        }
+        if (!("selectedOptionId" in answer)) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "Single-answer questions require exactly one selected option",
+          );
+        }
+        const selectedOptionId = answer.selectedOptionId;
         if (
-          selectedOptionIds.some(
-            (selectedId) =>
-              !question.options.some((option) => option.id === selectedId),
-          )
+          !question.options.some((option) => option.id === selectedOptionId)
         ) {
           throw new AppError(
             "VALIDATION_FAILED",
@@ -716,91 +889,322 @@ export class LearningService {
             "An answer references an unknown question or option",
           );
         }
-        const correctOptionIds = question.correctOptionIds;
+        const correctOptionId = question.correctOptionId;
+        if (!correctOptionId) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "The quiz contains an invalid question",
+          );
+        }
         return {
           questionId: question.id,
-          selectedOptionIds,
-          correctOptionIds,
+          selectedOptionId,
+          correctOptionId,
           explanation: question.explanation ?? "",
-          correct: sameStringSet(selectedOptionIds, correctOptionIds),
+          correct: selectedOptionId === correctOptionId,
         };
-      }
-      if (!("selectedOptionId" in answer)) {
+      });
+      if (answersByQuestion.size !== quiz.questions.length) {
         throw new AppError(
           "VALIDATION_FAILED",
           422,
-          "Single-answer questions require exactly one selected option",
+          "Answers must not contain unknown questions",
         );
       }
-      const selectedOptionId = answer.selectedOptionId;
-      if (!question.options.some((option) => option.id === selectedOptionId)) {
-        throw new AppError(
-          "VALIDATION_FAILED",
-          422,
-          "An answer references an unknown question or option",
-        );
-      }
-      const correctOptionId = question.correctOptionId;
-      if (!correctOptionId) {
-        throw new AppError(
-          "VALIDATION_FAILED",
-          422,
-          "The quiz contains an invalid question",
-        );
-      }
+      const score = results.filter((result) => result.correct).length;
+      const attemptData = {
+        quizId: quiz.id,
+        lineageId: quiz.lineageId,
+        quizVersion: quiz.version,
+        courseId: quiz.courseId,
+        userId: actor.id,
+        answers: results.map((result) =>
+          "selectedOptionIds" in result
+            ? {
+                questionId: result.questionId,
+                selectedOptionIds: result.selectedOptionIds,
+                correct: result.correct,
+              }
+            : {
+                questionId: result.questionId,
+                selectedOptionId: result.selectedOptionId,
+                correct: result.correct,
+              },
+        ),
+        score,
+        maxScore: quiz.questions.length,
+        status: "submitted" as const,
+        startedAt: activeAttempt?.startedAt ?? submittedAt,
+        submittedAt,
+      };
+      const attempt = activeAttempt
+        ? await this.repository.updateAttempt(activeAttempt.id, (current) => ({
+            ...current,
+            ...attemptData,
+          }))
+        : await this.repository.createAttempt(attemptData);
+      const learnerAttempt =
+        quiz.showFeedback === false
+          ? {
+              ...attempt,
+              answers: attempt.answers.map(
+                ({ correct: _correct, ...answer }) => answer,
+              ),
+            }
+          : attempt;
       return {
-        questionId: question.id,
-        selectedOptionId,
-        correctOptionId,
-        explanation: question.explanation ?? "",
-        correct: selectedOptionId === correctOptionId,
+        attempt: learnerAttempt,
+        results: quiz.showFeedback !== false ? results : [],
       };
     });
-    if (answersByQuestion.size !== quiz.questions.length) {
-      throw new AppError(
-        "VALIDATION_FAILED",
-        422,
-        "Answers must not contain unknown questions",
+  }
+
+  public async startQuizAttempt(
+    actor: AuthenticatedUser,
+    quizId: string,
+  ): Promise<QuizAttemptRecord> {
+    return this.repository.withMutationLock(async () => {
+      const quiz = this.repository.getQuiz(quizId);
+      if (!quiz) throw new NotFoundError("Quiz not found");
+      await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
+      if (
+        actor.role !== "learner" ||
+        !this.canViewQuiz(actor, quiz) ||
+        quiz.status !== "published"
+      ) {
+        throw new NotFoundError("Quiz not found");
+      }
+      const startedAt = new Date().toISOString();
+      if (quiz.dueAt && Date.parse(quiz.dueAt) < Date.parse(startedAt)) {
+        throw new ConflictError("The quiz due date has passed");
+      }
+      const attempts = this.repository.listAttemptsByQuiz(quiz.id);
+      const activeAttempt = attempts.find(
+        (attempt) =>
+          attempt.userId === actor.id &&
+          attempt.status === "in_progress" &&
+          !attempt.submittedAt,
       );
-    }
-    const submittedAt = new Date().toISOString();
-    const score = results.filter((result) => result.correct).length;
-    const attempt = await this.repository.createAttempt({
-      quizId: quiz.id,
-      lineageId: quiz.lineageId,
-      quizVersion: quiz.version,
-      courseId: quiz.courseId,
-      userId: actor.id,
-      answers: results.map((result) =>
-        "selectedOptionIds" in result
-          ? {
-              questionId: result.questionId,
-              selectedOptionIds: result.selectedOptionIds,
-              correct: result.correct,
-            }
-          : {
-              questionId: result.questionId,
-              selectedOptionId: result.selectedOptionId,
-              correct: result.correct,
-            },
-      ),
-      score,
-      maxScore: quiz.questions.length,
-      startedAt: submittedAt,
-      submittedAt,
+      if (activeAttempt) return activeAttempt;
+      const completedCount = attempts.filter(
+        (attempt) =>
+          attempt.userId === actor.id &&
+          (attempt.status ?? "submitted") === "submitted",
+      ).length;
+      if (
+        quiz.maxAttempts !== undefined &&
+        quiz.maxAttempts !== null &&
+        completedCount >= quiz.maxAttempts
+      ) {
+        throw new ConflictError(
+          "The maximum number of quiz attempts has been reached",
+        );
+      }
+      return this.repository.createAttempt({
+        quizId: quiz.id,
+        lineageId: quiz.lineageId,
+        quizVersion: quiz.version,
+        courseId: quiz.courseId,
+        userId: actor.id,
+        answers: [],
+        score: 0,
+        maxScore: quiz.questions.length,
+        status: "in_progress",
+        startedAt,
+        submittedAt: null,
+      });
     });
-    return { attempt, results };
+  }
+
+  public async saveQuizAttemptProgress(
+    actor: AuthenticatedUser,
+    quizId: string,
+    attemptId: string,
+    answers: QuizAttemptAnswer[],
+  ): Promise<QuizAttemptRecord> {
+    return this.repository.withMutationLock(async () => {
+      const quiz = this.repository.getQuiz(quizId);
+      const attempt = this.repository.getAttempt(attemptId);
+      if (!quiz || !attempt) throw new NotFoundError("Quiz attempt not found");
+      await this.retrievalService.assertCourseAccess(actor, quiz.courseId);
+      if (
+        actor.role !== "learner" ||
+        !this.canViewQuiz(actor, quiz) ||
+        quiz.status !== "published" ||
+        attempt.quizId !== quiz.id ||
+        attempt.userId !== actor.id ||
+        attempt.status !== "in_progress" ||
+        attempt.submittedAt
+      ) {
+        throw new NotFoundError("Quiz attempt not found");
+      }
+      if (quiz.dueAt && Date.parse(quiz.dueAt) < Date.now()) {
+        throw new ConflictError("The quiz due date has passed");
+      }
+      const savedAnswers = answers.map((answer) => {
+        const question = quiz.questions.find(
+          (candidate) => candidate.id === answer.questionId,
+        );
+        if (!question) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "An answer references an unknown question",
+          );
+        }
+        if (question.type === "multiple_choice") {
+          if (!("selectedOptionIds" in answer)) {
+            throw new AppError(
+              "VALIDATION_FAILED",
+              422,
+              "Multiple-choice questions require multiple selected options",
+            );
+          }
+          if (
+            answer.selectedOptionIds.some(
+              (optionId) =>
+                !question.options.some((option) => option.id === optionId),
+            )
+          ) {
+            throw new AppError(
+              "VALIDATION_FAILED",
+              422,
+              "An answer references an unknown option",
+            );
+          }
+          return {
+            questionId: question.id,
+            selectedOptionIds: answer.selectedOptionIds,
+          };
+        }
+        if (
+          !("selectedOptionId" in answer) ||
+          !question.options.some(
+            (option) => option.id === answer.selectedOptionId,
+          )
+        ) {
+          throw new AppError(
+            "VALIDATION_FAILED",
+            422,
+            "An answer references an unknown option",
+          );
+        }
+        return {
+          questionId: question.id,
+          selectedOptionId: answer.selectedOptionId,
+        };
+      });
+      return this.repository.updateAttempt(attempt.id, (current) => ({
+        ...current,
+        answers: savedAnswers,
+      }));
+    });
   }
 
   public listMyQuizAttempts(
     actor: AuthenticatedUser,
     limit: number,
     cursor?: string,
-  ): { items: QuizAttemptRecord[]; nextCursor?: string } {
+  ): {
+    items: Array<
+      QuizAttemptRecord & {
+        quizTitle?: string;
+        quizOrigin?: QuizRecord["origin"];
+      }
+    >;
+    nextCursor?: string;
+  } {
     const records = this.repository
       .listAttemptsByUser(actor.id)
       .sort((left, right) => left.id.localeCompare(right.id));
-    return paginate(records, limit, cursor);
+    const page = paginate(records, limit, cursor);
+    return {
+      items: page.items.map((attempt) => {
+        const quiz = this.repository.getQuiz(attempt.quizId);
+        return {
+          ...attempt,
+          ...(quiz?.showFeedback === false
+            ? {
+                answers: attempt.answers.map(
+                  ({ correct: _correct, ...answer }) => answer,
+                ),
+              }
+            : {}),
+          ...(quiz ? { quizTitle: quiz.title, quizOrigin: quiz.origin } : {}),
+        };
+      }),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    };
+  }
+
+  public async getQuizAttemptReview(
+    actor: AuthenticatedUser,
+    attemptId: string,
+  ): Promise<QuizAttemptReview> {
+    if (actor.role !== "learner")
+      throw new NotFoundError("Quiz attempt not found");
+    const attempt = this.repository.getAttempt(attemptId);
+    if (
+      !attempt ||
+      attempt.userId !== actor.id ||
+      (attempt.status ?? "submitted") !== "submitted" ||
+      !attempt.submittedAt
+    ) {
+      throw new NotFoundError("Quiz attempt not found");
+    }
+
+    await this.retrievalService.assertCourseAccess(actor, attempt.courseId);
+    const quiz = this.repository.getQuiz(attempt.quizId);
+    if (!quiz || quiz.courseId !== attempt.courseId) {
+      throw new NotFoundError("Quiz attempt not found");
+    }
+
+    const showFeedback = quiz.showFeedback !== false;
+    const answersByQuestion = new Map(
+      attempt.answers.map((answer) => [answer.questionId, answer]),
+    );
+    const questions = quiz.questions.map((question) => {
+      const answer = answersByQuestion.get(question.id);
+      const selectedOptionIds = answer
+        ? "selectedOptionIds" in answer
+          ? answer.selectedOptionIds
+          : [answer.selectedOptionId]
+        : [];
+      const reviewQuestion = {
+        questionId: question.id,
+        type: question.type,
+        prompt: question.prompt,
+        options: question.options,
+        selectedOptionIds,
+      };
+
+      if (!showFeedback) return reviewQuestion;
+
+      const correctOptionIds =
+        question.type === "multiple_choice"
+          ? question.correctOptionIds
+          : question.correctOptionId
+            ? [question.correctOptionId]
+            : [];
+      return {
+        ...reviewQuestion,
+        correctOptionIds,
+        correct: sameStringSet(selectedOptionIds, correctOptionIds),
+        explanation: question.explanation ?? "",
+      };
+    });
+
+    return {
+      attemptId: attempt.id,
+      courseId: attempt.courseId,
+      quizTitle: quiz.title,
+      score: attempt.score,
+      maxScore: attempt.maxScore,
+      submittedAt: attempt.submittedAt,
+      showFeedback,
+      questions,
+    };
   }
 
   public async publishSummary(
@@ -977,7 +1381,10 @@ export class LearningService {
         "PROVIDER_UNAVAILABLE",
         503,
         "The embedding provider returned no vector",
-        { provider: "gemini", providerErrorCode: "EMBEDDING_PROVIDER_RESPONSE_INVALID" },
+        {
+          provider: "gemini",
+          providerErrorCode: "EMBEDDING_PROVIDER_RESPONSE_INVALID",
+        },
       );
     }
     const retrieved = await this.retrievalService.search(
@@ -1211,6 +1618,26 @@ export class LearningService {
     quiz: QuizRecord,
   ): QuizRecord | QuizLearnerView {
     if (actor.role === "coach") return quiz;
+    const attempts = this.repository
+      .listAttemptsByQuiz(quiz.id)
+      .filter((attempt) => attempt.userId === actor.id);
+    const activeAttempt = attempts.find(
+      (attempt) => attempt.status === "in_progress" && !attempt.submittedAt,
+    );
+    const completedAttempts = attempts.filter(
+      (attempt) =>
+        (attempt.status ?? "submitted") === "submitted" &&
+        Boolean(attempt.submittedAt),
+    );
+    const bestAttempt = completedAttempts.reduce<QuizAttemptRecord | undefined>(
+      (currentBest, attempt) =>
+        !currentBest ||
+        attempt.score / attempt.maxScore >
+          currentBest.score / currentBest.maxScore
+          ? attempt
+          : currentBest,
+      undefined,
+    );
     return {
       id: quiz.id,
       lineageId: quiz.lineageId,
@@ -1219,6 +1646,9 @@ export class LearningService {
       origin: quiz.origin,
       visibility: quiz.visibility,
       status: quiz.status,
+      dueAt: quiz.dueAt ?? null,
+      maxAttempts: quiz.maxAttempts ?? null,
+      showFeedback: quiz.showFeedback !== false,
       title: quiz.title,
       ...(quiz.description !== undefined
         ? { description: quiz.description }
@@ -1233,6 +1663,23 @@ export class LearningService {
       sourceChunkIds: quiz.sourceChunkIds,
       publishedAt: quiz.publishedAt,
       createdAt: quiz.createdAt,
+      attemptSummary: {
+        status: attempts.some((attempt) => attempt.status === "in_progress")
+          ? "in_progress"
+          : completedAttempts.length > 0
+            ? "completed"
+            : "not_started",
+        attemptCount: completedAttempts.length,
+        bestScore: bestAttempt?.score ?? null,
+        bestScorePercent: bestAttempt
+          ? Math.round((bestAttempt.score / bestAttempt.maxScore) * 100)
+          : null,
+        attemptId: activeAttempt?.id ?? null,
+        answers:
+          activeAttempt?.answers.map(
+            ({ correct: _correct, ...answer }) => answer,
+          ) ?? [],
+      },
     };
   }
 

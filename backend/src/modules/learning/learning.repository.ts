@@ -93,10 +93,37 @@ export class LearningRepository {
     return this.collections.quizAttempts.findByIndex("userId", userId);
   }
 
+  public getAttempt(id: string): QuizAttemptRecord | null {
+    return this.collections.quizAttempts.getById(id);
+  }
+
   public createAttempt(
     input: Omit<QuizAttemptRecord, "id">,
   ): Promise<QuizAttemptRecord> {
     return this.collections.quizAttempts.insert(input);
+  }
+
+  public updateAttempt(
+    id: string,
+    update: (attempt: QuizAttemptRecord) => QuizAttemptRecord,
+  ): Promise<QuizAttemptRecord> {
+    return this.collections.quizAttempts.update(id, update);
+  }
+
+  public listApprovedLearnersForCourse(
+    courseId: string,
+  ): Array<{ userId: string; displayName: string }> {
+    return this.collections.enrolments
+      .findByIndex("courseId", courseId)
+      .filter((enrolment) => enrolment.status === "approved")
+      .flatMap((enrolment) => {
+        const user = this.collections.users.getById(enrolment.userId);
+        const role = user ? this.collections.roles.getById(user.roleId) : null;
+        if (!user || user.status !== "active" || role?.name !== "learner") {
+          return [];
+        }
+        return [{ userId: user.id, displayName: user.displayName }];
+      });
   }
 
   public createAudit(

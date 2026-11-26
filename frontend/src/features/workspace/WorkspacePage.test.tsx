@@ -273,6 +273,17 @@ describe("WorkspaceLayout", () => {
     ).not.toHaveAttribute("aria-current", "page");
   });
 
+  it("keeps learner quiz navigation available without AI generation permission", async () => {
+    renderWorkspace(makeUser("learner", []), `/courses/${courseId}`);
+
+    const courseNavigation = await screen.findByRole("navigation", {
+      name: "Course: Applied Systems",
+    });
+    expect(
+      within(courseNavigation).getByRole("link", { name: "Quizzes" }),
+    ).toHaveAttribute("href", `/courses/${courseId}/study?tab=quiz`);
+  });
+
   it("shows permitted course links and the course name for course routes", async () => {
     renderWorkspace(
       makeUser("coach", [

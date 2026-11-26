@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -194,5 +195,113 @@ describe("LearningWorkspacePage", () => {
       "href",
       `/courses/${courseId}/documents`,
     );
+  });
+
+  it("lets learners select a study document from the Quizzes tab before generating", async () => {
+    const user = userEvent.setup();
+    let generateRequest: unknown;
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            ownerId: "37c1dbbd-f72a-4508-a662-3992e2506ca4",
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/documents`, () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: documentId,
+              courseId,
+              scope: "course",
+              filename: "Course notes.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 120,
+              status: "ready",
+              errorCode: null,
+              errorDetail: null,
+              extractionDiagnostics: null,
+              chunkCount: 1,
+              embeddingModel: "test-model",
+              ingestJobId: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              readyAt: "2026-01-01T00:01:00.000Z",
+            },
+          ],
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/quizzes`, () =>
+        HttpResponse.json({ data: [], meta: {} }),
+      ),
+      http.post(
+        "http://localhost:3000/api/v1/quizzes/generate",
+        async ({ request }) => {
+          generateRequest = await request.json();
+          return HttpResponse.json(
+            { error: { code: "GENERATION_FAILED", message: "Test response" } },
+            { status: 422 },
+          );
+        },
+      ),
+    );
+    const learner: AuthenticatedUser = {
+      id: learnerId,
+      email: "learner@example.test",
+      displayName: "Test learner",
+      role: "learner",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["content:generate"],
+      permsVersion: 1,
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <AuthContext.Provider value={createAuthContext(learner)}>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[`/courses/${courseId}/study?tab=quiz`]}>
+            <Routes>
+              <Route
+                path="/courses/:courseId/study"
+                element={<LearningWorkspacePage />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </AuthContext.Provider>,
+    );
+
+    expect(await screen.findByRole("tab", { name: "Quizzes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const documentCheckbox = await screen.findByRole("checkbox", {
+      name: /Course notes\.pdf/,
+    });
+    await user.click(screen.getByRole("button", { name: "Set up quiz" }));
+    const generateButton = screen.getByRole("button", {
+      name: "Generate practice quiz",
+    });
+    expect(generateButton).toBeDisabled();
+
+    await user.click(documentCheckbox);
+    expect(generateButton).toBeEnabled();
+    await user.click(generateButton);
+    await waitFor(() => {
+      expect(generateRequest).toMatchObject({
+        courseId,
+        selection: { documentIds: [documentId] },
+      });
+    });
   });
 });

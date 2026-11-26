@@ -61,6 +61,9 @@ export const generateQuizRequestSchema = z
     courseId: z.string().uuid(),
     selection: learningSelectionSchema,
     count: z.number().int().min(1).max(50).default(10),
+    dueAt: z.string().datetime().nullable().optional(),
+    maxAttempts: z.number().int().positive().nullable().optional(),
+    showFeedback: z.boolean().optional(),
     types: z
       .array(z.enum(["mcq", "true_false"]))
       .min(1)
@@ -175,6 +178,9 @@ export const createManualQuizRequestSchema = z
     courseId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000).optional(),
+    dueAt: z.string().datetime().nullable().optional(),
+    maxAttempts: z.number().int().positive().nullable().optional(),
+    showFeedback: z.boolean().optional(),
     questions: z.array(manualQuizQuestionSchema).max(50),
   })
   .strict()
@@ -195,6 +201,9 @@ export const createQuizRequestSchema = z
   .object({
     courseId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
+    dueAt: z.string().datetime().nullable().optional(),
+    maxAttempts: z.number().int().positive().nullable().optional(),
+    showFeedback: z.boolean().optional(),
     sourceDocumentIds: z.array(z.string().uuid()).min(1).max(10),
     questions: z.array(quizQuestionContentSchema).min(1).max(50),
   })
@@ -217,6 +226,9 @@ export const updateQuizRequestSchema = z
     version: z.number().int().positive(),
     title: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(2000).optional(),
+    dueAt: z.string().datetime().nullable().optional(),
+    maxAttempts: z.number().int().positive().nullable().optional(),
+    showFeedback: z.boolean().optional(),
     questions: z
       .array(z.union([quizQuestionContentSchema, manualQuizQuestionSchema]))
       .max(50)
@@ -227,6 +239,9 @@ export const updateQuizRequestSchema = z
     (request) =>
       request.title !== undefined ||
       request.description !== undefined ||
+      request.dueAt !== undefined ||
+      request.maxAttempts !== undefined ||
+      request.showFeedback !== undefined ||
       request.questions !== undefined,
     "At least one editable quiz field is required",
   )
@@ -249,6 +264,7 @@ export const publishContentRequestSchema = z
 
 export const quizAttemptRequestSchema = z
   .object({
+    attemptId: z.string().uuid().optional(),
     answers: z
       .array(
         z.union([
@@ -287,6 +303,54 @@ export const quizAttemptRequestSchema = z
         "selectedOptionIds" in answer &&
         new Set(answer.selectedOptionIds).size !==
           answer.selectedOptionIds.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["answers", index, "selectedOptionIds"],
+          message: "Selected option IDs must be unique",
+        });
+      }
+    });
+  });
+
+export const quizAttemptProgressRequestSchema = z
+  .object({
+    answers: z
+      .array(
+        z.union([
+          z
+            .object({
+              questionId: z.string().min(1).max(100),
+              selectedOptionId: z.string().min(1).max(40),
+            })
+            .strict(),
+          z
+            .object({
+              questionId: z.string().min(1).max(100),
+              selectedOptionIds: z
+                .array(z.string().min(1).max(40))
+                .min(1)
+                .max(5),
+            })
+            .strict(),
+        ]),
+      )
+      .max(50),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const questionIds = request.answers.map((answer) => answer.questionId);
+    if (new Set(questionIds).size !== questionIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["answers"],
+        message: "Each question may be answered only once",
+      });
+    }
+    request.answers.forEach((answer, index) => {
+      if (
+        "selectedOptionIds" in answer &&
+        new Set(answer.selectedOptionIds).size !== answer.selectedOptionIds.length
       ) {
         context.addIssue({
           code: "custom",

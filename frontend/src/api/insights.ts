@@ -26,7 +26,7 @@ export const gapReportSchema = z
     courseId: idSchema,
     periodStart: z.string(),
     periodEnd: z.string(),
-    totalGapQuestions: z.number().int().nonnegative(),
+    totalGapQuestions: z.number().int().nonnegative().nullable(),
     minCohortSizeUsed: z.number().int().positive(),
     topics: z.array(
       z
@@ -41,7 +41,7 @@ export const gapReportSchema = z
         })
         .strict(),
     ),
-    otherCount: z.number().int().nonnegative(),
+    otherCount: z.number().int().nonnegative().nullable(),
     generatedBy: z
       .object({
         executionId: idSchema,

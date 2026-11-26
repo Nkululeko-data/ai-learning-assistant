@@ -4,6 +4,8 @@ import {
   PostgresCollection,
   PostgresStore,
 } from "../../src/infra/postgres/postgres-store";
+import { PostgresRecordCollection } from "../../src/infra/postgres/postgres-record-store";
+import { gapReportSchema } from "../../src/infra/jsonstore/system-collections";
 
 interface Item {
   id: string;
@@ -23,14 +25,17 @@ function createPool(): Pool {
     sql: string,
     values: unknown[] = [],
   ): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> => {
-    if (sql.startsWith("SELECT * FROM \"items\"")) {
+    if (sql.startsWith('SELECT * FROM "items"')) {
       if (sql.includes("WHERE id = $1")) {
         const row = rows.get(String(values[0]));
         return { rows: row ? [{ ...row }] : [], rowCount: row ? 1 : 0 };
       }
-      return { rows: [...rows.values()].map((row) => ({ ...row })), rowCount: rows.size };
+      return {
+        rows: [...rows.values()].map((row) => ({ ...row })),
+        rowCount: rows.size,
+      };
     }
-    if (sql.startsWith("INSERT INTO \"items\"")) {
+    if (sql.startsWith('INSERT INTO "items"')) {
       const match = sql.match(/INSERT INTO "items" \((.*?)\) VALUES/);
       const columnList = match?.[1];
       if (!columnList) throw new Error(`Unexpected insert SQL: ${sql}`);
@@ -46,7 +51,7 @@ function createPool(): Pool {
       rows.set(String(row.id), row);
       return { rows: [{ ...row }], rowCount: 1 };
     }
-    if (sql.startsWith("UPDATE \"items\"")) {
+    if (sql.startsWith('UPDATE "items"')) {
       const match = sql.match(/ SET (.+?) WHERE id =/);
       const assignmentList = match?.[1];
       if (!assignmentList) throw new Error(`Unexpected update SQL: ${sql}`);
@@ -64,7 +69,7 @@ function createPool(): Pool {
       }
       return { rows: [{ ...row }], rowCount: 1 };
     }
-    if (sql.startsWith("DELETE FROM \"items\"")) {
+    if (sql.startsWith('DELETE FROM "items"')) {
       const deleted = rows.delete(String(values[0]));
       return { rows: [], rowCount: deleted ? 1 : 0 };
     }
@@ -102,7 +107,9 @@ describe("PostgresCollection", () => {
       version: 1,
     };
     await expect(collection.insertImportedRecord(imported)).resolves.toBe(true);
-    await expect(collection.insertImportedRecord(imported)).resolves.toBe(false);
+    await expect(collection.insertImportedRecord(imported)).resolves.toBe(
+      false,
+    );
     await expect(
       collection.insertImportedRecord({ ...imported, name: "Conflict" }),
     ).rejects.toThrow("conflicts with existing");
@@ -143,5 +150,56 @@ describe("PostgresCollection", () => {
       expect.stringContaining("FROM application_records"),
       ["items"],
     );
+  });
+
+  test("reports invalid stored payload fields without including their values", async () => {
+    const invalidPayload = {
+      id: "not-an-id",
+      name: "",
+      version: 0,
+    };
+    const pool = {
+      query: jest.fn(async () => ({
+        rows: [{ payload: invalidPayload }],
+        rowCount: 1,
+      })),
+    } as unknown as Pool;
+    const collection = new PostgresRecordCollection(pool, {
+      name: "items",
+      schema: itemSchema,
+    });
+
+    await expect(collection.initialize()).rejects.toThrow(
+      "Invalid record in PostgreSQL collection items at row 1; invalid fields: id, name, version",
+    );
+  });
+
+  test("loads gap reports with unknown aggregate counters", async () => {
+    const report = {
+      id: "00000000-0000-4000-8000-000000000001",
+      courseId: "00000000-0000-4000-8000-000000000002",
+      periodStart: "2026-01-01T00:00:00.000Z",
+      periodEnd: "2026-01-31T00:00:00.000Z",
+      totalGapQuestions: null,
+      minCohortSizeUsed: 3,
+      topics: [],
+      otherCount: null,
+      generatedBy: null,
+      createdAt: "2026-01-31T00:00:00.000Z",
+    };
+    const pool = {
+      query: jest.fn(async () => ({
+        rows: [{ payload: report }],
+        rowCount: 1,
+      })),
+    } as unknown as Pool;
+    const collection = new PostgresRecordCollection(pool, {
+      name: "gap_reports",
+      schema: gapReportSchema,
+    });
+
+    await collection.initialize();
+
+    expect(collection.list()).toEqual([report]);
   });
 });

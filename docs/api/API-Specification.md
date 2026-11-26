@@ -92,8 +92,12 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Quizzes       | `POST /quizzes/manual`                                         | Create a source-free coach quiz draft without AI                                        |
 | Quizzes       | `PATCH /quizzes/{id}`                                          | Edit draft or create new version when required                                          |
 | Quizzes       | `POST /quizzes/{id}/publish`                                   | Publish coach quiz                                                                      |
+| Quizzes       | `POST /quizzes/{id}/unpublish`                                 | Return a published coach quiz to draft                                                  |
 | Quizzes       | `GET /courses/{id}/quizzes`                                    | List visible quizzes using caller-specific view                                         |
+| Quizzes       | `GET /courses/{id}/quizzes/performance`                        | Get owner-only quiz and learner performance                                             |
 | Quizzes       | `GET /quizzes/{id}`                                            | Get learner-safe or owner quiz view                                                     |
+| Quizzes       | `POST /quizzes/{id}/attempts/start`                            | Start or resume a learner attempt                                                       |
+| Quizzes       | `PATCH /quizzes/{id}/attempts/{attemptId}`                     | Save caller-owned in-progress answers                                                  |
 | Quizzes       | `POST /quizzes/{id}/attempts`                                  | Submit answers; server scores and returns result                                        |
 | Quizzes       | `GET /me/quiz-attempts`                                        | List caller's attempts                                                                  |
 | Feedback      | `POST /feedback`                                               | Submit/update rating and optional comment                                               |
@@ -342,7 +346,11 @@ RATE_LIMITED` indicates the short-window limit.
 - `POST /quizzes` creates a coach draft. Questions require source chunk IDs
   from the supplied accessible `sourceDocumentIds`. `PATCH /quizzes/{id}`
   requires the current `version`; editing a published quiz with attempts
-  creates a new draft version and supersedes the old one.
+  creates a new draft version and supersedes the old one. Quiz create/update
+  requests may include `dueAt` (nullable ISO timestamp), `maxAttempts`
+  (nullable positive integer), and `showFeedback` (boolean, defaults to true).
+  Due dates and attempt limits are enforced by the API. Course owners may
+  unpublish a published quiz; it becomes a draft and is hidden from learners.
 - `POST /quizzes/manual` creates an unpublished, course-scoped coach draft
   without source documents, retrieval, embeddings, or LLM calls. The course is
   selected by opening its quiz-management page. Drafts may be incomplete;
@@ -355,11 +363,23 @@ RATE_LIMITED` indicates the short-window limit.
   attempt, learner views omit `correctOptionId` and `explanation`, including
   `correctOptionIds` for multiple-choice questions. `POST /quizzes/{id}/attempts`
   accepts `selectedOptionId` for single-answer questions and
-  `selectedOptionIds` for multiple-answer questions. The server requires the
-  exact correct set for a multiple-answer point, stores the attempt, then
-  returns correct answers and explanations. Attempts record the exact quiz
-  version. Learners can list only their own attempts with
-  `GET /me/quiz-attempts`.
+  `selectedOptionIds` for multiple-answer questions. Learners start or resume
+  an attempt with `POST /quizzes/{id}/attempts/start`; answer selections are
+  saved to their in-progress attempt with
+  `PATCH /quizzes/{id}/attempts/{attemptId}`. Submit includes the attempt ID;
+  the server grades answers and records the exact quiz version and
+  start/submission timestamps. Correct answers and explanations are returned
+  only when `showFeedback` is enabled. Learners can list only their own
+  attempts with `GET /me/quiz-attempts` and review a submitted attempt with
+  `GET /me/quiz-attempts/{attemptId}/review`. Review returns the original
+  quiz questions and the learner's selected answers; correct answers and
+  explanations are included only when that quiz version enabled
+  `showFeedback`. Review is limited to the attempt owner and learners with
+  current access to the course.
+- `GET /courses/{id}/quizzes/performance` is restricted to the coach who owns
+  the course. It aggregates completion and scores over currently approved
+  learners and includes per-learner attempt summaries and per-question
+  correctness rates. The coach UI supports sorting/filtering and CSV export.
 - Content-generation requests are subject to the configured per-user
   short-window and shared daily AI request/token quotas. `INSUFFICIENT_MATERIAL`
   means the selected source set could not support generation;

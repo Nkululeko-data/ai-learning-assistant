@@ -51,6 +51,11 @@ export function LearningWorkspacePage() {
     course.status === "active" &&
     (user.role === "learner" || (user.role === "coach" && course.ownerId === user.id)),
   );
+  const requestedTab = searchParams.get("tab");
+  const activeTab: StudyTab =
+    isStudyTab(requestedTab) && !(user?.role === "coach" && requestedTab === "quiz")
+      ? requestedTab
+      : "summary";
   const documentsQuery = useInfiniteQuery({
     queryKey: ["documents", "study", courseId],
     queryFn: ({ pageParam }) =>
@@ -72,12 +77,6 @@ export function LearningWorkspacePage() {
   const canGenerate = Boolean(
     hasStudyAccess && user?.permissions.includes("content:generate"),
   );
-  const requestedTab = searchParams.get("tab");
-  const activeTab: StudyTab =
-    isStudyTab(requestedTab) && !(user?.role === "coach" && requestedTab === "quiz")
-      ? requestedTab
-      : "summary";
-
   if (!courseId) {
     return <ErrorNotice message="A course ID is required." />;
   }
@@ -141,7 +140,9 @@ export function LearningWorkspacePage() {
             <Typography variant="body2" color="text.secondary">
               {user.role === "coach"
                 ? "Select 1–10 ready course documents."
-                : "Select 1–10 ready documents. Only course material you can access and your own personal notes are available."}
+                : activeTab === "quiz"
+                  ? "Select 1–10 ready study documents for your practice quiz. Course material you can access and your own personal notes are available."
+                  : "Select 1–10 ready documents. Only course material you can access and your own personal notes are available."}
             </Typography>
           </Box>
           <Stack

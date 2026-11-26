@@ -52,7 +52,13 @@ export class InsightsService {
       .filter((record) => record.createdAt >= startIso && record.createdAt <= endIso);
     const attempts = this.repository
       .listQuizAttempts(course.id)
-      .filter((record) => record.submittedAt >= startIso && record.submittedAt <= endIso);
+      .filter(
+        (record) =>
+          record.submittedAt !== null &&
+          record.submittedAt !== undefined &&
+          record.submittedAt >= startIso &&
+          record.submittedAt <= endIso,
+      );
 
     const learnerIds = new Set([
       ...events.map((event) => event.userId),

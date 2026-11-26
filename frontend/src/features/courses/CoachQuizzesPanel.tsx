@@ -33,6 +33,7 @@ import {
   getCourseQuiz,
   listCourseQuizzes,
   publishQuiz,
+  unpublishQuiz,
   updateCoachQuiz,
   type CoachQuiz,
   type CourseQuiz,
@@ -40,12 +41,16 @@ import {
 import { listCourseDocuments } from "../../api/documents";
 import { ApiError, friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { CoachQuizPerformancePanel } from "./CoachQuizPerformancePanel";
 
 type CoachQuizQuestion = CoachQuiz["questions"][number];
 type EditableQuiz = Pick<
   CoachQuiz,
   "id" | "version" | "title" | "description" | "status"
 > & {
+  dueAt: string | null;
+  maxAttempts: number | null;
+  showFeedback: boolean;
   questions: CoachQuizQuestion[];
 };
 
@@ -82,6 +87,9 @@ function toEditableQuiz(quiz: CoachQuiz): EditableQuiz {
     title: quiz.title,
     description: quiz.description,
     status: quiz.status,
+    dueAt: quiz.dueAt ?? null,
+    maxAttempts: quiz.maxAttempts ?? null,
+    showFeedback: quiz.showFeedback !== false,
     questions: quiz.questions.map((question) => ({
       ...question,
       options: question.options.map((option) => ({ ...option })),
@@ -91,6 +99,73 @@ function toEditableQuiz(quiz: CoachQuiz): EditableQuiz {
         : {}),
     })),
   };
+}
+
+function dateTimeInputValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+
+function dateTimeInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function QuizSettingsFields({
+  dueAt,
+  maxAttempts,
+  showFeedback,
+  onDueAtChange,
+  onMaxAttemptsChange,
+  onShowFeedbackChange,
+  disabled = false,
+}: {
+  dueAt: string | null;
+  maxAttempts: number | null;
+  showFeedback: boolean;
+  onDueAtChange(value: string | null): void;
+  onMaxAttemptsChange(value: number | null): void;
+  onShowFeedbackChange(value: boolean): void;
+  disabled?: boolean;
+}) {
+  return (
+    <Stack spacing={1}>
+      <TextField
+        label="Due date (optional)"
+        type="datetime-local"
+        value={dateTimeInputValue(dueAt)}
+        onChange={(event) => onDueAtChange(dateTimeInputToIso(event.target.value))}
+        InputLabelProps={{ shrink: true }}
+        disabled={disabled}
+      />
+      <TextField
+        label="Maximum attempts (blank for unlimited)"
+        type="number"
+        value={maxAttempts ?? ""}
+        onChange={(event) => {
+          const value = event.target.value;
+          onMaxAttemptsChange(value ? Number(value) : null);
+        }}
+        inputProps={{ min: 1, step: 1 }}
+        disabled={disabled}
+      />
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={showFeedback}
+            onChange={(event) => onShowFeedbackChange(event.target.checked)}
+            disabled={disabled}
+          />
+        }
+        label="Show correct answers and explanations after submission"
+      />
+    </Stack>
+  );
 }
 
 function questionContent(question: CoachQuizQuestion) {
@@ -236,6 +311,9 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [manualTitle, setManualTitle] = useState("");
   const [manualDescription, setManualDescription] = useState("");
+  const [newDueAt, setNewDueAt] = useState<string | null>(null);
+  const [newMaxAttempts, setNewMaxAttempts] = useState<number | null>(null);
+  const [newShowFeedback, setNewShowFeedback] = useState(true);
   const [topic, setTopic] = useState("");
   const [count, setCount] = useState("5");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
@@ -299,6 +377,9 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
         count: Number(count),
         types,
         difficulty,
+        dueAt: newDueAt,
+        maxAttempts: newMaxAttempts,
+        showFeedback: newShowFeedback,
       });
       if (!isCoachQuiz(generated)) {
         throw new Error("The generated quiz was not returned as a coach draft.");
@@ -320,6 +401,9 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
         courseId,
         title: manualTitle,
         description: manualDescription,
+        dueAt: newDueAt,
+        maxAttempts: newMaxAttempts,
+        showFeedback: newShowFeedback,
         questions: [],
       }),
     onSuccess: async (quiz) => {
@@ -337,6 +421,9 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
         version: input.version,
         title: input.title,
         ...(input.description !== undefined ? { description: input.description } : {}),
+        dueAt: input.dueAt,
+        maxAttempts: input.maxAttempts,
+        showFeedback: input.showFeedback,
         questions: input.questions,
       }),
     onSuccess: async (quiz) => {
@@ -358,6 +445,16 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
       });
     },
   });
+  const unpublishMutation = useMutation({
+    mutationFn: (quiz: CoachQuiz) => unpublishQuiz(quiz.id, quiz.version),
+    onSuccess: async (quiz) => {
+      setDraft(toEditableQuiz(quiz));
+      queryClient.setQueryData(["learning", "course-quiz", quiz.id], quiz);
+      await queryClient.invalidateQueries({
+        queryKey: ["learning", "quizzes", courseId],
+      });
+    },
+  });
 
   const parsedCount = Number(count);
   const validCount =
@@ -367,6 +464,9 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
     currentDraft &&
     (currentDraft.title !== coachQuiz.title ||
       currentDraft.description !== coachQuiz.description ||
+      currentDraft.dueAt !== (coachQuiz.dueAt ?? null) ||
+      currentDraft.maxAttempts !== (coachQuiz.maxAttempts ?? null) ||
+      currentDraft.showFeedback !== (coachQuiz.showFeedback !== false) ||
       JSON.stringify(currentDraft.questions.map(questionContent)) !==
         JSON.stringify(coachQuiz.questions.map(questionContent))),
   );
@@ -470,6 +570,20 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
         return { ...question, correctOptionIds };
       }
       return { ...question, correctOptionId: checked ? optionId : "" };
+    });
+  }
+
+  function updateQuizSettings(
+    update: Partial<Pick<EditableQuiz, "dueAt" | "maxAttempts" | "showFeedback">>,
+  ) {
+    setDraft((current) => {
+      const base =
+        current && current.id === coachQuiz?.id && current.version === coachQuiz.version
+          ? current
+          : coachQuiz
+            ? toEditableQuiz(coachQuiz)
+            : null;
+      return base ? { ...base, ...update } : current;
     });
   }
 
@@ -650,6 +764,15 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                   label="True or false"
                 />
               </Stack>
+              <QuizSettingsFields
+                dueAt={newDueAt}
+                maxAttempts={newMaxAttempts}
+                showFeedback={newShowFeedback}
+                onDueAtChange={setNewDueAt}
+                onMaxAttemptsChange={setNewMaxAttempts}
+                onShowFeedbackChange={setNewShowFeedback}
+                disabled={!canGenerate}
+              />
               {types.length === 0 && (
                 <Alert severity="warning">Choose at least one question type.</Alert>
               )}
@@ -716,6 +839,15 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                 inputProps={{ maxLength: 2000 }}
                 multiline
                 minRows={2}
+                disabled={!canGenerate}
+              />
+              <QuizSettingsFields
+                dueAt={newDueAt}
+                maxAttempts={newMaxAttempts}
+                showFeedback={newShowFeedback}
+                onDueAtChange={setNewDueAt}
+                onMaxAttemptsChange={setNewMaxAttempts}
+                onShowFeedbackChange={setNewShowFeedback}
                 disabled={!canGenerate}
               />
               <Button
@@ -818,6 +950,19 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                   This quiz version has been replaced and is read-only.
                 </Alert>
               )}
+              <QuizSettingsFields
+                dueAt={currentDraft.dueAt}
+                maxAttempts={currentDraft.maxAttempts}
+                showFeedback={currentDraft.showFeedback}
+                onDueAtChange={(dueAt) => updateQuizSettings({ dueAt })}
+                onMaxAttemptsChange={(maxAttempts) =>
+                  updateQuizSettings({ maxAttempts })
+                }
+                onShowFeedbackChange={(showFeedback) =>
+                  updateQuizSettings({ showFeedback })
+                }
+                disabled={coachQuiz.status === "superseded" || preview}
+              />
               <TextField
                 label="Quiz title"
                 value={currentDraft.title}
@@ -1175,6 +1320,16 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
                       : "Publish for learners"}
                   </Button>
                 )}
+                {coachQuiz.status === "published" && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => unpublishMutation.mutate(coachQuiz)}
+                    disabled={draftIsDirty || unpublishMutation.isPending}
+                    sx={{ ml: 1 }}
+                  >
+                    {unpublishMutation.isPending ? "Unpublishing..." : "Unpublish"}
+                  </Button>
+                )}
               </Box>
               {saveMutation.error && (
                 <ErrorNotice message={friendlyMessage(saveMutation.error)} />
@@ -1182,10 +1337,14 @@ export function CoachQuizzesPanel({ courseId, canGenerate }: CoachQuizzesPanelPr
               {publishMutation.error && (
                 <ErrorNotice message={friendlyMessage(publishMutation.error)} />
               )}
+              {unpublishMutation.error && (
+                <ErrorNotice message={friendlyMessage(unpublishMutation.error)} />
+              )}
             </Stack>
           </CardContent>
         </Card>
       )}
+      <CoachQuizPerformancePanel courseId={courseId} />
     </Stack>
   );
 }

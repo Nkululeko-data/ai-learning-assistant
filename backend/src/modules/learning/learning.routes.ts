@@ -17,6 +17,7 @@ import {
   learningListQuerySchema,
   publishContentRequestSchema,
   quizAttemptRequestSchema,
+  quizAttemptProgressRequestSchema,
   updateQuizRequestSchema,
 } from "./learning.schemas";
 import { LearningService } from "./learning.service";
@@ -201,7 +202,19 @@ export function createLearningRouter(
       const input = createQuizRequestSchema.parse(request.body);
       const quiz = await dependencies.learningService.createCoachQuiz(
         requireAuthContext(request),
-        input,
+        {
+          courseId: input.courseId,
+          title: input.title,
+          sourceDocumentIds: input.sourceDocumentIds,
+          questions: input.questions,
+          ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
+          ...(input.maxAttempts !== undefined
+            ? { maxAttempts: input.maxAttempts }
+            : {}),
+          ...(input.showFeedback !== undefined
+            ? { showFeedback: input.showFeedback }
+            : {}),
+        },
         request.requestId,
       );
       response.status(201).json({ data: quiz });
@@ -217,7 +230,21 @@ export function createLearningRouter(
       const input = createManualQuizRequestSchema.parse(request.body);
       const quiz = await dependencies.learningService.createManualCoachQuiz(
         requireAuthContext(request),
-        input,
+        {
+          courseId: input.courseId,
+          title: input.title,
+          questions: input.questions,
+          ...(input.description !== undefined
+            ? { description: input.description }
+            : {}),
+          ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
+          ...(input.maxAttempts !== undefined
+            ? { maxAttempts: input.maxAttempts }
+            : {}),
+          ...(input.showFeedback !== undefined
+            ? { showFeedback: input.showFeedback }
+            : {}),
+        },
         request.requestId,
       );
       response.status(201).json({ data: quiz });
@@ -269,6 +296,13 @@ export function createLearningRouter(
         ...(input.description !== undefined
           ? { description: input.description }
           : {}),
+        ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
+        ...(input.maxAttempts !== undefined
+          ? { maxAttempts: input.maxAttempts }
+          : {}),
+        ...(input.showFeedback !== undefined
+          ? { showFeedback: input.showFeedback }
+          : {}),
         ...(input.questions !== undefined
           ? { questions: input.questions }
           : {}),
@@ -301,6 +335,67 @@ export function createLearningRouter(
   );
 
   router.post(
+    "/quizzes/:quizId/unpublish",
+    authenticate,
+    requirePasswordChangeComplete,
+    requirePermission("quiz:create"),
+    async (request, response) => {
+      const input = publishContentRequestSchema.parse(request.body);
+      const quiz = await dependencies.learningService.unpublishQuiz(
+        requireAuthContext(request),
+        requireUuidParam(request, "quizId"),
+        input.version,
+        request.requestId,
+      );
+      response.status(200).json({ data: quiz });
+    },
+  );
+
+  router.get(
+    "/courses/:courseId/quizzes/performance",
+    authenticate,
+    requirePasswordChangeComplete,
+    async (request, response) => {
+      const quizzes =
+        await dependencies.learningService.getCourseQuizPerformance(
+          requireAuthContext(request),
+          requireUuidParam(request, "courseId"),
+        );
+      response.status(200).json({ data: quizzes });
+    },
+  );
+
+  router.post(
+    "/quizzes/:quizId/attempts/start",
+    authenticate,
+    requirePasswordChangeComplete,
+    async (request, response) => {
+      const attempt = await dependencies.learningService.startQuizAttempt(
+        requireAuthContext(request),
+        requireUuidParam(request, "quizId"),
+      );
+      response.status(201).json({ data: attempt });
+    },
+  );
+
+  router.patch(
+    "/quizzes/:quizId/attempts/:attemptId",
+    authenticate,
+    requirePasswordChangeComplete,
+    async (request, response) => {
+      const input = quizAttemptProgressRequestSchema.parse(request.body);
+      const attempt =
+        await dependencies.learningService.saveQuizAttemptProgress(
+          requireAuthContext(request),
+          requireUuidParam(request, "quizId"),
+          requireUuidParam(request, "attemptId"),
+          input.answers,
+        );
+      response.status(200).json({ data: attempt });
+    },
+  );
+
+  router.post(
     "/quizzes/:quizId/attempts",
     authenticate,
     requirePasswordChangeComplete,
@@ -310,6 +405,7 @@ export function createLearningRouter(
         requireAuthContext(request),
         requireUuidParam(request, "quizId"),
         input.answers,
+        input.attemptId,
       );
       response.status(201).json({ data: result });
     },
@@ -330,6 +426,19 @@ export function createLearningRouter(
         data: page.items,
         ...(page.nextCursor ? { meta: { nextCursor: page.nextCursor } } : {}),
       });
+    },
+  );
+
+  router.get(
+    "/me/quiz-attempts/:attemptId/review",
+    authenticate,
+    requirePasswordChangeComplete,
+    async (request, response) => {
+      const review = await dependencies.learningService.getQuizAttemptReview(
+        requireAuthContext(request),
+        requireUuidParam(request, "attemptId"),
+      );
+      response.status(200).json({ data: review });
     },
   );
 

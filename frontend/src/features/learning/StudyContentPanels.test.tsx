@@ -95,6 +95,53 @@ describe("QuizPanel", () => {
           },
         }),
       ),
+      http.post(`http://localhost:3000/api/v1/quizzes/${quizId}/attempts/start`, () =>
+        HttpResponse.json({
+          data: {
+            id: attemptId,
+            quizId,
+            lineageId,
+            quizVersion: 1,
+            courseId,
+            userId: learnerId,
+            answers: [],
+            score: 0,
+            maxScore: 1,
+            status: "in_progress",
+            startedAt: "2026-11-20T06:00:00.000Z",
+            submittedAt: null,
+          },
+        }),
+      ),
+      http.patch(
+        `http://localhost:3000/api/v1/quizzes/${quizId}/attempts/${attemptId}`,
+        async ({ request }) => {
+          const body = await request.json();
+          const answers =
+            typeof body === "object" &&
+            body !== null &&
+            "answers" in body &&
+            Array.isArray(body.answers)
+              ? body.answers
+              : [];
+          return HttpResponse.json({
+            data: {
+              id: attemptId,
+              quizId,
+              lineageId,
+              quizVersion: 1,
+              courseId,
+              userId: learnerId,
+              answers,
+              score: 0,
+              maxScore: 1,
+              status: "in_progress",
+              startedAt: "2026-11-20T06:00:00.000Z",
+              submittedAt: null,
+            },
+          });
+        },
+      ),
       http.post(
         `http://localhost:3000/api/v1/quizzes/${quizId}/attempts`,
         async ({ request }) => {
@@ -136,7 +183,13 @@ describe("QuizPanel", () => {
     );
 
     renderQuizPanel();
-    await user.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await screen.findByRole("heading", { name: "Coach quizzes" });
+    expect(
+      screen.getAllByRole("heading", { name: "My practice quizzes" }),
+    ).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Set up quiz" }));
+    await user.click(screen.getByRole("button", { name: "Generate practice quiz" }));
+    await user.click(await screen.findByRole("button", { name: "Start quiz" }));
     expect(await screen.findByText("Which choice is correct?")).toBeVisible();
     expect(screen.queryByText("PRIVATE_EXPLANATION")).toBeNull();
     expect(screen.queryByText("option-b")).toBeNull();
@@ -144,10 +197,12 @@ describe("QuizPanel", () => {
     await user.click(screen.getByRole("radio", { name: "Choice B" }));
     await user.click(screen.getByRole("button", { name: "Submit answers" }));
 
+    expect(await screen.findByRole("heading", { name: "Quiz review" })).toBeVisible();
     expect(await screen.findByText("Score: 1 of 1")).toBeVisible();
     expect(await screen.findByText("PRIVATE_EXPLANATION")).toBeVisible();
     await waitFor(() => {
       expect(submitHandler).toHaveBeenCalledWith({
+        attemptId,
         answers: [{ questionId: "question-1", selectedOptionId: "option-b" }],
       });
     });
@@ -190,6 +245,53 @@ describe("QuizPanel", () => {
       http.get(`http://localhost:3000/api/v1/quizzes/${quizId}`, () =>
         HttpResponse.json({ data: quiz }),
       ),
+      http.post(`http://localhost:3000/api/v1/quizzes/${quizId}/attempts/start`, () =>
+        HttpResponse.json({
+          data: {
+            id: attemptId,
+            quizId,
+            lineageId,
+            quizVersion: 1,
+            courseId,
+            userId: learnerId,
+            answers: [],
+            score: 0,
+            maxScore: 1,
+            status: "in_progress",
+            startedAt: "2026-11-20T06:00:00.000Z",
+            submittedAt: null,
+          },
+        }),
+      ),
+      http.patch(
+        `http://localhost:3000/api/v1/quizzes/${quizId}/attempts/${attemptId}`,
+        async ({ request }) => {
+          const body = await request.json();
+          const answers =
+            typeof body === "object" &&
+            body !== null &&
+            "answers" in body &&
+            Array.isArray(body.answers)
+              ? body.answers
+              : [];
+          return HttpResponse.json({
+            data: {
+              id: attemptId,
+              quizId,
+              lineageId,
+              quizVersion: 1,
+              courseId,
+              userId: learnerId,
+              answers,
+              score: 0,
+              maxScore: 1,
+              status: "in_progress",
+              startedAt: "2026-11-20T06:00:00.000Z",
+              submittedAt: null,
+            },
+          });
+        },
+      ),
       http.post(
         `http://localhost:3000/api/v1/quizzes/${quizId}/attempts`,
         async ({ request }) => {
@@ -231,10 +333,7 @@ describe("QuizPanel", () => {
     );
 
     renderQuizPanel();
-    await user.click(
-      await screen.findByRole("combobox", { name: "Available quizzes" }),
-    );
-    await user.click(await screen.findByRole("option", { name: /Database quiz/ }));
+    await user.click(await screen.findByRole("button", { name: "Start quiz" }));
     expect(await screen.findByText("Select all that apply.")).toBeVisible();
     await user.click(screen.getByRole("checkbox", { name: "PostgreSQL" }));
     await user.click(screen.getByRole("checkbox", { name: "MongoDB" }));
@@ -243,6 +342,7 @@ describe("QuizPanel", () => {
     expect(await screen.findByText("Score: 1 of 1")).toBeVisible();
     await waitFor(() => {
       expect(submitHandler).toHaveBeenCalledWith({
+        attemptId,
         answers: [
           {
             questionId: "question-multiple",

@@ -131,29 +131,29 @@ async function createLearningService(llmResponse: string | string[]): Promise<{
   const retrievalService = new RetrievalService(
     repository,
     createTestChunkRepository(async () => ({
-        header: {
-          documentId,
-          courseId,
-          ownerId: coachId,
-          scope: "course",
-          embeddingModel: "gemini-embedding-001",
-          dimension: 2,
-          chunkCount: 1,
-          createdAt,
+      header: {
+        documentId,
+        courseId,
+        ownerId: coachId,
+        scope: "course",
+        embeddingModel: "gemini-embedding-001",
+        dimension: 2,
+        chunkCount: 1,
+        createdAt,
+      },
+      chunks: [
+        {
+          id: chunkId,
+          chunkIndex: 0,
+          tokenEstimate: 12,
+          pageStart: 1,
+          pageEnd: 1,
+          section: "Introduction",
+          text: "A database is an organized collection of data.",
+          embedding: bytes.toString("base64"),
         },
-        chunks: [
-          {
-            id: chunkId,
-            chunkIndex: 0,
-            tokenEstimate: 12,
-            pageStart: 1,
-            pageEnd: 1,
-            section: "Introduction",
-            text: "A database is an organized collection of data.",
-            embedding: bytes.toString("base64"),
-          },
-        ],
-      })),
+      ],
+    })),
     "gemini-embedding-001",
     2,
   );
@@ -489,6 +489,9 @@ describe("LearningService", () => {
       },
       "request-3",
     );
+    expect(
+      (await service.listQuizzes(learner, courseId, 50)).items,
+    ).toHaveLength(0);
     const published = await service.publishQuiz(
       coach,
       draft.id,
@@ -496,6 +499,11 @@ describe("LearningService", () => {
       "request-4",
     );
     expect(published.version).toBe(draft.version);
+    expect(
+      (await service.listQuizzes(learner, courseId, 50)).items.map(
+        (quiz) => quiz.id,
+      ),
+    ).toContain(published.id);
     const learnerView = await service.getQuiz(learner, published.id);
     expect(JSON.stringify(learnerView)).not.toContain("correctOptionId");
     expect(JSON.stringify(learnerView)).not.toContain("explanation");
@@ -516,6 +524,30 @@ describe("LearningService", () => {
         "The source defines a database as an organized collection of data.",
       correct: true,
     });
+    const review = await service.getQuizAttemptReview(
+      learner,
+      result.attempt.id,
+    );
+    expect(review).toMatchObject({
+      quizTitle: "Database quiz",
+      showFeedback: true,
+      questions: [
+        {
+          prompt: "What is a database?",
+          selectedOptionIds: ["a"],
+          correctOptionIds: ["a"],
+          correct: true,
+          explanation:
+            "The source defines a database as an organized collection of data.",
+        },
+      ],
+    });
+    await expect(
+      service.getQuizAttemptReview(
+        { ...learner, id: "807d4918-a7f5-4db4-b857-97d8176e305b" },
+        result.attempt.id,
+      ),
+    ).rejects.toThrow("Quiz attempt not found");
 
     const newDraft = await service.updateQuiz(
       coach,
@@ -672,5 +704,115 @@ describe("LearningService", () => {
     expect(partialAttempt.attempt).toMatchObject({ score: 1, maxScore: 2 });
     expect(partialAttempt.results[0]).toMatchObject({ correct: false });
     expect(primary.calls).toHaveLength(0);
+  });
+
+  test("tracks attempt time, enforces limits, hides configured feedback, and unpublishes", async () => {
+    const { service } = await createLearningService("{}");
+    const draft = await service.createManualCoachQuiz(
+      coach,
+      {
+        courseId,
+        title: "Limited assessment",
+        maxAttempts: 1,
+        showFeedback: false,
+        questions: [],
+      },
+      "request-limited-create",
+    );
+    const editable = await service.updateQuiz(
+      coach,
+      draft.id,
+      {
+        version: draft.version,
+        questions: [
+          {
+            type: "mcq",
+            prompt: "Choose the correct option.",
+            options: [
+              { id: "correct", text: "Correct" },
+              { id: "wrong", text: "Wrong" },
+            ],
+            correctOptionId: "correct",
+          },
+        ],
+      },
+      "request-limited-edit",
+    );
+    const published = await service.publishQuiz(
+      coach,
+      editable.id,
+      editable.version,
+      "request-limited-publish",
+    );
+    const questionId = published.questions[0]?.id;
+    if (!questionId) throw new Error("Expected quiz question");
+
+    const started = await service.startQuizAttempt(learner, published.id);
+    expect(started).toMatchObject({
+      status: "in_progress",
+      submittedAt: null,
+      answers: [],
+    });
+    await expect(
+      service.getQuizAttemptReview(learner, started.id),
+    ).rejects.toThrow("Quiz attempt not found");
+    const savedProgress = await service.saveQuizAttemptProgress(
+      learner,
+      published.id,
+      started.id,
+      [{ questionId, selectedOptionId: "correct" }],
+    );
+    expect(savedProgress.answers).toEqual([
+      { questionId, selectedOptionId: "correct" },
+    ]);
+    const resumedQuiz = await service.getQuiz(learner, published.id);
+    if (!("attemptSummary" in resumedQuiz)) {
+      throw new Error("Expected learner quiz summary");
+    }
+    expect(resumedQuiz.attemptSummary).toMatchObject({
+      status: "in_progress",
+      attemptId: started.id,
+      answers: [{ questionId, selectedOptionId: "correct" }],
+    });
+    const submitted = await service.submitQuizAttempt(
+      learner,
+      published.id,
+      [{ questionId, selectedOptionId: "correct" }],
+      started.id,
+    );
+    expect(submitted.attempt.status).toBe("submitted");
+    expect(submitted.attempt.answers).toEqual([
+      { questionId, selectedOptionId: "correct" },
+    ]);
+    expect(service.listMyQuizAttempts(learner, 50).items[0]?.answers).toEqual([
+      { questionId, selectedOptionId: "correct" },
+    ]);
+    expect(
+      Date.parse(submitted.attempt.submittedAt ?? ""),
+    ).toBeGreaterThanOrEqual(Date.parse(started.startedAt));
+    expect(submitted.results).toEqual([]);
+    const review = await service.getQuizAttemptReview(
+      learner,
+      submitted.attempt.id,
+    );
+    expect(review.showFeedback).toBe(false);
+    expect(review.questions[0]?.selectedOptionIds).toEqual(["correct"]);
+    expect(review.questions[0]).not.toHaveProperty("correctOptionIds");
+    expect(review.questions[0]).not.toHaveProperty("correct");
+    expect(review.questions[0]).not.toHaveProperty("explanation");
+    await expect(
+      service.startQuizAttempt(learner, published.id),
+    ).rejects.toThrow("maximum number of quiz attempts");
+
+    const unpublished = await service.unpublishQuiz(
+      coach,
+      published.id,
+      published.version,
+      "request-limited-unpublish",
+    );
+    expect(unpublished.status).toBe("draft");
+    expect(
+      (await service.listQuizzes(learner, courseId, 50)).items,
+    ).toHaveLength(0);
   });
 });

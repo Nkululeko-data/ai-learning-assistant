@@ -317,6 +317,9 @@ export const quizSchema = z
     visibility: z.enum(["course", "private"]),
     ownerId: idSchema.nullable(),
     status: z.enum(["draft", "published", "superseded"]),
+    dueAt: timestampSchema.nullable().optional(),
+    maxAttempts: z.number().int().positive().nullable().optional(),
+    showFeedback: z.boolean().optional(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000).optional(),
     questions: z.array(quizQuestionSchema).max(50),
@@ -420,22 +423,23 @@ export const quizAttemptSchema = z
           .object({
             questionId: z.string().min(1).max(100),
             selectedOptionId: z.string().min(1).max(40),
-            correct: z.boolean(),
+            correct: z.boolean().optional(),
           })
           .strict(),
         z
           .object({
             questionId: z.string().min(1).max(100),
             selectedOptionIds: z.array(z.string().min(1).max(40)).min(1).max(5),
-            correct: z.boolean(),
+            correct: z.boolean().optional(),
           })
           .strict(),
       ]),
     ),
     score: z.number().int().nonnegative(),
     maxScore: z.number().int().positive(),
+    status: z.enum(["in_progress", "submitted"]).optional(),
     startedAt: timestampSchema,
-    submittedAt: timestampSchema,
+    submittedAt: timestampSchema.nullable().optional(),
   })
   .strict();
 
@@ -510,10 +514,10 @@ export const gapReportSchema = z
     courseId: idSchema,
     periodStart: timestampSchema,
     periodEnd: timestampSchema,
-    totalGapQuestions: z.number().int().nonnegative(),
+    totalGapQuestions: z.number().int().nonnegative().nullable(),
     minCohortSizeUsed: z.number().int().positive(),
     topics: z.array(gapTopicSchema).max(50),
-    otherCount: z.number().int().nonnegative(),
+    otherCount: z.number().int().nonnegative().nullable(),
     generatedBy: z
       .object({
         executionId: idSchema,

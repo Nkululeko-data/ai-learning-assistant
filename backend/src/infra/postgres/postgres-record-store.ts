@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { ZodError } from "zod";
 import { ConflictError, NotFoundError } from "../../common/errors/app-error";
 import { AsyncMutex } from "../jsonstore/async-mutex";
 import type {
@@ -48,9 +49,15 @@ export class PostgresRecordCollection<T extends { id: string }>
       let record: T;
       try {
         record = this.definition.schema.parse(row.payload);
-      } catch {
+      } catch (error) {
+        const validationDetails =
+          error instanceof ZodError
+            ? error.issues
+                .map((issue) => issue.path.join(".") || "<root>")
+                .join(", ")
+            : "unknown schema validation error";
         throw new Error(
-          `Invalid record in PostgreSQL collection ${this.definition.name} at row ${index + 1}`,
+          `Invalid record in PostgreSQL collection ${this.definition.name} at row ${index + 1}; invalid fields: ${validationDetails}`,
         );
       }
       if (loaded.has(record.id)) {
@@ -192,7 +199,9 @@ export class PostgresRecordCollection<T extends { id: string }>
     try {
       await client.query("BEGIN");
       try {
-        const removedIds = [...previous.keys()].filter((id) => !records.has(id));
+        const removedIds = [...previous.keys()].filter(
+          (id) => !records.has(id),
+        );
         if (removedIds.length > 0) {
           await client.query(
             `DELETE FROM application_records
@@ -203,7 +212,8 @@ export class PostgresRecordCollection<T extends { id: string }>
 
         for (const [id, record] of records) {
           const prior = previous.get(id);
-          if (prior && JSON.stringify(prior) === JSON.stringify(record)) continue;
+          if (prior && JSON.stringify(prior) === JSON.stringify(record))
+            continue;
           await client.query(
             `INSERT INTO application_records(collection_name, id, payload)
              VALUES ($1, $2, $3::jsonb)

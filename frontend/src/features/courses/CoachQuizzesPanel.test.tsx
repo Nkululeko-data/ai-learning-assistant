@@ -15,6 +15,12 @@ function renderPanel() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  server.use(
+    http.get(
+      `http://localhost:3000/api/v1/courses/${courseId}/quizzes/performance`,
+      () => HttpResponse.json({ data: [] }),
+    ),
+  );
   return render(
     <QueryClientProvider client={queryClient}>
       <CoachQuizzesPanel courseId={courseId} canGenerate />
@@ -118,6 +124,9 @@ describe("CoachQuizzesPanel", () => {
       courseId,
       title: "Database quiz",
       description: "Select every correct answer.",
+      dueAt: null,
+      maxAttempts: null,
+      showFeedback: true,
       questions: [],
     });
 

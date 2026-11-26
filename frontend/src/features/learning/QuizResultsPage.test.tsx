@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import { QuizResultsPage } from "./QuizResultsPage";
 
 const userId = "307d4918-a7f5-4db4-b857-97d8176e305b";
 const courseId = "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7911";
+const attemptId = "407d4918-a7f5-4db4-b857-97d8176e305b";
 
 function createAuthContext(user: AuthenticatedUser): AuthContextValue {
   return {
@@ -41,12 +42,14 @@ describe("QuizResultsPage", () => {
         HttpResponse.json({
           data: [
             {
-              id: "407d4918-a7f5-4db4-b857-97d8176e305b",
+              id: attemptId,
               quizId: "507d4918-a7f5-4db4-b857-97d8176e305b",
               lineageId: "607d4918-a7f5-4db4-b857-97d8176e305b",
               quizVersion: 1,
               courseId,
               userId,
+              quizTitle: "Database basics",
+              quizOrigin: "coach",
               answers: [
                 {
                   questionId: "question-1",
@@ -66,6 +69,36 @@ describe("QuizResultsPage", () => {
             },
           ],
         }),
+      ),
+      http.get(
+        `http://localhost:3000/api/v1/me/quiz-attempts/${attemptId}/review`,
+        () =>
+          HttpResponse.json({
+            data: {
+              attemptId,
+              courseId,
+              quizTitle: "Database basics",
+              score: 1,
+              maxScore: 2,
+              submittedAt: "2026-01-01T10:05:00.000Z",
+              showFeedback: true,
+              questions: [
+                {
+                  questionId: "question-1",
+                  type: "mcq",
+                  prompt: "What is a database?",
+                  options: [
+                    { id: "option-1", text: "An organized collection of data" },
+                    { id: "option-2", text: "A programming language" },
+                  ],
+                  selectedOptionIds: ["option-1"],
+                  correctOptionIds: ["option-1"],
+                  correct: true,
+                  explanation: "Databases organize data.",
+                },
+              ],
+            },
+          }),
       ),
     );
     const user: AuthenticatedUser = {
@@ -98,5 +131,9 @@ describe("QuizResultsPage", () => {
       "href",
       `/courses/${courseId}`,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Review answers" }));
+    expect(await screen.findByText("What is a database?")).toBeVisible();
+    expect(screen.getByText("An organized collection of data")).toBeVisible();
+    expect(screen.getByText("Databases organize data.")).toBeVisible();
   });
 });

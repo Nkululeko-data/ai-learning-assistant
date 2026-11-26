@@ -247,9 +247,8 @@ export function getCourseNavigation(
   }
 
   const canUseQuiz =
-    user.role === "learner"
-      ? user.permissions.includes("content:generate")
-      : canEditLessons && user.permissions.includes("quiz:create");
+    user.role === "learner" ||
+    (canEditLessons && user.permissions.includes("quiz:create"));
   if (canUseQuiz) {
     items.push({
       roles: learnerAndCoachRoles,

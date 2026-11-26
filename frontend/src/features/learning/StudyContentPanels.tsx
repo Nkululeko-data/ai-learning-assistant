@@ -30,6 +30,7 @@ import {
   generateFlashcards,
   generateQuiz,
   generateSummary,
+  type CourseQuiz,
   getFlashcardSet,
   getLearnerQuiz,
   getSummary,
@@ -38,6 +39,8 @@ import {
   listCourseSummaries,
   publishFlashcards,
   publishSummary,
+  saveQuizAttemptProgress,
+  startQuizAttempt,
   submitQuizAttempt,
   type FlashcardSet,
   type LearnerQuiz,
@@ -427,11 +430,13 @@ export function QuizPanel({
 }) {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState("");
+  const [generatorOpen, setGeneratorOpen] = useState(false);
   const [count, setCount] = useState("5");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [types, setTypes] = useState<Array<"mcq" | "true_false">>(["mcq"]);
   const [quizState, setQuizState] = useState<{
     quizId: string;
+    attemptId: string | null;
     answers: Record<string, string[]>;
     result: QuizAttemptResult | null;
   } | null>(null);
@@ -462,24 +467,69 @@ export function QuizPanel({
       }),
     onSuccess: async (quiz) => {
       setSelectedId(quiz.id);
-      setQuizState({ quizId: quiz.id, answers: {}, result: null });
+      setGeneratorOpen(false);
+      setQuizState(null);
       await queryClient.invalidateQueries({
         queryKey: ["learning", "quizzes", courseId],
       });
     },
   });
-  const attemptMutation = useMutation({
+  const startMutation = useMutation({
+    mutationFn: startQuizAttempt,
+    onSuccess: async (attempt) => {
+      setSelectedId(attempt.quizId);
+      setQuizState({
+        quizId: attempt.quizId,
+        attemptId: attempt.id,
+        answers: Object.fromEntries(
+          attempt.answers.map((answer) => [
+            answer.questionId,
+            "selectedOptionIds" in answer
+              ? answer.selectedOptionIds
+              : [answer.selectedOptionId],
+          ]),
+        ),
+        result: null,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["learning", "quiz", attempt.quizId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["learning", "quizzes", courseId],
+      });
+    },
+  });
+  const saveProgressMutation = useMutation({
     mutationFn: (input: {
       quizId: string;
+      attemptId: string;
       answers: Array<
         | { questionId: string; selectedOptionId: string }
         | { questionId: string; selectedOptionIds: string[] }
       >;
-    }) => submitQuizAttempt(input.quizId, input.answers),
-    onSuccess: (result, input) =>
+    }) => saveQuizAttemptProgress(input.quizId, input.attemptId, input.answers),
+  });
+  const attemptMutation = useMutation({
+    mutationFn: (input: {
+      quizId: string;
+      attemptId: string;
+      answers: Array<
+        | { questionId: string; selectedOptionId: string }
+        | { questionId: string; selectedOptionIds: string[] }
+      >;
+    }) => submitQuizAttempt(input.quizId, input.answers, input.attemptId),
+    onSuccess: async (result, input) => {
       setQuizState((current) =>
         current?.quizId === input.quizId ? { ...current, result } : current,
-      ),
+      );
+      await queryClient.invalidateQueries({
+        queryKey: ["learning", "quizzes", courseId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["learning", "quiz", input.quizId],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["quiz-attempts", "mine"] });
+    },
   });
   const quizzes = quizzesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const availableQuizzes = courseWideOnly
@@ -487,6 +537,14 @@ export function QuizPanel({
         (item) => item.visibility === "course" && item.status === "published",
       )
     : quizzes;
+  const coachQuizzes = availableQuizzes.filter(
+    (item) => item.origin === "coach" && item.visibility === "course",
+  );
+  const practiceQuizzes = courseWideOnly
+    ? []
+    : availableQuizzes.filter(
+        (item) => item.origin === "learner_generated" && item.visibility === "private",
+      );
   const quiz: LearnerQuiz | undefined = selectedQuizQuery.data;
   const parsedCount = Number(count);
   const validCount =
@@ -494,9 +552,22 @@ export function QuizPanel({
   const currentState: NonNullable<typeof quizState> =
     quizState && quizState.quizId === quiz?.id
       ? quizState
-      : { quizId: quiz?.id ?? "", answers: {}, result: null };
+      : {
+          quizId: quiz?.id ?? "",
+          attemptId: quiz?.attemptSummary?.attemptId ?? null,
+          answers: Object.fromEntries(
+            (quiz?.attemptSummary?.answers ?? []).map((answer) => [
+              answer.questionId,
+              "selectedOptionIds" in answer
+                ? answer.selectedOptionIds
+                : [answer.selectedOptionId],
+            ]),
+          ),
+          result: null,
+        };
   const canSubmit = Boolean(
     quiz &&
+    currentState.attemptId &&
     quiz.status === "published" &&
     quiz.questions.length > 0 &&
     quiz.questions.every(
@@ -515,108 +586,276 @@ export function QuizPanel({
     });
   }
 
+  function updateAnswer(questionId: string, selectedOptionIds: string[]) {
+    const answers = {
+      ...currentState.answers,
+      [questionId]: selectedOptionIds,
+    };
+    setQuizState({
+      quizId: quiz?.id ?? "",
+      attemptId: currentState.attemptId,
+      answers,
+      result: null,
+    });
+    if (!quiz || !currentState.attemptId) return;
+    const submittedAnswers: Array<
+      | { questionId: string; selectedOptionId: string }
+      | { questionId: string; selectedOptionIds: string[] }
+    > = [];
+    for (const question of quiz.questions) {
+      const selected = answers[question.id] ?? [];
+      if (selected.length === 0) continue;
+      if (question.type === "multiple_choice") {
+        submittedAnswers.push({
+          questionId: question.id,
+          selectedOptionIds: selected,
+        });
+      } else {
+        submittedAnswers.push({
+          questionId: question.id,
+          selectedOptionId: selected[0] ?? "",
+        });
+      }
+    }
+    saveProgressMutation.mutate({
+      quizId: quiz.id,
+      attemptId: currentState.attemptId,
+      answers: submittedAnswers,
+    });
+  }
+
+  function renderQuizCard(item: CourseQuiz) {
+    const attemptSummary = "attemptSummary" in item ? item.attemptSummary : undefined;
+    const status = attemptSummary?.status ?? "not_started";
+    const attemptsUsed = attemptSummary?.attemptCount ?? 0;
+    const limitReached =
+      item.maxAttempts !== undefined &&
+      item.maxAttempts !== null &&
+      attemptsUsed >= item.maxAttempts &&
+      status !== "in_progress";
+    return (
+      <Card key={item.id} variant="outlined">
+        <CardContent>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "center" }}
+            spacing={1.5}
+          >
+            <Box>
+              <Typography component="h4" variant="subtitle1" fontWeight={700}>
+                {item.title}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {item.questions.length} questions
+                {item.dueAt
+                  ? ` · Due ${new Date(item.dueAt).toLocaleString()}`
+                  : " · No due date"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Status:{" "}
+                {status === "not_started"
+                  ? "Not started"
+                  : status === "in_progress"
+                    ? "In progress"
+                    : "Completed"}
+                {attemptSummary?.bestScorePercent !== null &&
+                attemptSummary?.bestScorePercent !== undefined
+                  ? ` · Best score ${attemptSummary.bestScorePercent}%`
+                  : ""}
+                {item.maxAttempts !== undefined && item.maxAttempts !== null
+                  ? ` · ${Math.max(0, item.maxAttempts - attemptsUsed)} attempts left`
+                  : ""}
+              </Typography>
+            </Box>
+            <Button
+              variant="outlined"
+              onClick={() => startMutation.mutate(item.id)}
+              disabled={startMutation.isPending || limitReached}
+            >
+              {limitReached
+                ? "Attempts used"
+                : status === "in_progress"
+                  ? "Continue quiz"
+                  : status === "completed"
+                    ? "Try again"
+                    : "Start quiz"}
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Stack spacing={2} component="section" aria-labelledby="quiz-panel-title">
       <Typography id="quiz-panel-title" component="h2" variant="h5">
         {title}
       </Typography>
       {showGenerator && (
-        <>
-          <Stack spacing={1.5}>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1.5}
-              alignItems={{ xs: "stretch", sm: "center" }}
-            >
-              <TextField
-                label="Number of questions"
-                type="number"
-                size="small"
-                value={count}
-                onChange={(event) => setCount(event.target.value)}
-                inputProps={{ min: 1, max: 50, step: 1 }}
-                sx={{ maxWidth: 200 }}
-              />
-              <FormControl size="small" sx={{ minWidth: 160 }}>
-                <InputLabel id="quiz-difficulty-label">Difficulty</InputLabel>
-                <Select
-                  labelId="quiz-difficulty-label"
-                  label="Difficulty"
-                  value={difficulty}
-                  onChange={(event) =>
-                    setDifficulty(event.target.value as "easy" | "medium" | "hard")
-                  }
+        <Card variant="outlined">
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                justifyContent="space-between"
+                alignItems={{ xs: "stretch", sm: "center" }}
+                spacing={1.5}
+              >
+                <Box>
+                  <Typography component="h3" variant="h6">
+                    Create a practice quiz
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Generate questions from selected study material.
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  aria-expanded={generatorOpen}
+                  aria-controls="practice-quiz-builder-controls"
+                  onClick={() => setGeneratorOpen((open) => !open)}
                 >
-                  <MenuItem value="easy">Easy</MenuItem>
-                  <MenuItem value="medium">Medium</MenuItem>
-                  <MenuItem value="hard">Hard</MenuItem>
-                </Select>
-              </FormControl>
+                  {generatorOpen ? "Hide settings" : "Set up quiz"}
+                </Button>
+              </Stack>
+              {generatorOpen && (
+                <Stack id="practice-quiz-builder-controls" spacing={1.5}>
+                  {!canGenerate && (
+                    <Alert severity="warning">
+                      AI practice generation requires content-generation permission. You
+                      can still take published coach quizzes.
+                    </Alert>
+                  )}
+                  {selectedDocumentIds.length === 0 && (
+                    <Alert severity="info">
+                      Select at least one study document before generating a practice
+                      quiz.
+                    </Alert>
+                  )}
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1.5}
+                    alignItems={{ xs: "stretch", sm: "center" }}
+                  >
+                    <TextField
+                      label="Number of questions"
+                      type="number"
+                      size="small"
+                      value={count}
+                      onChange={(event) => setCount(event.target.value)}
+                      inputProps={{ min: 1, max: 50, step: 1 }}
+                      sx={{ maxWidth: 200 }}
+                    />
+                    <FormControl size="small" sx={{ minWidth: 160 }}>
+                      <InputLabel id="quiz-difficulty-label">Difficulty</InputLabel>
+                      <Select
+                        labelId="quiz-difficulty-label"
+                        label="Difficulty"
+                        value={difficulty}
+                        onChange={(event) =>
+                          setDifficulty(
+                            event.target.value as "easy" | "medium" | "hard",
+                          )
+                        }
+                      >
+                        <MenuItem value="easy">Easy</MenuItem>
+                        <MenuItem value="medium">Medium</MenuItem>
+                        <MenuItem value="hard">Hard</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                  <Stack direction="row" spacing={2}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={types.includes("mcq")}
+                          onChange={(event) => toggleType("mcq", event.target.checked)}
+                        />
+                      }
+                      label="Multiple choice"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={types.includes("true_false")}
+                          onChange={(event) =>
+                            toggleType("true_false", event.target.checked)
+                          }
+                        />
+                      }
+                      label="True or false"
+                    />
+                  </Stack>
+                  {types.length === 0 && (
+                    <Alert severity="warning">Choose at least one question type.</Alert>
+                  )}
+                  <Button
+                    variant="contained"
+                    disabled={
+                      !canGenerate ||
+                      selectedDocumentIds.length === 0 ||
+                      !validCount ||
+                      types.length === 0 ||
+                      generateMutation.isPending
+                    }
+                    onClick={() => generateMutation.mutate()}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {generateMutation.isPending
+                      ? "Generating quiz..."
+                      : "Generate practice quiz"}
+                  </Button>
+                  {generateMutation.error && (
+                    <ErrorNotice message={friendlyMessage(generateMutation.error)} />
+                  )}
+                </Stack>
+              )}
             </Stack>
-            <Stack direction="row" spacing={2}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={types.includes("mcq")}
-                    onChange={(event) => toggleType("mcq", event.target.checked)}
-                  />
-                }
-                label="Multiple choice"
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={types.includes("true_false")}
-                    onChange={(event) => toggleType("true_false", event.target.checked)}
-                  />
-                }
-                label="True or false"
-              />
-            </Stack>
-            {types.length === 0 && (
-              <Alert severity="warning">Choose at least one question type.</Alert>
-            )}
-            <Button
-              variant="contained"
-              disabled={
-                !canGenerate ||
-                selectedDocumentIds.length === 0 ||
-                !validCount ||
-                types.length === 0 ||
-                generateMutation.isPending
-              }
-              onClick={() => generateMutation.mutate()}
-              sx={{ alignSelf: "flex-start" }}
-            >
-              {generateMutation.isPending ? "Generating quiz..." : "Generate quiz"}
-            </Button>
-          </Stack>
-          {generateMutation.error && (
-            <ErrorNotice message={friendlyMessage(generateMutation.error)} />
-          )}
-        </>
+          </CardContent>
+        </Card>
       )}
-      <SavedContentSelect
-        label={courseWideOnly ? "Published course quizzes" : "Available quizzes"}
-        emptyMessage={
-          courseWideOnly
-            ? "No published coach quizzes are available for this course yet."
-            : "No quizzes are available yet."
-        }
-        value={selectedId}
-        onChange={(value) => {
-          setSelectedId(value);
-          setQuizState(null);
-        }}
-        items={availableQuizzes.map((item) => ({
-          id: item.id,
-          label: `${item.title} · v${item.version}`,
-        }))}
-        isLoading={quizzesQuery.isLoading}
-        isError={quizzesQuery.isError}
-        error={quizzesQuery.error}
-        onRetry={() => void quizzesQuery.refetch()}
-      />
+      {quizzesQuery.isLoading && <LinearProgress aria-label="Loading course quizzes" />}
+      {quizzesQuery.isError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(quizzesQuery.error)} />
+          <Button onClick={() => void quizzesQuery.refetch()}>Retry quizzes</Button>
+        </Stack>
+      )}
+      {quizzesQuery.isSuccess && (
+        <Stack spacing={2}>
+          <Box>
+            <Typography component="h3" variant="h6">
+              Coach quizzes
+            </Typography>
+            {coachQuizzes.length > 0 ? (
+              <Stack spacing={1.5} sx={{ mt: 1 }}>
+                {coachQuizzes.map(renderQuizCard)}
+              </Stack>
+            ) : (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                No published coach quizzes are available for this course yet.
+              </Alert>
+            )}
+          </Box>
+          {!courseWideOnly && (
+            <Box>
+              <Typography component="h3" variant="h6">
+                My practice quizzes
+              </Typography>
+              {practiceQuizzes.length > 0 ? (
+                <Stack spacing={1.5} sx={{ mt: 1 }}>
+                  {practiceQuizzes.map(renderQuizCard)}
+                </Stack>
+              ) : (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  No practice quizzes yet. Generate one from selected study material.
+                </Alert>
+              )}
+            </Box>
+          )}
+        </Stack>
+      )}
       {quizzesQuery.hasNextPage && (
         <Button
           onClick={() => void quizzesQuery.fetchNextPage()}
@@ -629,6 +868,9 @@ export function QuizPanel({
       {quizzesQuery.isFetchNextPageError && (
         <ErrorNotice message={friendlyMessage(quizzesQuery.error)} />
       )}
+      {startMutation.error && (
+        <ErrorNotice message={friendlyMessage(startMutation.error)} />
+      )}
       {selectedQuizQuery.isLoading && <LinearProgress aria-label="Loading quiz" />}
       {selectedQuizQuery.isError && (
         <ErrorNotice message={friendlyMessage(selectedQuizQuery.error)} />
@@ -636,188 +878,217 @@ export function QuizPanel({
       {attemptMutation.error && (
         <ErrorNotice message={friendlyMessage(attemptMutation.error)} />
       )}
+      {saveProgressMutation.error && (
+        <ErrorNotice message={friendlyMessage(saveProgressMutation.error)} />
+      )}
       {quiz && (
-        <Stack spacing={2}>
-          <Box>
-            <Typography component="h3" variant="h6">
-              {quiz.title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {quiz.questions.length} questions
-            </Typography>
-            {quiz.description && (
-              <Typography sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
-                {quiz.description}
-              </Typography>
-            )}
-          </Box>
-          {currentState.result && (
-            <Alert severity="success" role="status">
-              Score: {currentState.result.attempt.score} of{" "}
-              {currentState.result.attempt.maxScore}
-            </Alert>
-          )}
-          {quiz.status !== "published" && (
-            <Alert severity="info">
-              This quiz is not published and cannot be submitted.
-            </Alert>
-          )}
-          {quiz.questions.map((question, index) => {
-            const result = resultsByQuestion.get(question.id);
-            return (
-              <Box
-                key={question.id}
-                component="section"
-                aria-labelledby={`quiz-question-${index}`}
-                sx={{ pt: 2, borderTop: 1, borderColor: "divider" }}
-              >
+        <Card
+          component="section"
+          variant="outlined"
+          aria-labelledby="selected-quiz-title"
+        >
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Typography component="h3" variant="h6">
+                  {currentState.result ? "Quiz review" : "Take this quiz"}
+                </Typography>
                 <Typography
-                  id={`quiz-question-${index}`}
+                  id="selected-quiz-title"
                   component="h4"
                   variant="subtitle1"
                   fontWeight={700}
-                  sx={{ mb: 1 }}
                 >
-                  Question {index + 1} ·{" "}
-                  {question.type === "mcq"
-                    ? "Single choice"
-                    : question.type === "multiple_choice"
-                      ? "Multiple choice"
-                      : "True or false"}
+                  {quiz.title}
                 </Typography>
-                <Typography fontWeight={650} sx={{ mb: 1 }}>
-                  {question.prompt}
+                <Typography variant="body2" color="text.secondary">
+                  {quiz.questions.length} questions
                 </Typography>
-                {question.type === "multiple_choice" ? (
-                  <FormGroup aria-label={`Answers for question ${index + 1}`}>
-                    {question.options.map((option) => (
-                      <FormControlLabel
-                        key={option.id}
-                        control={
-                          <Checkbox
-                            checked={(currentState.answers[question.id] ?? []).includes(
-                              option.id,
-                            )}
-                            onChange={(event) => {
-                              const selected = new Set(
-                                currentState.answers[question.id] ?? [],
-                              );
-                              if (event.target.checked) selected.add(option.id);
-                              else selected.delete(option.id);
-                              setQuizState({
-                                quizId: quiz.id,
-                                answers: {
-                                  ...currentState.answers,
-                                  [question.id]: [...selected],
-                                },
-                                result: null,
-                              });
-                            }}
-                            disabled={
-                              Boolean(currentState.result) ||
-                              quiz.status !== "published"
-                            }
-                          />
-                        }
-                        label={option.text}
-                      />
-                    ))}
-                  </FormGroup>
-                ) : (
-                  <RadioGroup
-                    aria-label={`Answer for question ${index + 1}`}
-                    value={(currentState.answers[question.id] ?? [])[0] ?? ""}
-                    onChange={(event) =>
-                      setQuizState({
-                        quizId: quiz.id,
-                        answers: {
-                          ...currentState.answers,
-                          [question.id]: [event.target.value],
-                        },
-                        result: null,
-                      })
-                    }
-                  >
-                    {question.options.map((option) => (
-                      <FormControlLabel
-                        key={option.id}
-                        value={option.id}
-                        control={<Radio />}
-                        disabled={
-                          Boolean(currentState.result) || quiz.status !== "published"
-                        }
-                        label={option.text}
-                      />
-                    ))}
-                  </RadioGroup>
-                )}
-                {result && (
-                  <Stack spacing={0.5} sx={{ mt: 1 }}>
-                    <Chip
-                      label={result.correct ? "Correct" : "Incorrect"}
-                      color={result.correct ? "success" : "error"}
-                      size="small"
-                      sx={{ alignSelf: "flex-start" }}
-                    />
-                    {!result.correct && (
-                      <Typography variant="body2">
-                        Correct answer{question.type === "multiple_choice" ? "s" : ""}:{" "}
-                        {"correctOptionIds" in result
-                          ? question.options
-                              .filter((option) =>
-                                result.correctOptionIds.includes(option.id),
-                              )
-                              .map((option) => option.text)
-                              .join(", ") || "Unavailable"
-                          : (question.options.find(
-                              (option) => option.id === result.correctOptionId,
-                            )?.text ?? "Unavailable")}
-                      </Typography>
-                    )}
-                    <Typography variant="body2">{result.explanation}</Typography>
-                  </Stack>
+                {quiz.description && (
+                  <Typography sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
+                    {quiz.description}
+                  </Typography>
                 )}
               </Box>
-            );
-          })}
-          {currentState.result ? (
-            <Button
-              variant="outlined"
-              onClick={() =>
-                setQuizState({ quizId: quiz.id, answers: {}, result: null })
-              }
-              sx={{ alignSelf: "flex-start" }}
-            >
-              Try again
-            </Button>
-          ) : (
-            <Button
-              variant="contained"
-              disabled={!canSubmit}
-              onClick={() => {
-                if (!quiz) return;
-                attemptMutation.mutate({
-                  quizId: quiz.id,
-                  answers: quiz.questions.map((question) =>
-                    question.type === "multiple_choice"
-                      ? {
-                          questionId: question.id,
-                          selectedOptionIds: currentState.answers[question.id] ?? [],
-                        }
-                      : {
-                          questionId: question.id,
-                          selectedOptionId:
-                            (currentState.answers[question.id] ?? [])[0] ?? "",
-                        },
-                  ),
-                });
-              }}
-              sx={{ alignSelf: "flex-start" }}
-            >
-              {attemptMutation.isPending ? "Submitting..." : "Submit answers"}
-            </Button>
-          )}
-        </Stack>
+              {currentState.result && (
+                <Alert severity="success" role="status">
+                  Score: {currentState.result.attempt.score} of{" "}
+                  {currentState.result.attempt.maxScore}
+                </Alert>
+              )}
+              {currentState.result && currentState.result.results.length === 0 && (
+                <Alert severity="info">
+                  Your coach has disabled answer feedback for this quiz.
+                </Alert>
+              )}
+              {quiz.status !== "published" && (
+                <Alert severity="info">
+                  This quiz is not published and cannot be submitted.
+                </Alert>
+              )}
+              {!currentState.attemptId && quiz.status === "published" && (
+                <Button
+                  variant="contained"
+                  onClick={() => startMutation.mutate(quiz.id)}
+                  disabled={startMutation.isPending}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {startMutation.isPending ? "Starting..." : "Start quiz"}
+                </Button>
+              )}
+              {currentState.attemptId &&
+                quiz.questions.map((question, index) => {
+                  const result = resultsByQuestion.get(question.id);
+                  return (
+                    <Box
+                      key={question.id}
+                      component="section"
+                      aria-labelledby={`quiz-question-${index}`}
+                      sx={{ pt: 2, borderTop: 1, borderColor: "divider" }}
+                    >
+                      <Typography
+                        id={`quiz-question-${index}`}
+                        component="h5"
+                        variant="subtitle1"
+                        fontWeight={700}
+                        sx={{ mb: 1 }}
+                      >
+                        Question {index + 1} ·{" "}
+                        {question.type === "mcq"
+                          ? "Single choice"
+                          : question.type === "multiple_choice"
+                            ? "Multiple choice"
+                            : "True or false"}
+                      </Typography>
+                      <Typography fontWeight={650} sx={{ mb: 1 }}>
+                        {question.prompt}
+                      </Typography>
+                      {question.type === "multiple_choice" ? (
+                        <FormGroup aria-label={`Answers for question ${index + 1}`}>
+                          {question.options.map((option) => (
+                            <FormControlLabel
+                              key={option.id}
+                              control={
+                                <Checkbox
+                                  checked={(
+                                    currentState.answers[question.id] ?? []
+                                  ).includes(option.id)}
+                                  onChange={(event) => {
+                                    const selected = new Set(
+                                      currentState.answers[question.id] ?? [],
+                                    );
+                                    if (event.target.checked) selected.add(option.id);
+                                    else selected.delete(option.id);
+                                    updateAnswer(question.id, [...selected]);
+                                  }}
+                                  disabled={
+                                    Boolean(currentState.result) ||
+                                    !currentState.attemptId ||
+                                    quiz.status !== "published"
+                                  }
+                                />
+                              }
+                              label={option.text}
+                            />
+                          ))}
+                        </FormGroup>
+                      ) : (
+                        <RadioGroup
+                          aria-label={`Answer for question ${index + 1}`}
+                          value={(currentState.answers[question.id] ?? [])[0] ?? ""}
+                          onChange={(event) =>
+                            updateAnswer(question.id, [event.target.value])
+                          }
+                        >
+                          {question.options.map((option) => (
+                            <FormControlLabel
+                              key={option.id}
+                              value={option.id}
+                              control={<Radio />}
+                              disabled={
+                                Boolean(currentState.result) ||
+                                !currentState.attemptId ||
+                                quiz.status !== "published"
+                              }
+                              label={option.text}
+                            />
+                          ))}
+                        </RadioGroup>
+                      )}
+                      {result && (
+                        <Stack spacing={0.5} sx={{ mt: 1 }}>
+                          <Chip
+                            label={result.correct ? "Correct" : "Incorrect"}
+                            color={result.correct ? "success" : "error"}
+                            size="small"
+                            sx={{ alignSelf: "flex-start" }}
+                          />
+                          {!result.correct && (
+                            <Typography variant="body2">
+                              Correct answer
+                              {question.type === "multiple_choice" ? "s" : ""}:{" "}
+                              {"correctOptionIds" in result
+                                ? question.options
+                                    .filter((option) =>
+                                      result.correctOptionIds.includes(option.id),
+                                    )
+                                    .map((option) => option.text)
+                                    .join(", ") || "Unavailable"
+                                : (question.options.find(
+                                    (option) => option.id === result.correctOptionId,
+                                  )?.text ?? "Unavailable")}
+                            </Typography>
+                          )}
+                          <Typography variant="body2">{result.explanation}</Typography>
+                        </Stack>
+                      )}
+                    </Box>
+                  );
+                })}
+              {currentState.result ? (
+                (quiz.maxAttempts == null ||
+                  (quiz.attemptSummary?.attemptCount ?? 0) < quiz.maxAttempts) && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => startMutation.mutate(quiz.id)}
+                    disabled={startMutation.isPending}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {startMutation.isPending ? "Starting..." : "Try again"}
+                  </Button>
+                )
+              ) : (
+                <Button
+                  variant="contained"
+                  disabled={!canSubmit || saveProgressMutation.isPending}
+                  onClick={() => {
+                    if (!quiz || !currentState.attemptId) return;
+                    attemptMutation.mutate({
+                      quizId: quiz.id,
+                      attemptId: currentState.attemptId,
+                      answers: quiz.questions.map((question) =>
+                        question.type === "multiple_choice"
+                          ? {
+                              questionId: question.id,
+                              selectedOptionIds:
+                                currentState.answers[question.id] ?? [],
+                            }
+                          : {
+                              questionId: question.id,
+                              selectedOptionId:
+                                (currentState.answers[question.id] ?? [])[0] ?? "",
+                            },
+                      ),
+                    });
+                  }}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {attemptMutation.isPending ? "Submitting..." : "Submit answers"}
+                </Button>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
       )}
     </Stack>
   );
