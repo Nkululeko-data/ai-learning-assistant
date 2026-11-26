@@ -60,6 +60,7 @@ import { LangGraphChatRunner } from "./ai/graphs/chat.graph";
 import { JsonAgentExecutionRepository } from "./modules/chat/chat-execution.repository";
 import { LearningRepository } from "./modules/learning/learning.repository";
 import { LearningService } from "./modules/learning/learning.service";
+import { FlashcardGenerationQueue } from "./modules/learning/flashcard-generation.queue";
 import { JsonLearningExecutionRepository } from "./modules/learning/learning-execution.repository";
 import { loadLearningPrompt } from "./ai/prompts/load-learning-prompt";
 import { FeedbackRepository } from "./modules/feedback/feedback.repository";
@@ -231,6 +232,12 @@ export async function startServer(): Promise<Server> {
     config,
     await loadLearningPrompt(config.learningPromptVersion),
   );
+  const flashcardGenerationQueue = new FlashcardGenerationQueue(
+    jobService,
+    authService,
+    retrievalService,
+    learningService,
+  );
   const jobRunner = new JobRunner(
     jobService,
     {
@@ -247,6 +254,8 @@ export async function startServer(): Promise<Server> {
         );
         return { gapReportId: report.id };
       },
+      generate: (job, signal) =>
+        flashcardGenerationQueue.process(job, signal),
       erase: async (job) => {
         const userId = job.payload.userId;
         if (typeof userId !== "string") {
@@ -283,6 +292,7 @@ export async function startServer(): Promise<Server> {
     },
     learning: {
       authService,
+      flashcardGenerationQueue,
       learningService,
       rateLimitWindowMs: config.chatRateLimitWindowMs,
       rateLimitMax: config.chatRateLimitMax,

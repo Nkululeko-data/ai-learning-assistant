@@ -15,8 +15,8 @@ import type {
   RetrievalService,
 } from "../retrieval/retrieval.service";
 import {
+  createFlashcardGenerationOutputSchema,
   createQuizGenerationOutputSchema,
-  flashcardGenerationOutputSchema,
   quizQuestionContentSchema,
   summaryGenerationOutputSchema,
   type GenerateFlashcardsRequest,
@@ -277,20 +277,13 @@ export class LearningService {
       requestId,
       signal,
       "flashcards",
-      flashcardGenerationOutputSchema,
+      createFlashcardGenerationOutputSchema(input.count),
       prepared,
       JSON.stringify({
         task: "Create study flashcards.",
         count: input.count,
         topic: input.selection.topic ?? null,
       }),
-      (output) => {
-        if (output.cards.length !== input.count) {
-          throw invalidGeneratedContent(
-            `Exactly ${input.count} cards are required`,
-          );
-        }
-      },
     );
     const sourceChunkIds = unique(
       generated.value.cards.flatMap((card) => card.sourceChunkIds),

@@ -10,7 +10,6 @@ import type {
   RecordCollection,
 } from "../jsonstore/json-store";
 import type { Pool, PoolClient } from "pg";
-import { ZodError } from "zod";
 
 interface CollectionLifecycle {
   initialize(): Promise<void>;

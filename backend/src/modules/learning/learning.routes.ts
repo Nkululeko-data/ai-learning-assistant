@@ -20,10 +20,12 @@ import {
   quizAttemptProgressRequestSchema,
   updateQuizRequestSchema,
 } from "./learning.schemas";
+import { FlashcardGenerationQueue } from "./flashcard-generation.queue";
 import { LearningService } from "./learning.service";
 
 export interface LearningRouteDependencies {
   authService: AuthService;
+  flashcardGenerationQueue: FlashcardGenerationQueue;
   learningService: LearningService;
   rateLimitWindowMs: number;
   rateLimitMax: number;
@@ -67,13 +69,12 @@ export function createLearningRouter(
     rateLimitByUser,
     async (request, response) => {
       const input = generateFlashcardsRequestSchema.parse(request.body);
-      const result = await dependencies.learningService.generateFlashcards(
+      const job = await dependencies.flashcardGenerationQueue.enqueue(
         requireAuthContext(request),
         input,
         request.requestId,
-        createRequestSignal(response),
       );
-      response.status(201).json({ data: result });
+      response.status(202).json({ data: { jobId: job.id, status: job.status } });
     },
   );
 

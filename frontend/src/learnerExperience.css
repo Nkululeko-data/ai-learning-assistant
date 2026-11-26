@@ -81,7 +81,7 @@
   padding-bottom: clamp(40px, 5vw, 72px) !important;
 }
 
-.learnova-workspace .MuiPaper-root {
+.learnova-workspace .MuiPaper-root:not(.learnova-course-hero) {
   border-color: rgba(20, 55, 90, 0.12);
   background-image: none;
 }

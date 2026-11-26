@@ -554,10 +554,19 @@ export async function generateFlashcards(input: {
     count: z.number().int().min(1).max(50).parse(input.count),
     ...(input.regenerate ? { regenerate: true } : {}),
   };
-  return apiRequest("/flashcards/generate", flashcardSetSchema, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return apiRequest(
+    "/flashcards/generate",
+    z
+      .object({
+        jobId: idSchema,
+        status: z.enum(["queued", "running", "done", "failed", "dead"]),
+      })
+      .strict(),
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 export async function publishFlashcards(flashcardId: string, version: number) {

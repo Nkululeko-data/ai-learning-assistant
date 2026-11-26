@@ -464,6 +464,52 @@ describe("LearningService", () => {
     );
   });
 
+  test("repairs flashcard output that does not match the requested count", async () => {
+    const invalidResponse = JSON.stringify({
+      title: "Database basics",
+      cards: [
+        {
+          front: "What is a database?",
+          back: "An organized collection of data.",
+          sourceChunkIds: [chunkId],
+        },
+      ],
+    });
+    const repairedResponse = JSON.stringify({
+      title: "Database basics",
+      cards: [
+        {
+          front: "What is a database?",
+          back: "An organized collection of data.",
+          sourceChunkIds: [chunkId],
+        },
+        {
+          front: "What does a database organize?",
+          back: "Data.",
+          sourceChunkIds: [chunkId],
+        },
+      ],
+    });
+    const { service, primary } = await createLearningService([
+      invalidResponse,
+      repairedResponse,
+    ]);
+
+    const result = await service.generateFlashcards(
+      learner,
+      generateFlashcardsRequestSchema.parse({
+        courseId,
+        selection: { documentIds: [documentId] },
+        count: 2,
+      }),
+      "request-repaired-flashcards",
+      new AbortController().signal,
+    );
+
+    expect(result.cards).toHaveLength(2);
+    expect(primary.calls).toHaveLength(2);
+  });
+
   test("hides quiz keys from learners, scores on the server, and versions edits after attempts", async () => {
     const { service, collections } = await createLearningService("{}");
     const draft = await service.createCoachQuiz(

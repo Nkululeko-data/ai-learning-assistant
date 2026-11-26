@@ -638,7 +638,14 @@ export class AuthService {
   public async getCurrentUser(
     actor: AuthenticatedUser,
   ): Promise<AuthenticatedUser> {
-    const user = await this.repository.findUserById(actor.id);
+    return this.getActiveUser(actor.id);
+  }
+
+  /**
+   * Resolves a user's current authorization context for a background job.
+   */
+  public async getActiveUser(userId: string): Promise<AuthenticatedUser> {
+    const user = await this.repository.findUserById(userId);
     if (!user || user.status !== "active") throw invalidToken();
     return this.toAuthenticatedUser(user);
   }

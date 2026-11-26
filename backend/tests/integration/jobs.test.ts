@@ -56,9 +56,15 @@ async function createStorage() {
 }
 
 async function createAdminContext(): Promise<JobTestContext> {
-  temporaryRoot = await mkdtemp(join(tmpdir(), "ai-learning-assistant-job-api-"));
+  temporaryRoot = await mkdtemp(
+    join(tmpdir(), "ai-learning-assistant-job-api-"),
+  );
   const dataDirectory = join(temporaryRoot, "data");
-  await bootstrapJsonTestData(dataDirectory, "admin@example.test", adminPassword);
+  await bootstrapJsonTestData(
+    dataDirectory,
+    "admin@example.test",
+    adminPassword,
+  );
 
   const { store, collections } = createSystemStore(dataDirectory);
   await store.initialize();
@@ -120,7 +126,10 @@ async function createAdminContext(): Promise<JobTestContext> {
     config,
     { allowRefreshTokenInBody: true },
   );
-  const initialLogin = await authService.login("admin@example.test", adminPassword);
+  const initialLogin = await authService.login(
+    "admin@example.test",
+    adminPassword,
+  );
   const initialAdmin = await authService.authenticateAccessToken(
     initialLogin.tokens.accessToken,
   );
@@ -174,7 +183,8 @@ async function waitFor(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMilliseconds;
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for job state");
+    if (Date.now() >= deadline)
+      throw new Error("Timed out waiting for job state");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
@@ -297,12 +307,13 @@ describe("Background jobs", () => {
     await scheduler.runDue(scheduledAt);
 
     expect(collections.jobs.list()).toHaveLength(1);
-    expect(collections.schedulerState.findUnique("taskName", task.taskName))
-      .toMatchObject({
-        lastRunAt: scheduledAt.toISOString(),
-        nextRunAt: new Date(scheduledAt.getTime() + 60_000).toISOString(),
-        lastStatus: "ok",
-      });
+    expect(
+      collections.schedulerState.findUnique("taskName", task.taskName),
+    ).toMatchObject({
+      lastRunAt: scheduledAt.toISOString(),
+      nextRunAt: new Date(scheduledAt.getTime() + 60_000).toISOString(),
+      lastStatus: "ok",
+    });
 
     const reopened = createSystemStore(join(temporaryRoot, "data"));
     await reopened.store.initialize();
@@ -380,6 +391,24 @@ describe("Background jobs", () => {
     expect(callerStatus.status).toBe(200);
     expect(callerStatus.body.data).not.toHaveProperty("payload");
 
+    const flashcardSetId = "307d4918-a7f5-4db4-b857-97d8176e305b";
+    const generationJob = await context.jobService.enqueue({
+      type: "generate",
+      payload: { userId: context.adminId },
+      createdBy: context.adminId,
+    });
+    await context.collections.jobs.update(generationJob.id, (current) => ({
+      ...current,
+      status: "done",
+      result: { flashcardSetId },
+      finishedAt: new Date().toISOString(),
+    }));
+    const generationStatus = await request(context.app)
+      .get(`/api/v1/jobs/${generationJob.id}`)
+      .set("Authorization", `Bearer ${context.adminToken}`);
+    expect(generationStatus.body.data.result).toEqual({ flashcardSetId });
+    expect(generationStatus.body.data).not.toHaveProperty("payload");
+
     const claim = await context.jobService.claimNext(new Date(), 10_000);
     if (!claim) throw new Error("Expected job claim");
     await context.jobService.fail(
@@ -436,4 +465,3 @@ describe("Background jobs", () => {
     expect(hiddenJob.status).toBe(404);
   });
 });
-

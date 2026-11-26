@@ -13,14 +13,39 @@
 }
 
 .learnova-admin-page .admin-dashboard-header {
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--learnova-sand);
+  padding: 20px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: var(--learnova-navy);
+}
+
+.learnova-admin-page .admin-dashboard-header .MuiTypography-h4 {
+  color: var(--learnova-white);
 }
 
 .learnova-admin-page .admin-dashboard-greeting {
   max-width: 68ch;
   margin-top: 8px;
-  color: #536575;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.learnova-admin-page .MuiTypography-h5.admin-dashboard-section-title {
+  display: block;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: var(--learnova-navy-light);
+  color: var(--learnova-white);
+}
+
+.learnova-admin-dashboard-breadcrumb .MuiBreadcrumbs-li:last-child .MuiTypography-root {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: var(--learnova-navy);
+  color: var(--learnova-white);
+  font-weight: 700;
 }
 
 .learnova-admin-page .admin-summary-grid {
@@ -109,6 +134,14 @@
 }
 
 @media (max-width: 600px) {
+  .learnova-admin-page .admin-dashboard-header {
+    padding: 16px;
+  }
+
+  .learnova-admin-page .MuiTypography-h5.admin-dashboard-section-title {
+    padding: 10px 12px;
+  }
+
   .learnova-admin-page .MuiTableCell-root {
     padding: 12px;
   }

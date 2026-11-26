@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Box,
@@ -47,6 +47,7 @@ import {
   type LearningSummary,
   type QuizAttemptResult,
 } from "../../api/learning";
+import { getJob } from "../../api/jobs";
 import { friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
 
@@ -223,8 +224,13 @@ export function FlashcardsPanel({
   canPublish = false,
 }: PanelProps) {
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [count, setCount] = useState("10");
+  const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [generationPollDeadline, setGenerationPollDeadline] = useState<number | null>(
+    null,
+  );
+  const [generationPollingTimedOut, setGenerationPollingTimedOut] = useState(false);
   const [revealed, setRevealed] = useState<{ id: string; cardIds: Set<string> } | null>(
     null,
   );
@@ -238,10 +244,30 @@ export function FlashcardsPanel({
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
+  const generationJobQuery = useQuery({
+    queryKey: ["jobs", generationJobId],
+    queryFn: () => getJob(generationJobId ?? ""),
+    enabled: generationJobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status && ["done", "failed", "dead"].includes(status)) return false;
+      if (
+        generationPollingTimedOut ||
+        (generationPollDeadline !== null && Date.now() >= generationPollDeadline)
+      ) {
+        return false;
+      }
+      return 2_000;
+    },
+  });
+  const generationJob = generationJobQuery.data;
+  const generatedSetId =
+    generationJob?.status === "done" ? generationJob.result?.flashcardSetId : undefined;
+  const selectedSetId = selectedId === null ? generatedSetId || "" : selectedId;
   const selectedSetQuery = useQuery({
-    queryKey: ["learning", "flashcard-set", selectedId],
-    queryFn: () => getFlashcardSet(selectedId),
-    enabled: Boolean(selectedId),
+    queryKey: ["learning", "flashcard-set", selectedSetId],
+    queryFn: () => getFlashcardSet(selectedSetId),
+    enabled: Boolean(selectedSetId),
   });
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -251,11 +277,11 @@ export function FlashcardsPanel({
         topic,
         count: Number(count),
       }),
-    onSuccess: async (set) => {
-      setSelectedId(set.id);
-      await queryClient.invalidateQueries({
-        queryKey: ["learning", "flashcards", courseId],
-      });
+    onSuccess: (job) => {
+      setSelectedId(null);
+      setGenerationJobId(job.jobId);
+      setGenerationPollDeadline(Date.now() + 180_000);
+      setGenerationPollingTimedOut(false);
     },
   });
   const publishMutation = useMutation({
@@ -274,6 +300,8 @@ export function FlashcardsPanel({
   });
   const sets = flashcardsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const flashcardSet: FlashcardSet | undefined = selectedSetQuery.data;
+  const generationJobActive =
+    generationJob?.status === "queued" || generationJob?.status === "running";
   const parsedCount = Number(count);
   const validCount =
     Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 50;
@@ -281,6 +309,28 @@ export function FlashcardsPanel({
     flashcardSet && revealed?.id === flashcardSet.id
       ? revealed.cardIds
       : new Set<string>();
+
+  useEffect(() => {
+    if (
+      !generationJobId ||
+      generationPollDeadline === null ||
+      (generationJob && ["done", "failed", "dead"].includes(generationJob.status))
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => setGenerationPollingTimedOut(true),
+      Math.max(0, generationPollDeadline - Date.now()),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [generationJob, generationJobId, generationPollDeadline]);
+
+  useEffect(() => {
+    if (generationJob?.status !== "done" || !generatedSetId) return;
+    void queryClient.invalidateQueries({
+      queryKey: ["learning", "flashcards", courseId],
+    });
+  }, [courseId, generatedSetId, generationJob?.status, queryClient]);
 
   return (
     <Stack spacing={2} component="section" aria-labelledby="flashcards-panel-title">
@@ -307,22 +357,105 @@ export function FlashcardsPanel({
             !canGenerate ||
             selectedDocumentIds.length === 0 ||
             !validCount ||
-            generateMutation.isPending
+            generateMutation.isPending ||
+            generationJobActive
           }
           onClick={() => generateMutation.mutate()}
         >
-          {generateMutation.isPending ? "Generating..." : "Generate flashcards"}
+          {generateMutation.isPending || generationJobActive
+            ? "Generating..."
+            : "Generate flashcards"}
         </Button>
       </Stack>
       {generateMutation.error && (
-        <ErrorNotice message={friendlyMessage(generateMutation.error)} />
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(generateMutation.error)} />
+          <Button
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending || selectedDocumentIds.length === 0}
+          >
+            Retry generation
+          </Button>
+        </Stack>
+      )}
+      {generationJobActive && (
+        <Alert severity="info" role="status" aria-live="polite">
+          {generationJob.status === "queued"
+            ? "Your flashcards are queued for generation."
+            : "Your flashcards are being generated."}
+          <LinearProgress sx={{ mt: 1 }} />
+        </Alert>
+      )}
+      {generationPollingTimedOut && generationJobActive && (
+        <Alert
+          severity="warning"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                setGenerationPollDeadline(Date.now() + 180_000);
+                setGenerationPollingTimedOut(false);
+                void generationJobQuery.refetch();
+              }}
+            >
+              Check status
+            </Button>
+          }
+        >
+          Generation is taking longer than expected. You can leave this page; your job
+          will continue.
+        </Alert>
+      )}
+      {generationJobQuery.isError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(generationJobQuery.error)} />
+          <Button onClick={() => void generationJobQuery.refetch()}>
+            Retry status check
+          </Button>
+        </Stack>
+      )}
+      {generationJob &&
+        (generationJob.status === "failed" || generationJob.status === "dead") && (
+          <Alert
+            severity="error"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+              >
+                Try again
+              </Button>
+            }
+          >
+            Flashcard generation failed. Try again; your saved sets are unchanged.
+          </Alert>
+        )}
+      {generationJob?.status === "done" && !generationJob.result && (
+        <Alert
+          severity="error"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+            >
+              Try again
+            </Button>
+          }
+        >
+          Generation completed, but the new set could not be loaded.
+        </Alert>
       )}
       {publishMutation.error && (
         <ErrorNotice message={friendlyMessage(publishMutation.error)} />
       )}
       <SavedContentSelect
         label="Saved flashcard sets"
-        value={selectedId}
+        value={selectedSetId}
         onChange={setSelectedId}
         items={sets.map((item) => ({
           id: item.id,

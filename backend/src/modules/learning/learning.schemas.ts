@@ -389,23 +389,26 @@ export const summaryGenerationOutputSchema = z
   })
   .strict();
 
+const flashcardGenerationCardSchema = z
+  .object({
+    front: z.string().min(1).max(1000),
+    back: z.string().min(1).max(2000),
+    sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
+  })
+  .strict();
+
 export const flashcardGenerationOutputSchema = z
   .object({
     title: z.string().min(1).max(200),
-    cards: z
-      .array(
-        z
-          .object({
-            front: z.string().min(1).max(1000),
-            back: z.string().min(1).max(2000),
-            sourceChunkIds: z.array(z.string().min(1).max(100)).min(1),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(50),
+    cards: z.array(flashcardGenerationCardSchema).min(1).max(50),
   })
   .strict();
+
+export function createFlashcardGenerationOutputSchema(count: number) {
+  return flashcardGenerationOutputSchema.extend({
+    cards: z.array(flashcardGenerationCardSchema).length(count),
+  });
+}
 
 export const quizGenerationOutputSchema = z
   .object({

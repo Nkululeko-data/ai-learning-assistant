@@ -698,7 +698,15 @@ export function WorkspaceLayout() {
                 <MenuIcon aria-hidden="true" size={20} />
               </IconButton>
             )}
-            <Breadcrumbs aria-label="Breadcrumb" sx={{ minWidth: 0 }}>
+            <Breadcrumbs
+              aria-label="Breadcrumb"
+              className={
+                user.role === "admin" && location.pathname === "/admin"
+                  ? "learnova-admin-dashboard-breadcrumb"
+                  : undefined
+              }
+              sx={{ minWidth: 0 }}
+            >
               {getBreadcrumbs(
                 user,
                 location.pathname,

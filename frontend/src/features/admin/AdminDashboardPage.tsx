@@ -128,7 +128,7 @@ export function AdminDashboardPage() {
             component="h2"
             variant="h5"
             fontWeight={650}
-            sx={{ mb: 1.5 }}
+            className="admin-dashboard-section-title"
           >
             System summary
           </Typography>
@@ -184,7 +184,7 @@ export function AdminDashboardPage() {
           component="h2"
           variant="h5"
           fontWeight={650}
-          sx={{ mb: 1.5 }}
+          className="admin-dashboard-section-title"
         >
           Needs attention
         </Typography>

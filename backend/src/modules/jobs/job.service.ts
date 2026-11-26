@@ -7,6 +7,7 @@ import {
   type JobPage,
   type JobStatus,
 } from "./job.types";
+import { z } from "zod";
 
 export interface JobView {
   id: string;
@@ -16,6 +17,7 @@ export interface JobView {
   maxAttempts: number;
   runAfter: string;
   error: JobRecord["error"];
+  result?: { flashcardSetId: string };
   createdAt: string;
   updatedAt: string;
   finishedAt: string | null;
@@ -64,10 +66,7 @@ export class JobService {
   ): Promise<JobView> {
     const job = await this.repository.getById(id);
     if (!job) throw new NotFoundError("Job not found");
-    if (
-      job.createdBy !== actorId &&
-      !permissions.includes("executions:view")
-    ) {
+    if (job.createdBy !== actorId && !permissions.includes("executions:view")) {
       throw new NotFoundError("Job not found");
     }
     return toJobView(job);
@@ -102,7 +101,10 @@ export class JobService {
   /**
    * Claims the next due job for an in-process worker.
    */
-  public claimNext(now: Date, leaseMilliseconds: number): Promise<JobClaim | null> {
+  public claimNext(
+    now: Date,
+    leaseMilliseconds: number,
+  ): Promise<JobClaim | null> {
     return this.repository.claimNext(now, leaseMilliseconds);
   }
 
@@ -156,6 +158,10 @@ export class JobService {
  * Removes payload, result, creator and request data from all API job projections.
  */
 function toJobView(job: JobRecord): JobView {
+  const flashcardSetId =
+    job.type === "generate"
+      ? z.string().uuid().safeParse(job.result?.flashcardSetId)
+      : null;
   return {
     id: job.id,
     type: job.type,
@@ -164,6 +170,9 @@ function toJobView(job: JobRecord): JobView {
     maxAttempts: job.maxAttempts,
     runAfter: job.runAfter,
     error: job.error ?? null,
+    ...(flashcardSetId && flashcardSetId.success
+      ? { result: { flashcardSetId: flashcardSetId.data } }
+      : {}),
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     finishedAt: job.finishedAt,

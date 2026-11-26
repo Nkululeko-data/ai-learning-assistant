@@ -25,6 +25,12 @@ const jobViewSchema = z
         message: z.string(),
       })
       .nullable(),
+    result: z
+      .object({
+        flashcardSetId: z.string().uuid(),
+      })
+      .strict()
+      .optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
     finishedAt: z.string().nullable(),
