@@ -2,9 +2,9 @@
 
 Detailed field-level specification of the data model. Where this file and `backend-architecture.md` section 5 differ on field-level detail, **this file wins**; `design-decisions.md` still wins over both on product rules.
 
-**Persistence status:** Neon PostgreSQL and MongoDB Atlas are the approved target and are partially wired. Production still uses JSON for auth and several feature collections, and SQLite for conversations. This document includes the legacy source layouts/schema; it does not mean all data has been migrated. See `backend/database-implementation-neon-mongo.md` for current migration status and cutover gates.
+**Persistence status:** The current runtime uses PostgreSQL-backed system collections for authentication/authorization and selected relational records, MongoDB Atlas for document and AI data including GridFS uploads, and SQLite for conversations, messages, and daily chat usage. Authentication uses PostgreSQL-backed collections even though its adapter retains the legacy `JsonAuthRepository` name. JSON files are legacy migration sources, not the active runtime store. See `backend/database-implementation-neon-mongo.md` for migration status and remaining cutover gates.
 
-Logical storage target: relational/access data in Neon PostgreSQL; document metadata, chunks, jobs, and scheduler state in MongoDB Atlas. Remaining JSON and SQLite storage is transitional and must not be deleted until its data and dependent repositories are migrated and verified.
+Logical storage target: relational/access data and conversations in Neon PostgreSQL; document metadata, chunks, jobs, and scheduler state in MongoDB Atlas. SQLite conversation/usage persistence and related local state must remain until migration and verification are complete.
 
 ---
 
@@ -43,7 +43,8 @@ data/
 
 Runtime original uploads are stored in MongoDB Atlas GridFS in the
 `document_uploads` bucket. The document `storageKey` maps to the GridFS file;
-generated retrieval chunk files remain under `DATA_DIR`.
+document chunks are stored in MongoDB Atlas; `DATA_DIR` retains SQLite and
+legacy migration/backup files.
 
 ---
 
@@ -70,8 +71,7 @@ erDiagram
   MESSAGES ||--o{ FEEDBACK : "rated by"
   COURSES ||--o{ GAP_REPORTS : "has"
 ```
-
-Current runtime cross-store references include SQLite messages and JSON `feedback`/`activity_events`; the target is to migrate relational records and conversations to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
+Current runtime cross-store references include SQLite messages and PostgreSQL `feedback`/`activity_events`; conversations and daily chat usage remain on SQLite pending migration to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
 
 ---
 

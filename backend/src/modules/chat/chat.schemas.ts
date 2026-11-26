@@ -31,6 +31,7 @@ export const chatResponseSchema = z
     groundingStatus: z
       .enum(["grounded", "insufficient", "unverified"])
       .nullable(),
+    answerSource: z.enum(["course_material", "general_knowledge"]).nullable(),
     answer: z.string().nullable(),
     message: z.string().nullable(),
     citations: z.array(

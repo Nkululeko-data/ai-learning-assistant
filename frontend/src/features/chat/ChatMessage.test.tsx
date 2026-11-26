@@ -13,6 +13,7 @@ const message: ConversationMessage = {
   executionId: "5a554a4c-9a9c-467c-9742-1118b71897b9",
   intent: "question",
   groundingStatus: "grounded",
+  answerSource: "course_material",
   citations: [
     {
       marker: 1,
@@ -39,5 +40,31 @@ describe("ChatMessage", () => {
     expect(screen.getByText("Course notes.pdf · pp. 2–3 · Section A")).toBeVisible();
     expect(screen.getByText(message.content)).toBeVisible();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("labels a general-knowledge fallback separately from course evidence", () => {
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ChatMessage
+          message={{
+            ...message,
+            content: "A useful general answer.",
+            groundingStatus: "insufficient",
+            answerSource: "general_knowledge",
+            citations: [],
+          }}
+          courseId={message.conversationId}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /not covered by course material/i,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /not been verified against your course materials or the web/i,
+    );
+    expect(screen.getByText("A useful general answer.")).toBeVisible();
   });
 });

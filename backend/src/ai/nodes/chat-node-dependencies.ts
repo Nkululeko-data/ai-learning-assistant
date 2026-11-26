@@ -8,6 +8,7 @@ export interface ChatPrompts {
   queryUnderstanding: string;
   rewriteQuery: string;
   answer: string;
+  generalKnowledge: string;
 }
 
 export interface ChatNodeDependencies {

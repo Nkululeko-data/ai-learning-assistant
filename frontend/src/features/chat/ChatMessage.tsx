@@ -71,13 +71,30 @@ export function ChatMessage({
             {message.role === "assistant" ? "AI Learning Assistant" : "You"}
           </Typography>
           {message.role === "assistant" &&
-            message.groundingStatus === "insufficient" && (
+            message.groundingStatus === "insufficient" &&
+            message.answerSource !== "general_knowledge" && (
               <Alert severity="warning" role="status" aria-live="polite">
                 <Typography component="span" fontWeight={700}>
                   Not found in course material.
                 </Typography>{" "}
                 {message.content}
               </Alert>
+            )}
+          {message.role === "assistant" &&
+            message.groundingStatus === "insufficient" &&
+            message.answerSource === "general_knowledge" && (
+              <>
+                <Alert severity="warning" role="status" aria-live="polite">
+                  <Typography component="span" fontWeight={700}>
+                    Not covered by course material.
+                  </Typography>{" "}
+                  This answer uses general knowledge and has not been verified
+                  against your course materials or the web.
+                </Alert>
+                <Typography sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                  {message.content}
+                </Typography>
+              </>
             )}
           {message.role === "assistant" && message.groundingStatus === "unverified" && (
             <Alert severity="warning" role="status" aria-live="polite">

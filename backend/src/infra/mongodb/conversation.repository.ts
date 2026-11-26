@@ -15,6 +15,7 @@ import { NotFoundError } from "../../common/errors/app-error";
 import type {
   ConversationExchange,
   ConversationMessageRecord,
+  CourseQuestionRecord,
   ConversationRecord,
 } from "../sqlite/conversation.repository";
 import { z } from "zod";
@@ -52,6 +53,7 @@ export interface ConversationRepositoryPort {
   ): MaybePromise<void>;
   findConversation(id: string): MaybePromise<ConversationRecord | null>;
   findMessage(id: string): MaybePromise<ConversationMessageRecord | null>;
+  findUserMessagesByIds(ids: string[]): MaybePromise<CourseQuestionRecord[]>;
   listConversations(
     userId: string,
     courseId: string | undefined,
@@ -174,6 +176,62 @@ export class MongoConversationRepository
     return document ? mapMessage(document) : null;
   }
 
+  public async findUserMessagesByIds(
+    ids: string[],
+  ): Promise<CourseQuestionRecord[]> {
+    if (ids.length === 0) return [];
+    const messages = await this.messages
+      .find(
+        { id: { $in: ids }, role: "user" },
+        { projection: { _id: 0 } },
+      )
+      .toArray();
+    if (messages.length === 0) return [];
+    const conversationIds = [
+      ...new Set(messages.map((message) => message.conversationId)),
+    ];
+    const conversations = await this.conversations
+      .find(
+        { id: { $in: conversationIds } },
+        { projection: { _id: 0, id: 1, userId: 1, courseId: 1 } },
+      )
+      .toArray();
+    const conversationById = new Map(
+      conversations.map((conversation) => [conversation.id, conversation]),
+    );
+    const assistantMessages = await this.messages
+      .find(
+        { conversationId: { $in: conversationIds }, role: "assistant" },
+        { projection: { _id: 0, id: 1, conversationId: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: 1, id: 1 })
+      .toArray();
+    const assistantsByConversation = new Map<string, MessageDocument[]>();
+    for (const message of assistantMessages) {
+      const conversationMessages =
+        assistantsByConversation.get(message.conversationId) ?? [];
+      conversationMessages.push(message);
+      assistantsByConversation.set(message.conversationId, conversationMessages);
+    }
+    return messages.flatMap((message) => {
+      const conversation = conversationById.get(message.conversationId);
+      const assistantMessage = assistantsByConversation
+        .get(message.conversationId)
+        ?.find((candidate) => candidate.createdAt > message.createdAt);
+      return conversation
+        ? [
+            {
+              id: message.id,
+              userId: conversation.userId,
+              courseId: conversation.courseId,
+              content: message.content,
+              assistantMessageId: assistantMessage?.id ?? null,
+            },
+          ]
+        : [];
+    });
+  }
+
   public async listConversations(
     userId: string,
     courseId: string | undefined,
@@ -268,6 +326,7 @@ export class MongoConversationRepository
               executionId: null,
               intent: null,
               groundingStatus: null,
+              answerSource: null,
               citations: [],
               retrievalScoreTop: null,
             },
@@ -280,6 +339,7 @@ export class MongoConversationRepository
               executionId: exchange.executionId,
               intent: exchange.intent,
               groundingStatus: exchange.groundingStatus,
+              answerSource: exchange.answerSource,
               citations: exchange.citations,
               retrievalScoreTop: exchange.retrievalScoreTop,
             },
@@ -380,6 +440,17 @@ function mapMessage(document: MessageDocument): ConversationMessageRecord {
   ) {
     throw new Error("Stored conversation grounding status is invalid");
   }
+  const answerSource = nullableString(
+    document.answerSource,
+    "answerSource",
+  );
+  if (
+    answerSource !== null &&
+    answerSource !== "course_material" &&
+    answerSource !== "general_knowledge"
+  ) {
+    throw new Error("Stored conversation answer source is invalid");
+  }
   const intent = nullableString(document.intent, "intent");
   const parsedIntent =
     intent === null ? null : chatIntentSchema.safeParse(intent);
@@ -400,6 +471,7 @@ function mapMessage(document: MessageDocument): ConversationMessageRecord {
     executionId: nullableString(document.executionId, "executionId"),
     intent: parsedIntent?.data ?? null,
     groundingStatus,
+    answerSource,
     citations: parsedCitations.data,
     retrievalScoreTop: nullableNumber(
       document.retrievalScoreTop,

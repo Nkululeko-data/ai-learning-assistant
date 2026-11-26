@@ -15,7 +15,7 @@ flowchart LR
   JOB --> EXT[Extract PDF pages / DOCX text / UTF-8 TXT]
   EXT --> CHK[Chunk at configured size with overlap and page metadata]
   CHK --> EMB[Gemini embedding adapter]
-  EMB --> WRITE[Atomically write per-document chunk file]
+  EMB --> WRITE[Persist chunk text and vectors in MongoDB Atlas]
   WRITE --> READY[Set document ready]
   EXT -->|low text or parse error| FAILED[Set actionable failure diagnostics]
 ```
@@ -39,7 +39,7 @@ sequenceDiagram
   participant G as Chat graph
   participant R as RetrievalService
   participant L as LLM adapter
-  participant DB as SQLite / JSON repositories
+  participant DB as SQLite and PostgreSQL repositories
   U->>API: POST /chat/ask
   API->>S: Validated request + authenticated user
   S->>S: Permission, course and enrolment checks
@@ -53,7 +53,7 @@ sequenceDiagram
   G->>L: Generate structured answer only if evidence passes
   G->>G: Deterministic citation validation
   G-->>S: Grounding status, answer and verified citations
-  S->>DB: Save messages, then deduplicated activity event
+  S->>DB: Save messages in SQLite, then deduplicated activity event in PostgreSQL
   S-->>API: Validated JSON or post-validation SSE replay
   API-->>U: Answer and system-resolved citation metadata
 ```
@@ -64,8 +64,8 @@ If evidence fails, no answer-generation call is made. If citation validation fai
 
 ```mermaid
 flowchart TD
-  REQ[API or scheduler request] --> ENQ[Write queued JSON job]
-  ENQ --> CLAIM[Runner claims oldest eligible job in write queue]
+  REQ[API or scheduler request] --> ENQ[Write queued MongoDB job]
+  ENQ --> CLAIM[Runner claims eligible job with a MongoDB lease]
   CLAIM --> HANDLER[Run idempotent job handler]
   HANDLER -->|success| DONE[Persist done/result]
   HANDLER -->|retryable error| RETRY[Increment attempts and set backoff runAfter]
@@ -73,7 +73,7 @@ flowchart TD
   HANDLER -->|attempts exhausted| DEAD[Persist dead-letter error code]
   RESTART[Process restart] --> EXPIRED[Find running jobs with expired lease]
   EXPIRED --> CLAIM
-  SCHED[Persisted scheduler state] --> ENQ
+  SCHED[MongoDB scheduler state] --> ENQ
   RECON[Reconciliation job] --> REPAIR[Repair cross-store events and report orphaned files/chunks]
 ```
 

@@ -10,6 +10,7 @@ import type {
   RecordCollection,
 } from "../jsonstore/json-store";
 import type { Pool, PoolClient } from "pg";
+import { ZodError } from "zod";
 
 interface CollectionLifecycle {
   initialize(): Promise<void>;
@@ -50,14 +51,24 @@ export class PostgresRecordCollection<T extends { id: string }>
       try {
         record = this.definition.schema.parse(row.payload);
       } catch (error) {
-        const validationDetails =
+        const issues =
           error instanceof ZodError
             ? error.issues
-                .map((issue) => issue.path.join(".") || "<root>")
+                .slice(0, 5)
+                .map((issue) => {
+                  const path = issue.path.map(String).join(".") || "<root>";
+                  if (issue.code === "unrecognized_keys") {
+                    const keys = issue.keys
+                      .filter((key) => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))
+                      .slice(0, 10);
+                    return `${path} (unrecognized_keys${keys.length > 0 ? `: ${keys.join(", ")}` : ""})`;
+                  }
+                  return `${path} (${issue.code})`;
+                })
                 .join(", ")
-            : "unknown schema validation error";
+            : "unknown schema error";
         throw new Error(
-          `Invalid record in PostgreSQL collection ${this.definition.name} at row ${index + 1}; invalid fields: ${validationDetails}`,
+          `Invalid record in PostgreSQL collection ${this.definition.name} at row ${index + 1}: ${issues || "schema validation failed"}`,
         );
       }
       if (loaded.has(record.id)) {

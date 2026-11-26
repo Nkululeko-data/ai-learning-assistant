@@ -38,6 +38,7 @@ export interface AskChatResult {
   messageId: string;
   executionId: string;
   groundingStatus: ChatGraphState["groundingStatus"];
+  answerSource: ChatGraphState["answerSource"];
   answer: string | null;
   message: string | null;
   citations: ValidatedCitation[];
@@ -155,6 +156,7 @@ export class ChatService {
       executionId,
       intent: result.intent,
       groundingStatus: result.groundingStatus,
+      answerSource: result.answerSource,
       citations: result.citations,
       retrievalScoreTop: result.retrievalScoreTop,
     });
@@ -165,6 +167,7 @@ export class ChatService {
         userId: actor.id,
         type: "question",
         groundingStatus: result.groundingStatus,
+        retrievalScoreTop: result.retrievalScoreTop,
         usedPersonalScope: result.usedPersonalScope,
         citedCourseDocumentIds: result.usedPersonalScope
           ? []
@@ -184,6 +187,7 @@ export class ChatService {
       messageId: savedMessages.assistantMessageId,
       executionId,
       groundingStatus: result.groundingStatus,
+      answerSource: result.answerSource,
       answer: result.answer,
       message,
       citations: result.citations,
@@ -291,6 +295,7 @@ function createInitialState(input: {
     retrieved: [],
     contextChunks: [],
     groundingStatus: null,
+    answerSource: null,
     answerDraft: null,
     answer: null,
     message: null,

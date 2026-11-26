@@ -105,12 +105,12 @@ Derived: coach quiz (`origin=coach`, `visibility=course`, draft then published; 
 | S-1 | DECIDED | The approved persistence target is **Neon PostgreSQL** for relational data and **MongoDB Atlas** for documents, chunks, and jobs. |
 | S-2 | DECIDED | PostgreSQL is the relational source of truth for migrated access and course data; conversations are planned for PostgreSQL but still use SQLite at runtime. |
 | S-3 | DECIDED | MongoDB Atlas stores migrated document metadata, chunks, jobs, and scheduler state; Atlas Vector Search is the retrieval target. |
-| S-4 | DERIVED | The migration is partial. Production still uses JSON auth, SQLite conversations, and JSON for other feature data. Keep a single instance until all active local stores and process-local limits are addressed. |
+| S-4 | DERIVED | The migration is partial. Authentication and selected feature collections use PostgreSQL-backed system collections; conversations, messages, and daily chat usage still use SQLite. MongoDB Atlas stores document/AI data and GridFS uploads. Keep a single instance until remaining local stores and process-local limits are addressed. |
 | S-5 | DECIDED | Existing source UUIDs are preserved during imports; importers must preflight targets and must not delete existing target data. |
 | S-6 | DECIDED | Jobs use MongoDB-backed atomic claims and leases. Uploaded bytes remain in private persistent storage; replicas must share the same storage before scaling. |
 | S-7 | DERIVED | Storage access remains behind repository interfaces. Remove legacy implementations only after every dependent repository and data set is migrated, verified, and approved. |
 
-Rules: Treat the current system as a hybrid, not a completed cutover. Do not remove active JSON/SQLite storage, claim multi-instance readiness, or run importers against production without the migration plan's backups, preflight, and verification steps. See `backend/database-implementation-neon-mongo.md` and architecture section 5.
+Rules: Treat the current system as a hybrid, not a completed cutover. Do not remove active SQLite storage, claim multi-instance readiness, or run importers against production without the migration plan's backups, preflight, and verification steps. JSON files are legacy migration inputs, not the active runtime store. See `backend/database-implementation-neon-mongo.md` and architecture section 5.
 
 ---
 
@@ -138,8 +138,8 @@ The B8 adapters call the documented OpenAI-compatible REST APIs through `fetch`.
 
 ## 10. Deviations from the brief (need coach approval and a written rationale in `Architecture.md`)
 
-1. **Persistence migration is partial:** selected relational and document/job data use Neon and MongoDB Atlas; auth, conversations, and other feature data still use JSON/SQLite.
-2. **Single-instance, single-process deployment remains required** until the remaining legacy stores, process-local rate limiting, and upload sharing are addressed.
+1. **Persistence migration is partial:** authentication and selected relational data use PostgreSQL-backed system collections; document/AI data use MongoDB Atlas; conversations, messages, and daily chat usage still use SQLite.
+2. **Single-instance, single-process deployment remains required** until SQLite persistence and process-local caches/rate limiting are addressed. Uploads use shared MongoDB Atlas GridFS.
 3. LLM providers are Inception Labs and Groq instead of Claude and OpenAI.
 4. LangGraph.js for orchestration (brief allows LangChain.js or custom).
 5. Deterministic citation validation as the runtime gate.

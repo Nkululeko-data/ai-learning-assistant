@@ -1114,13 +1114,14 @@
       "ChatAskResult": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["conversationId", "userMessageId", "messageId", "executionId", "groundingStatus", "answer", "message", "citations", "retrievalScoreTop", "suggestedAction"],
+        "required": ["conversationId", "userMessageId", "messageId", "executionId", "groundingStatus", "answerSource", "answer", "message", "citations", "retrievalScoreTop", "suggestedAction"],
         "properties": {
           "conversationId": { "type": "string", "format": "uuid" },
           "userMessageId": { "type": "string", "format": "uuid" },
           "messageId": { "type": "string", "format": "uuid" },
           "executionId": { "type": "string", "format": "uuid" },
           "groundingStatus": { "type": ["string", "null"], "enum": ["grounded", "insufficient", "unverified", null] },
+          "answerSource": { "type": ["string", "null"], "enum": ["course_material", "general_knowledge", null] },
           "answer": { "type": ["string", "null"] },
           "message": { "type": ["string", "null"] },
           "citations": { "type": "array", "items": { "$ref": "#/components/schemas/ChatCitation" } },

@@ -26,6 +26,10 @@ export class InsightsRepository {
       .list((record) => record.courseId === courseId);
   }
 
+  public listQuizzes(courseId: string) {
+    return this.collections.quizzes.list((record) => record.courseId === courseId);
+  }
+
   public recordActivity(
     input: Omit<ActivityEventRecord, "id" | "createdAt">,
   ): Promise<ActivityEventRecord> {

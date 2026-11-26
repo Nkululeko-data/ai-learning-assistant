@@ -265,6 +265,11 @@ function CourseInsightsPanel({ courseId }: { courseId: string }) {
   const insights = insightsQuery.data;
   const gapReport = gapReportQuery.data;
   const job = jobQuery.data;
+  const noGapSignalsInWindow =
+    gapReport?.totalGapQuestions === 0 ||
+    (insights?.cohortQualified === true &&
+      insights.insufficientQuestionCount === 0 &&
+      insights.quizAttemptCount === 0);
   const jobActive = job?.status === "queued" || job?.status === "running";
   const jobTerminal = Boolean(job && ["done", "failed", "dead"].includes(job.status));
   const pollingExpired = pollingTimedOut && jobActive;
@@ -372,8 +377,19 @@ function CourseInsightsPanel({ courseId }: { courseId: string }) {
                 Knowledge-gap report
               </Typography>
               <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-                Course-level themes are shown only when the cohort threshold is met.
+                Themes require related signals from at least{" "}
+                {gapReport?.minCohortSizeUsed ??
+                  insights?.minCohortSizeUsed ??
+                  "the required number of"}{" "}
+                learners. Individual questions and comments stay private.
               </Typography>
+              {gapReport && (
+                <Typography color="text.secondary" variant="caption" sx={{ mt: 0.5, display: "block" }}>
+                  {new Date(gapReport.periodStart).toLocaleDateString()}–
+                  {new Date(gapReport.periodEnd).toLocaleDateString()} · Generated{" "}
+                  {new Date(gapReport.createdAt).toLocaleString()}
+                </Typography>
+              )}
             </Box>
             <Button
               variant="outlined"
@@ -437,20 +453,99 @@ function CourseInsightsPanel({ courseId }: { courseId: string }) {
           )}
           {gapReport && gapReport.topics.length > 0 && (
             <Stack spacing={1.5} sx={{ mt: 2 }}>
-              {gapReport.topics.map((topic) => (
-                <Box key={topic.topicId}>
+              {gapReport.topics.map((topic, index) => (
+                <Box
+                  key={topic.topicId}
+                  component="article"
+                  sx={{
+                    pb: index < gapReport.topics.length - 1 ? 2 : 0,
+                    borderBottom:
+                      index < gapReport.topics.length - 1
+                        ? 1
+                        : 0,
+                    borderColor: "divider",
+                  }}
+                >
                   <Stack
                     direction={{ xs: "column", sm: "row" }}
-                    spacing={1}
+                    spacing={1.25}
                     alignItems={{ xs: "flex-start", sm: "center" }}
                   >
-                    <Typography fontWeight={600}>{topic.theme}</Typography>
+                    <Typography component="h4" variant="subtitle1" fontWeight={650}>
+                      {topic.theme}
+                    </Typography>
                     <Chip
                       size="small"
-                      label={`${topic.questionCount} questions · ${topic.trend}`}
+                      label={
+                        topic.previousCount === null
+                          ? "No comparable baseline"
+                          : topic.trend === "up"
+                            ? "Increasing"
+                            : topic.trend === "down"
+                              ? "Decreasing"
+                              : "Steady"
+                      }
                     />
                   </Stack>
                   <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+                    {topic.questionCount} gap signals across{" "}
+                    {topic.distinctLearnerCount} learners
+                    {topic.previousCount !== null
+                      ? `; ${topic.previousCount} in the previous period.`
+                      : "; previous-period comparison is unavailable."}
+                  </Typography>
+                  {topic.averageRetrievalScore !== null && (
+                    <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+                      Average top retrieval similarity:{" "}
+                      {topic.averageRetrievalScore.toFixed(3)}. This is a match
+                      signal, not answer confidence.
+                    </Typography>
+                  )}
+                  <Stack
+                    direction="row"
+                    flexWrap="wrap"
+                    gap={0.75}
+                    sx={{ mt: 1 }}
+                    aria-label={`${topic.theme} evidence sources`}
+                  >
+                    {topic.insufficientEvidenceCount > 0 && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${topic.insufficientEvidenceCount} insufficient-evidence questions`}
+                      />
+                    )}
+                    {topic.quizMissCount > 0 && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${topic.quizMissCount} missed quiz responses`}
+                      />
+                    )}
+                    {topic.notHelpfulFeedbackCount > 0 && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${topic.notHelpfulFeedbackCount} not-helpful ratings`}
+                      />
+                    )}
+                    {topic.helpfulFeedbackCount > 0 && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${topic.helpfulFeedbackCount} helpful ratings`}
+                      />
+                    )}
+                  </Stack>
+                  <Typography
+                    component="h5"
+                    variant="body2"
+                    fontWeight={650}
+                    sx={{ mt: 1.25 }}
+                  >
+                    Suggested content improvement
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
                     {topic.suggestedAction}
                   </Typography>
                 </Box>
@@ -458,9 +553,31 @@ function CourseInsightsPanel({ courseId }: { courseId: string }) {
             </Stack>
           )}
           {gapReport && gapReport.topics.length === 0 && (
-            <Typography color="text.secondary" sx={{ mt: 2 }}>
-              No cohort-qualified topic aggregates are available in the latest report.
-            </Typography>
+            <Alert severity="info" role="status" sx={{ mt: 2 }}>
+              <Typography fontWeight={650}>
+                {noGapSignalsInWindow
+                  ? "No reportable course gaps were found in this period."
+                  : "No shared topic is ready to show yet."}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {noGapSignalsInWindow
+                  ? insights?.cohortQualified &&
+                    insights.insufficientQuestionCount === 0 &&
+                    insights.quizAttemptCount === 0
+                    ? "The aggregate shows no questions lacking course evidence and no quiz attempts in this window. Add a short, low-stakes quiz or practice check to reveal where learners need more explanation."
+                    : "This report looks for questions the assistant could not ground in course material and incorrect answers to course quizzes. No qualifying course gaps were found. A short quiz or practice check can reveal where learners need more explanation."
+                  : `A topic is shown only when related gaps are shared by at least ${gapReport.minCohortSizeUsed} learners. Individual questions and comments remain private.`}
+              </Typography>
+              {insights?.cohortQualified &&
+                (insights.notHelpfulFeedbackCount ?? 0) > 0 && (
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    {insights.notHelpfulFeedbackCount} not-helpful{" "}
+                    {insights.notHelpfulFeedbackCount === 1 ? "rating was" : "ratings were"}{" "}
+                    also recorded. These can flag response clarity, but do not identify
+                    a course topic on their own.
+                  </Typography>
+                )}
+            </Alert>
           )}
           {!gapReport && !gapReportQuery.isLoading && !gapReportQuery.isError && (
             <Typography color="text.secondary" sx={{ mt: 2 }}>

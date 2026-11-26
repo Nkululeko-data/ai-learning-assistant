@@ -6,19 +6,20 @@ Detailed field-level specification of the data model. Where this file and `backe
 
 ### Current runtime mapping (2026-11)
 
-Neon PostgreSQL is the runtime store for users, roles, permissions, courses,
-enrolments, documents, jobs, learning records, feedback, audit data and other
-structured collections. Existing normalized Neon tables are reused; the
-remaining structured collections use the existing schema's JSONB payload
-tables. MongoDB stores conversations and messages, while daily chat quotas
-remain in Neon. Source uploads and generated retrieval chunk files remain in
-private `DATA_DIR` storage.
+The current runtime is hybrid. PostgreSQL-backed system collections store
+authentication and authorization, courses, enrolments, feedback, activity,
+analytics, quiz attempts, audit data, and configuration history. MongoDB Atlas
+stores document metadata and chunks, jobs and scheduler state, generated
+learning content, AI execution metadata, and original uploads in GridFS.
+SQLite in `DATA_DIR` remains active for conversations, messages, and daily
+chat usage. Authentication uses PostgreSQL-backed collections even though its
+adapter retains the legacy `JsonAuthRepository` name.
 
 The detailed field definitions below remain the logical record contracts.
-References to JSON collections and SQLite describe the legacy import format;
-`npm run db:migrate` applies the additive Neon schema migration and
-`npm run db:import-legacy` copies available JSON/SQLite data without deleting
-the original files.
+References to JSON describe legacy import formats, not the current runtime
+store. `npm run db:migrate` applies the additive Neon schema migration and
+`npm run db:import-legacy` copies available legacy data without deleting the
+original files.
 
 ---
 
@@ -58,7 +59,8 @@ data/
 The `uploads/` directory above is a legacy migration source. Runtime originals
 are stored in MongoDB Atlas GridFS in the `document_uploads` bucket. Document
 metadata retains its opaque `storageKey`, which is the lookup key for the
-corresponding GridFS file. Generated chunk files remain under `DATA_DIR`.
+corresponding GridFS file. Extracted chunk text and embeddings are stored in
+MongoDB Atlas; `DATA_DIR` contains SQLite and legacy migration/backup files.
 
 ---
 
@@ -85,8 +87,7 @@ erDiagram
   MESSAGES ||--o{ FEEDBACK : "rated by"
   COURSES ||--o{ GAP_REPORTS : "has"
 ```
-
-Current runtime cross-store references include SQLite messages and JSON `feedback`/`activity_events`; the target is to migrate relational records and conversations to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
+Current runtime cross-store references include SQLite messages and PostgreSQL `feedback`/`activity_events`; conversations and daily chat usage remain on SQLite pending migration to PostgreSQL. Cross-store writes must remain consistent through the repository and job patterns in the architecture.
 
 ---
 
@@ -457,19 +458,19 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 ```
 
 ### 6.3 `quiz_attempts`
-
-| Field                  | Type                                                                          | Req | Notes                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------- | --- | ---------------------------------------------------------------------- |
-| id                     | uuid                                                                          | R   |                                                                        |
-| quizId                 | uuid                                                                          | R   | The exact version attempted                                            |
-| lineageId              | uuid                                                                          | R   |                                                                        |
-| quizVersion            | integer                                                                       | R   |                                                                        |
-| courseId               | uuid                                                                          | R   |                                                                        |
-| userId                 | uuid                                                                          | R   | Pseudonymised after erasure                                            |
-| answers                | array `{questionId, selectedOptionId?, selectedOptionIds?, correct: boolean}` | R   | Scored server-side; multiple-choice answers require an exact set match |
-| score                  | integer                                                                       | R   |                                                                        |
-| maxScore               | integer                                                                       | R   |                                                                        |
-| startedAt, submittedAt | iso8601                                                                       | R   |                                                                        |
+| Field | Type | Req | Notes |
+|---|---|---|---|
+| id | uuid | R | |
+| quizId | uuid | R | The exact version attempted |
+| lineageId | uuid | R | |
+| quizVersion | integer | R | |
+| courseId | uuid | R | |
+| userId | uuid | R | Pseudonymised after erasure |
+| answers | array `{questionId, selectedOptionId?, selectedOptionIds?, correct: boolean}` | R | Scored server-side; multiple-choice answers require an exact set match |
+| score | integer | R | |
+| maxScore | integer | R | |
+| startedAt, submittedAt | iso8601 | R | |
+| status | string/null | O | Optional metadata, retained when present; not used to determine scoring or completion. |
 
 **Indexes:** `id` U; (`userId`,`quizId`) N; (`courseId`,`lineageId`) N. **Scope:** the learner reads their own; the coach reads **aggregates only** (average score, per-question correct rate, completion) subject to `minCohortSize`; private-quiz attempts are excluded from coach analytics. **Retention:** kept while the user exists; deleted at erasure.
 
@@ -534,33 +535,25 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 **Indexes:** (`messageId`,`userId`) U (one rating per user per message; updates allowed); (`courseId`,`createdAt`) N. **Scope:** the author sees their own; coaches see **aggregates only** and, because comments are free text, see **no comment text** unless OPEN-19 is resolved otherwise. Comments feed the insights job as signals only. **Retention:** kept; pseudonymised at erasure.
 
 ### 7.2 `activity_events` (**no text**)
-
-| Field                  | Type                                                                                      | Req | Notes                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------------- |
-| id                     | uuid                                                                                      | R   |                                                                                       |
-| dedupeKey              | string                                                                                    | R   | `messageId` or `attemptId` or job id. **Unique** (at-least-once writes, deduplicated) |
-| courseId               | uuid                                                                                      | R   |                                                                                       |
-| userId                 | uuid                                                                                      | R   | Pseudonymised after erasure                                                           |
-| type                   | enum(`question`,`summary`,`flashcards`,`quiz_generated`,`quiz_attempt`,`document_upload`) | R   |                                                                                       |
-| groundingStatus        | enum(...) \| null                                                                         | O   | For `question`                                                                        |
-| usedPersonalScope      | boolean                                                                                   | R   | `true` if personal notes were in the context                                          |
-| citedCourseDocumentIds | uuid[]                                                                                    | R   | Course-scope documents only (never personal notes); drives "content performance"      |
-| createdAt              | iso8601                                                                                   | R   |                                                                                       |
+| Field | Type | Req | Notes |
+|---|---|---|---|
+| id | uuid | R | |
+| dedupeKey | string | R | `messageId` or `attemptId` or job id. **Unique** (at-least-once writes, deduplicated) |
+| courseId | uuid | R | |
+| userId | uuid | R | Pseudonymised after erasure |
+| type | enum(`question`,`summary`,`flashcards`,`quiz_generated`,`quiz_attempt`,`document_upload`) | R | |
+| groundingStatus | enum(...) \| null | O | For `question` |
+| retrievalScoreTop | number \| null | O | Best retrieval similarity for this question; no query text is stored |
+| usedPersonalScope | boolean | R | `true` if personal notes were in the context |
+| citedCourseDocumentIds | uuid[] | R | Course-scope documents only (never personal notes); drives "content performance" |
+| createdAt | iso8601 | R | |
 
 **Indexes:** `dedupeKey` U; (`courseId`,`createdAt`) N; (`userId`,`createdAt`) N. **Scope:** coach aggregates (min cohort); admin aggregates (counts only). Events with `usedPersonalScope=true` are excluded from content-performance and gap analytics. **Retention:** kept (size-warned); user pseudonymised at erasure.
 
 ```json
-{
-  "id": "ev-5",
-  "dedupeKey": "m-81",
-  "courseId": "c-12",
-  "userId": "u-1a2b",
-  "type": "question",
-  "groundingStatus": "insufficient",
-  "usedPersonalScope": false,
-  "citedCourseDocumentIds": [],
-  "createdAt": "2026-11-16T11:03:00.000Z"
-}
+{ "id": "ev-5", "dedupeKey": "m-81", "courseId": "c-12", "userId": "u-1a2b", "type": "question",
+  "groundingStatus": "insufficient", "retrievalScoreTop": 0.31, "usedPersonalScope": false, "citedCourseDocumentIds": [],
+  "createdAt": "2026-11-16T11:03:00.000Z" }
 ```
 
 ### 7.3 `gap_reports` (**no question text**)
@@ -577,37 +570,17 @@ Each **version** is its own record. A quiz lineage shares `lineageId`.
 | generatedBy            | object \| null     | O   | `{ executionId, provider, model, promptVersion }`    |
 | createdAt              | iso8601            | R   |                                                      |
 
-**Topic:** `{ topicId: string, theme: string, questionCount: integer, distinctLearnerCount: integer, suggestedAction: string, trend: enum(up,down,flat,new), previousCount: integer | null }`. `theme` and `suggestedAction` are LLM-written labels and must not quote any learner question.
+**Topic:** `{ topicId: string, theme: string, questionCount: integer, insufficientEvidenceCount: integer, averageRetrievalScore: number | null, distinctLearnerCount: integer, suggestedAction: string, trend: enum(up,down,flat,new), previousCount: integer | null }`. The average is computed only from non-null top retrieval scores. `theme` and `suggestedAction` are LLM-written labels and must not quote any learner question. Raw questions and rewritten queries are never persisted in the report.
 **Indexes:** `id` U; (`courseId`,`createdAt`) N. **Scope:** the course owner (`insights:view`). **Retention:** keep the latest N per course (config).
 
 ```json
-{
-  "id": "g-2",
-  "courseId": "c-12",
-  "periodStart": "2026-11-09T00:00:00.000Z",
-  "periodEnd": "2026-11-16T00:00:00.000Z",
-  "totalGapQuestions": 31,
-  "minCohortSizeUsed": 3,
-  "otherCount": 4,
-  "topics": [
-    {
-      "topicId": "t1",
-      "theme": "Assessment format",
-      "questionCount": 14,
-      "distinctLearnerCount": 9,
-      "suggestedAction": "No document covers assessment format; consider uploading the exam guide.",
-      "trend": "up",
-      "previousCount": 6
-    }
-  ],
-  "generatedBy": {
-    "executionId": "e-90",
-    "provider": "inception",
-    "model": "mercury-3",
-    "promptVersion": "gaplabel.v1"
-  },
-  "createdAt": "2026-11-16T12:00:00.000Z"
-}
+{ "id": "g-2", "courseId": "c-12", "periodStart": "2026-11-09T00:00:00.000Z", "periodEnd": "2026-11-16T00:00:00.000Z",
+  "totalGapQuestions": 31, "minCohortSizeUsed": 3, "otherCount": 4,
+  "topics": [ { "topicId": "t1", "theme": "Assessment format", "questionCount": 14, "insufficientEvidenceCount": 11, "averageRetrievalScore": 0.31, "distinctLearnerCount": 9,
+                "suggestedAction": "No document covers assessment format; consider uploading the exam guide.",
+                "trend": "up", "previousCount": 6 } ],
+  "generatedBy": { "executionId": "e-90", "provider": "inception", "model": "mercury-3", "promptVersion": "gaplabel.v1" },
+  "createdAt": "2026-11-16T12:00:00.000Z" }
 ```
 
 ---
@@ -730,22 +703,22 @@ This section describes the current migration source, not a final target schema. 
 **Delete behaviour (DERIVED):** deleting a conversation is a **hard delete** (it holds learner text); messages go with it (`ON DELETE CASCADE`). Feedback and activity events remain, carrying only IDs and no text.
 
 ### 9.2 `messages`
-
-| Column                 | Type    | Null | Notes                                                                                                                                                                                                                                    |
-| ---------------------- | ------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| id                     | TEXT PK | no   | uuid                                                                                                                                                                                                                                     |
-| conversation_id        | TEXT    | no   | FK -> `conversations(id)` ON DELETE CASCADE                                                                                                                                                                                              |
-| role                   | TEXT    | no   | CHECK in (`user`,`assistant`)                                                                                                                                                                                                            |
-| content                | TEXT    | no   | Question or validated answer. For `insufficient`/`unverified` assistant turns, the user-facing message                                                                                                                                   |
-| created_at             | TEXT    | no   |                                                                                                                                                                                                                                          |
-| execution_id           | TEXT    | yes  | Assistant messages                                                                                                                                                                                                                       |
-| intent                 | TEXT    | yes  | `question`/`explanation`/`summary`/`quiz`/`flashcards`/`other`                                                                                                                                                                           |
-| grounding_status       | TEXT    | yes  | CHECK in (`grounded`,`insufficient`,`unverified`)                                                                                                                                                                                        |
-| cited_chunk_ids        | TEXT    | yes  | JSON array of chunk ids                                                                                                                                                                                                                  |
-| cited_document_ids     | TEXT    | yes  | JSON array                                                                                                                                                                                                                               |
-| citations              | TEXT    | yes  | JSON array of system-resolved citation display metadata                                                                                                                                                                                  |
-| retrieval_score_top    | REAL    | yes  |                                                                                                                                                                                                                                          |
-| question_embedding_ref | TEXT    | yes  | Reference to the question vector for clustering. **Open detail:** store inline as base64 in this column, or recompute on demand at clustering time (recommended: recompute, to avoid storing a second copy of learner text-derived data) |
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| id | TEXT PK | no | uuid |
+| conversation_id | TEXT | no | FK -> `conversations(id)` ON DELETE CASCADE |
+| role | TEXT | no | CHECK in (`user`,`assistant`) |
+| content | TEXT | no | Question or validated answer. For `insufficient`/`unverified` assistant turns, the user-facing message |
+| created_at | TEXT | no | |
+| execution_id | TEXT | yes | Assistant messages |
+| intent | TEXT | yes | `question`/`explanation`/`summary`/`quiz`/`flashcards`/`other` |
+| grounding_status | TEXT | yes | CHECK in (`grounded`,`insufficient`,`unverified`) |
+| answer_source | TEXT | yes | CHECK in (`course_material`,`general_knowledge`); null for legacy or non-answer messages |
+| cited_chunk_ids | TEXT | yes | JSON array of chunk ids |
+| cited_document_ids | TEXT | yes | JSON array |
+| citations | TEXT | yes | JSON array of system-resolved citation display metadata |
+| retrieval_score_top | REAL | yes | |
+| question_embedding_ref | TEXT | yes | Reference to the question vector for clustering. **Open detail:** store inline as base64 in this column, or recompute on demand at clustering time (recommended: recompute, to avoid storing a second copy of learner text-derived data) |
 
 **Indexes**
 
@@ -769,19 +742,9 @@ CREATE INDEX idx_msg_grounding ON messages(grounding_status) WHERE grounding_sta
 Primary key: (`user_id`, `usage_date`). This table contains quota counts only; node execution metadata is stored in the JSON `agent_executions` collection.
 
 ```json
-{
-  "id": "m-81",
-  "conversation_id": "cv-4",
-  "role": "assistant",
-  "content": "The course material doesn't cover this question.",
-  "created_at": "2026-11-16T11:03:00.000Z",
-  "execution_id": "e-77",
-  "intent": "question",
-  "grounding_status": "insufficient",
-  "cited_chunk_ids": "[]",
-  "cited_document_ids": "[]",
-  "retrieval_score_top": 0.31
-}
+{ "id": "m-81", "conversation_id": "cv-4", "role": "assistant", "content": "The course material doesn't cover this question.",
+  "created_at": "2026-11-16T11:03:00.000Z", "execution_id": "e-77", "intent": "question",
+  "grounding_status": "insufficient", "answer_source": "general_knowledge", "cited_chunk_ids": "[]", "cited_document_ids": "[]", "retrieval_score_top": 0.31 }
 ```
 
 ---

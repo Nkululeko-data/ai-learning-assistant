@@ -5,17 +5,24 @@ It requires Node.js 22.13 or later.
 
 ## Database architecture
 
-Runtime structured data (users, roles, permissions, courses, enrolments,
-documents, jobs, learning content, feedback and audit records) is stored in
-Neon PostgreSQL. Conversations and messages are stored in MongoDB; daily chat
-quotas remain relational data in Neon. MongoDB must be a replica set or
-sharded deployment because conversation writes use transactions.
+The runtime uses a hybrid persistence layout:
 
-Original uploaded files are stored in the MongoDB Atlas GridFS
-`document_uploads` bucket so every backend instance can retrieve them.
-Generated retrieval chunk files remain in the private `DATA_DIR` filesystem.
-JSON collections and the old SQLite conversation database are read only by the
-legacy importer; the running API does not fall back to either store.
+- Neon PostgreSQL stores authentication and authorization records, courses,
+  enrolments, feedback, activity, analytics, quiz attempts, audit logs, and
+  configuration history. Authentication's `JsonAuthRepository` adapter uses
+  collections registered by the PostgreSQL-backed system store; the adapter's
+  name does not mean authentication records are written to JSON files.
+- MongoDB Atlas stores document metadata and chunks, ingestion jobs and
+  scheduler state, generated learning content, and AI execution metadata.
+  Original upload bytes use the `document_uploads` GridFS bucket.
+- SQLite in `DATA_DIR` remains active for conversations, messages, and daily
+  chat request/token usage.
+
+Legacy JSON data and local upload files remain migration inputs or retained
+copies; they are not the runtime source for the PostgreSQL-backed collections.
+Keep a single backend instance while SQLite and process-local caches and
+rate-limits remain active. Back up PostgreSQL and MongoDB with their provider
+facilities; the local backup command covers only its documented local files.
 
 The existing repository API keeps synchronous read operations by loading
 Neon-backed records into process-local indexes at startup. Run a single API
@@ -43,9 +50,9 @@ Paste the two results into `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`. Keep
 them private and do not commit `.env`.
 
 Set `DATABASE_URL` to the Neon PostgreSQL connection string, and set
-`MONGODB_URI` and `MONGODB_DATABASE` for the MongoDB replica set or sharded
-deployment. Before starting the application, apply the additive migration and,
-if you have existing JSON/SQLite data, run the idempotent importer:
+`MONGODB_URI` and `MONGODB_DATABASE` for MongoDB Atlas. Before starting the
+application, apply the additive migration and, if you have existing legacy
+JSON data, run the idempotent importer:
 
 ```powershell
 Set-Location .\backend
@@ -55,9 +62,9 @@ npm run db:import-legacy
 
 `db:migrate` upgrades the existing Neon schema from version 5 through version 7;
 it does not create the original schema on a brand-new database.
-The importer preserves the source JSON and SQLite files. Run it again safely
-after an interrupted import; conflicting existing records are reported rather
-than overwritten. Back up the source data and both databases before migration.
+The legacy importer preserves its source files. Run it again safely after an
+interrupted import; conflicting existing records are reported rather than
+overwritten. Back up source data and both databases before migration.
 `npm run backup` snapshots local files only; use Neon and MongoDB's provider
 backup/restore facilities separately for database data, including GridFS
 uploads.
@@ -143,9 +150,12 @@ Configuring both LLM providers enables fallback between them.
 
 Document upload and ingestion support PDF, DOCX and UTF-8 TXT. The configured
 upload limit is 10 MB; expanded DOCX and extracted text are limited to 50 MB.
-Document and personal-note text is sent to Gemini for embeddings, so disclose
-this data flow to users before enabling uploads. `GEMINI_API_KEY` is required
-for ingestion jobs to finish.
+Document and personal-note text and chat questions are sent to Gemini for
+embeddings. Gap reports also embed eligible course-scoped questions and missed
+course-quiz prompts temporarily to group recurring topics; reports contain
+only cohort-qualified themes and aggregates, not raw questions or feedback
+comments. Disclose these data flows to users before enabling uploads or chat.
+`GEMINI_API_KEY` is required for ingestion jobs to finish.
 
 ## Implemented functionality and tester focus
 

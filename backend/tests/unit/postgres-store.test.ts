@@ -5,7 +5,10 @@ import {
   PostgresStore,
 } from "../../src/infra/postgres/postgres-store";
 import { PostgresRecordCollection } from "../../src/infra/postgres/postgres-record-store";
-import { gapReportSchema } from "../../src/infra/jsonstore/system-collections";
+import {
+  quizAttemptSchema,
+  type QuizAttemptRecord,
+} from "../../src/infra/jsonstore/system-collections";
 
 interface Item {
   id: string;
@@ -152,54 +155,68 @@ describe("PostgresCollection", () => {
     );
   });
 
-  test("reports invalid stored payload fields without including their values", async () => {
-    const invalidPayload = {
-      id: "not-an-id",
-      name: "",
-      version: 0,
-    };
+  test("reports invalid payload field paths without including record values", async () => {
     const pool = {
-      query: jest.fn(async () => ({
-        rows: [{ payload: invalidPayload }],
+      query: async () => ({
+        rows: [
+          {
+            payload: {
+              id: "00000000-0000-4000-8000-000000000001",
+              name: 7,
+              version: 1,
+              privateValue: "must not appear in startup errors",
+            },
+          },
+        ],
         rowCount: 1,
-      })),
+      }),
     } as unknown as Pool;
-    const collection = new PostgresRecordCollection(pool, {
+    const collection = new PostgresRecordCollection<Item>(pool, {
       name: "items",
-      schema: itemSchema,
+      schema: itemSchema.strict(),
     });
 
-    await expect(collection.initialize()).rejects.toThrow(
-      "Invalid record in PostgreSQL collection items at row 1; invalid fields: id, name, version",
+    const failure = collection.initialize();
+    await expect(failure).rejects.toThrow(
+      "Invalid record in PostgreSQL collection items at row 1: name (invalid_type), <root> (unrecognized_keys: privateValue)",
+    );
+    await expect(failure).rejects.not.toThrow(
+      "must not appear in startup errors",
     );
   });
 
-  test("loads gap reports with unknown aggregate counters", async () => {
-    const report = {
-      id: "00000000-0000-4000-8000-000000000001",
-      courseId: "00000000-0000-4000-8000-000000000002",
-      periodStart: "2026-01-01T00:00:00.000Z",
-      periodEnd: "2026-01-31T00:00:00.000Z",
-      totalGapQuestions: null,
-      minCohortSizeUsed: 3,
-      topics: [],
-      otherCount: null,
-      generatedBy: null,
-      createdAt: "2026-01-31T00:00:00.000Z",
-    };
+  test("loads legacy quiz-attempt status metadata", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
     const pool = {
-      query: jest.fn(async () => ({
-        rows: [{ payload: report }],
+      query: async () => ({
+        rows: [
+          {
+            payload: {
+              id,
+              quizId: "00000000-0000-4000-8000-000000000002",
+              lineageId: "00000000-0000-4000-8000-000000000003",
+              quizVersion: 1,
+              courseId: "00000000-0000-4000-8000-000000000004",
+              userId: "00000000-0000-4000-8000-000000000005",
+              answers: [],
+              score: 0,
+              maxScore: 1,
+              startedAt: "2026-11-26T08:00:00.000Z",
+              submittedAt: "2026-11-26T08:00:00.000Z",
+              status: "completed",
+            },
+          },
+        ],
         rowCount: 1,
-      })),
+      }),
     } as unknown as Pool;
-    const collection = new PostgresRecordCollection(pool, {
-      name: "gap_reports",
-      schema: gapReportSchema,
+    const collection = new PostgresRecordCollection<QuizAttemptRecord>(pool, {
+      name: "quiz_attempts",
+      schema: quizAttemptSchema,
     });
 
     await collection.initialize();
 
-    expect(collection.list()).toEqual([report]);
+    expect(collection.getById(id)?.status).toBe("completed");
   });
 });

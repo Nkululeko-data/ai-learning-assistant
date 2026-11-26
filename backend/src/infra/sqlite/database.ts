@@ -25,6 +25,7 @@ const schema = `
     execution_id TEXT,
     intent TEXT,
     grounding_status TEXT CHECK(grounding_status IN ('grounded', 'insufficient', 'unverified')),
+    answer_source TEXT CHECK(answer_source IN ('course_material', 'general_knowledge')),
     cited_chunk_ids TEXT,
     cited_document_ids TEXT,
     retrieval_score_top REAL,
@@ -61,6 +62,11 @@ export function openConversationDatabase(dataDirectory: string): DatabaseSync {
     .all() as Array<{ name: string }>;
   if (!messageColumns.some((column) => column.name === "citations")) {
     database.exec("ALTER TABLE messages ADD COLUMN citations TEXT");
+  }
+  if (!messageColumns.some((column) => column.name === "answer_source")) {
+    database.exec(
+      "ALTER TABLE messages ADD COLUMN answer_source TEXT CHECK(answer_source IN ('course_material', 'general_knowledge'))",
+    );
   }
   return database;
 }

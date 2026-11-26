@@ -102,7 +102,7 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
 | Quizzes       | `GET /me/quiz-attempts`                                        | List caller's attempts                                                                  |
 | Feedback      | `POST /feedback`                                               | Submit/update rating and optional comment                                               |
 | Insights      | `GET /courses/{id}/insights`                                   | Get owner-only cohort aggregates                                                        |
-| Insights      | `GET /courses/{id}/gap-report`                                 | Get latest theme-only gap report                                                        |
+| Insights      | `GET /courses/{id}/gap-report`                                 | Get latest cohort-qualified themes, evidence counts, and teaching actions               |
 | Insights      | `POST /courses/{id}/gap-report/refresh`                        | Enqueue gap-report job                                                                  |
 | Admin         | `GET /admin/coach-requests`, `PATCH /admin/coach-requests/:id` | List and decide coach requests                                                          |
 | Admin         | `GET /admin/users`                                             | List safe user metadata, including the role name and status                             |
@@ -279,11 +279,19 @@ All IDs below are opaque identifiers. Unless a route is explicitly public, authe
   ```
 
 - A grounded response includes `conversationId`, `messageId`,
-  `executionId`, `groundingStatus`, `answer`, `message`, `citations`, and
+  `executionId`, `groundingStatus`, `answerSource`, `answer`, `message`, `citations`, and
   `retrievalScoreTop`. `grounded` returns an answer and citations resolved
-  from the numbered chunks actually sent to the model. `insufficient` and
-  `unverified` suppress the draft and return `answer: null`; only explicit
+  from the numbered chunks actually sent to the model, with
+  `answerSource: "course_material"`. When course evidence cannot be validated
+  or the grounded answer cannot be safely produced, the assistant may return a
+  separately labeled general-knowledge answer with `groundingStatus: "insufficient"` and
+  `answerSource: "general_knowledge"`; it has no citations and is not described
+  as web-sourced. If that fallback cannot answer reliably, `answer` is null.
+  `unverified` suppresses the draft and returns `answer: null`; only explicit
   learning-content intents return a `suggestedAction`.
+- For local retrieval diagnostics, set `CHAT_LOG_REWRITTEN_QUERY=true` in a
+  non-production environment. The backend logs the contextualized query for
+  the request; it is not written to conversation storage or coach reports.
 - `Accept: text/event-stream` replays the already validated response in a
   `response` event followed by `done`. It does not expose provider tokens
   before evidence and citations have been checked.
@@ -304,6 +312,14 @@ RATE_LIMITED` indicates the short-window limit.
   store only request/resource identifiers, node/status/timing, token counts,
   provider/model, prompt version, and safe error codes—not prompts, answers,
   questions, or document text.
+- Gap-report jobs may also send course-scoped questions with insufficient
+  grounding and missed course-visible quiz prompts to Gemini for temporary
+  topic clustering. Personal-scope questions and private quizzes are excluded;
+  only cohort-qualified themes and aggregate counts/feedback ratings are
+  stored and returned. This additional processing must be included in the
+  privacy disclosure. `totalGapQuestions` and `otherCount` are `null` when
+  below-threshold topics or unprocessed questions would make an aggregate
+  count disclose suppressed activity.
 
 ## Learning content and quiz contracts (B9)
 
@@ -363,23 +379,13 @@ RATE_LIMITED` indicates the short-window limit.
   attempt, learner views omit `correctOptionId` and `explanation`, including
   `correctOptionIds` for multiple-choice questions. `POST /quizzes/{id}/attempts`
   accepts `selectedOptionId` for single-answer questions and
-  `selectedOptionIds` for multiple-answer questions. Learners start or resume
-  an attempt with `POST /quizzes/{id}/attempts/start`; answer selections are
-  saved to their in-progress attempt with
-  `PATCH /quizzes/{id}/attempts/{attemptId}`. Submit includes the attempt ID;
-  the server grades answers and records the exact quiz version and
-  start/submission timestamps. Correct answers and explanations are returned
-  only when `showFeedback` is enabled. Learners can list only their own
-  attempts with `GET /me/quiz-attempts` and review a submitted attempt with
-  `GET /me/quiz-attempts/{attemptId}/review`. Review returns the original
-  quiz questions and the learner's selected answers; correct answers and
-  explanations are included only when that quiz version enabled
-  `showFeedback`. Review is limited to the attempt owner and learners with
-  current access to the course.
-- `GET /courses/{id}/quizzes/performance` is restricted to the coach who owns
-  the course. It aggregates completion and scores over currently approved
-  learners and includes per-learner attempt summaries and per-question
-  correctness rates. The coach UI supports sorting/filtering and CSV export.
+  `selectedOptionIds` for multiple-answer questions. The server requires the
+  exact correct set for a multiple-answer point, stores the attempt, then
+  returns correct answers and explanations. Attempts record the exact quiz
+  version. Learners can list only their own attempts with
+  `GET /me/quiz-attempts`. Stored attempts may also include an optional
+  `status` string or `null`, which is preserved as metadata and does not affect
+  scoring.
 - Content-generation requests are subject to the configured per-user
   short-window and shared daily AI request/token quotas. `INSUFFICIENT_MATERIAL`
   means the selected source set could not support generation;
@@ -389,7 +395,7 @@ RATE_LIMITED` indicates the short-window limit.
 ## Critical response contracts
 
 - **Quiz learner view:** includes title, instructions, prompts, and options only; never answer keys or explanations until after attempt submission.
-- **Chat response:** includes `groundingStatus`, validated answer (or null for insufficient/unverified), and citations whose metadata is resolved from chunk records.
+- **Chat response:** includes `groundingStatus` and `answerSource`; course-grounded answers have validated citations resolved from chunk records, while general-knowledge fallbacks are clearly labeled and uncited.
 - **Document status:** includes status and actionable diagnostics, never extracted document text.
 - **Insights:** includes cohort-qualified themes and counts only; no question examples or verbatim text.
 - **Admin response:** never includes course content, chunks, conversation bodies or credentials.

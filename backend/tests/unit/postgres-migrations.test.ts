@@ -55,26 +55,24 @@ function createPool(initialVersions: number[] = []) {
 
 describe("PostgreSQL SQL migrations", () => {
   test("applies the latest migration and is idempotent", async () => {
-    const { pool, query, appliedVersions } = createPool([
-      1, 2, 3, 4, 5, 6, 7,
-    ]);
+    const { pool, query, appliedVersions } = createPool([1, 2, 3, 4, 5, 6, 7]);
     const migrationsDirectory = resolve(__dirname, "../../migrations");
 
     await expect(
       runDatabaseMigrations(pool, migrationsDirectory),
-    ).resolves.toBe(8);
+    ).resolves.toBe(9);
     await expect(
       runDatabaseMigrations(pool, migrationsDirectory),
-    ).resolves.toBe(8);
+    ).resolves.toBe(9);
 
-    expect(EXPECTED_SCHEMA_VERSION).toBe(8);
+    expect(EXPECTED_SCHEMA_VERSION).toBe(9);
     expect(CURRENT_DATABASE_SCHEMA_VERSION).toBe(EXPECTED_SCHEMA_VERSION);
-    expect(appliedVersions.has(8)).toBe(true);
+    expect(appliedVersions.has(9)).toBe(true);
     expect(
       query.mock.calls.filter(([sql]) =>
         sql.includes("CREATE TABLE IF NOT EXISTS user_id_aliases"),
       ),
     ).toHaveLength(1);
-    await expect(getSchemaVersion(pool)).resolves.toBe(8);
+    await expect(getSchemaVersion(pool)).resolves.toBe(9);
   });
 });

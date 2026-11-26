@@ -20,6 +20,7 @@ export function citationValidatorNode(
   if (draft.refusal) {
     return {
       groundingStatus: "insufficient",
+      answerSource: null,
       answer: null,
       message: insufficientMessage,
       citations: [],
@@ -67,6 +68,7 @@ export function citationValidatorNode(
 
   return {
     groundingStatus: "grounded",
+    answerSource: "course_material",
     answer: draft.answer,
     message: null,
     citations: validatedCitations,
@@ -76,6 +78,7 @@ export function citationValidatorNode(
 function unverifiedResult(): ChatNodeUpdate {
   return {
     groundingStatus: "unverified",
+    answerSource: null,
     answer: null,
     message: unverifiedMessage,
     citations: [],

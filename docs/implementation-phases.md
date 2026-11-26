@@ -40,8 +40,9 @@ security documents.
 The React frontend is a later stage. These phases build the backend APIs that
 the frontend will use.
 
-**Current repository position:** B0-B12 are complete in the current workspace.
-Deployment and provider-replacement approval remain operational decisions.
+**Current repository position:** B0-B11 are implemented. B12 release
+verification remains in progress because the runtime is still hybrid and
+deployment/database migration gates require verification.
 
 ## Phase details
 
@@ -94,10 +95,13 @@ PostgreSQL and MongoDB Atlas; that cutover is still in progress.
 and schema, reports health/readiness correctly, and the foundation and
 bootstrap behavior have automated tests.
 
-**Implementation note:** The current runtime still initializes JSON storage
-and SQLite for modules that have not been migrated. PostgreSQL and MongoDB are
-also wired for selected modules; this is a transitional hybrid, not a completed
-database cutover.
+**Implementation note:** The runtime uses PostgreSQL-backed system
+collections for authentication and authorization and other relational data,
+plus MongoDB Atlas for document and AI data. Although collection types and
+some adapters retain legacy JSON names, the runtime's system collections are
+registered on PostgreSQL/MongoDB stores, not JSON files. SQLite remains active
+for conversations, messages, and daily chat usage, so the overall persistence
+cutover is still transitional.
 
 ### B3 — Add accounts and access control
 
@@ -157,9 +161,10 @@ unreadable files fail safely with useful diagnostics; and document access and
 deletion rules are enforced.
 
 **Current status:** Complete. Authenticated PDF, DOCX and UTF-8 TXT uploads are
-validated and stored under private random keys. Persistent jobs extract text,
-create approximately 512-token chunks with 100-token overlap, embed through
-Gemini, and atomically write private chunk files. Status, retry, listing,
+validated and stored in MongoDB Atlas GridFS under opaque random keys.
+Persistent MongoDB-backed jobs extract text, create approximately 512-token
+chunks with 100-token overlap, embed through Gemini, and store chunk text and
+vectors in MongoDB. Status, retry, listing,
 deduplication and deletion endpoints enforce course and personal-note access
 rules. Focused integration and unit tests cover processing, validation,
 visibility, provider retries and deletion.
@@ -181,11 +186,11 @@ never appear in results.
 **Current status:** Complete. The internal `RetrievalService` checks active
 course access, coach ownership or approved learner enrolment, and filters to
 ready documents matching the current embedding model before loading chunks.
-Course documents and the requesting learner's own notes are searchable;
+course documents and the requesting learner's own notes are searchable;
 archived courses, other learners' notes, failed documents, and stale-model
 chunks are excluded. Results combine BM25 keyword relevance and cosine
-similarity with semantic-first weighted reciprocal-rank fusion. Chunk
-files are validated on read and loaded through a configurable LRU cache
+similarity with semantic-first weighted reciprocal-rank fusion. MongoDB chunks
+are validated on read and loaded through a configurable LRU cache
 (`CHUNK_CACHE_MAX_DOCUMENTS`, default 100). Retrieval has no standalone HTTP
 endpoint; B8 will call the service from grounded question answering.
 
@@ -197,9 +202,9 @@ the evidence behind each answer inspectable.
 **Work:** Add provider adapters and test fakes, typed workflow nodes, follow-up
 question rewriting, context construction, an evidence gate, deterministic
 citation validation, grounding states, execution metadata, and the chat API.
-Conversation persistence currently uses SQLite; the target is Neon PostgreSQL
-as specified by the approved database plan. Return or stream a response only
-after validation is complete.
+Conversation and daily chat-usage persistence currently use SQLite; the target
+for conversations is Neon PostgreSQL as specified by the approved database
+plan. Return or stream a response only after validation is complete.
 
 **Done when:** Supported questions produce answers with verified citations;
 insufficient evidence does not produce an invented answer; and tests cover
@@ -215,7 +220,7 @@ fallback; provider calls use documented REST APIs behind adapters, and fakes
 are used in tests. Each graph node has a configured timeout. The API supports
 JSON and post-validation SSE; owned conversations, messages, citations, and
 daily quotas currently use SQLite. Metadata-only node execution records use
-the JSON store. The SQLite-to-PostgreSQL conversation cutover remains pending.
+MongoDB Atlas. The SQLite-to-PostgreSQL conversation cutover remains pending.
 Prompt-injection defenses, user/course
 authorization, request limits, daily request/token quotas, and disabled
 tracing are covered by implementation and tests. OPEN-16 is resolved using
@@ -251,8 +256,9 @@ visibility, answer-key suppression, scoring, and version transitions.
 private conversations.
 
 **Work:** Record feedback and content-free activity events; implement
-course-owner insight endpoints and a background gap-report job. Add topic
-clustering only after the underlying signals and privacy rules are working.
+course-owner insight endpoints and a background gap-report job. Cluster
+course-scoped insufficient-grounding questions without persisting raw text, and
+apply the cohort threshold to each surfaced topic.
 
 **Done when:** Insights are limited to the authorized course owner and
 cohort-qualified themes and aggregates. They must not disclose question text,
@@ -263,8 +269,13 @@ an assistant answer owned by the caller. Activity events store no learner text
 and chat responses record deduplicated question events with grounding and
 course-document metadata. Coach insight and gap-report routes require course
 ownership and `insights:view`; aggregates are withheld below the configured
-minimum cohort size. Gap-report refresh is persistent and privacy-safe, and
-generated reports contain themes and counts only.
+minimum cohort size. Gap reports now retrieve chat text only by matching event
+IDs, include missed questions from course-visible quizzes, aggregate feedback
+ratings, exclude personal-scope questions and private quizzes, and compare
+topics with an equal preceding period. Themes are derived from repeated terms;
+reports include aggregate evidence-source counts and targeted teaching actions.
+Reports distinguish an empty signal window from topics withheld below the cohort
+threshold; raw questions and feedback comments are not stored.
 
 ### B11 — Add administrative operations
 
@@ -300,16 +311,15 @@ backup/restore, and handover materials; and resolve deployment choices.
 followable, known limitations are documented, and the deployment target and
 release decisions are approved. Do not claim a check passed unless it was run.
 
-**Current status:** Complete for the current local backend. The suite,
-typecheck and production build are automated; `/openapi.json` and `/api/docs`
-publish the API contract; Docker and docker-compose provide a one-instance
-persistent single-instance deployment; backup and restore scripts operate on
-the legacy JSON, SQLite and upload data; the offline AI evaluation fixture
-checks deterministic citation and refusal behavior. The Neon/Atlas migration
-is partial and its database-gated integration tests still require isolated
-test services. [Handover.md](HANDOVER.md) documents operations and known
-limitations. Live provider evaluation and deployment approval remain external
-operator decisions.
+**Current status:** Partially complete. The suite, typecheck and production
+build are automated; `/openapi.json` and `/api/docs` publish the API contract;
+Docker and docker-compose provide a one-instance backend deployment. The local
+backup covers local SQLite/legacy files, not Neon or MongoDB. The offline AI
+evaluation fixture checks deterministic citation and refusal behavior. SQLite
+conversations and daily usage remain active, and database-gated migration tests
+still require isolated services. [Handover.md](HANDOVER.md) documents
+operations and known limitations. Live provider evaluation, migration
+verification, and deployment approval remain external operator decisions.
 
 ## Important rules that apply to every phase
 
@@ -323,10 +333,10 @@ operator decisions.
 - Use deterministic fakes in ordinary tests; tests must not call real AI
   providers.
 - Treat uploaded and retrieved content as untrusted input.
-- Keep the single-process/single-instance constraint until every active JSON
-  and SQLite repository is migrated and verified. PostgreSQL/Atlas integration
-  alone does not make the hybrid runtime safe to scale; rate limiting and
-  shared upload storage also need deployment-ready multi-instance handling.
+- Keep the single-process/single-instance constraint until SQLite persistence,
+  process-local caches, and rate limits are migrated or made shared and
+  verified. PostgreSQL/Atlas integration and shared GridFS uploads alone do
+  not make the hybrid runtime safe to scale.
 - Respect open decisions listed in
   [`design-decisions (1).md`](../design-decisions%20(1).md) and the
   implementation notes in

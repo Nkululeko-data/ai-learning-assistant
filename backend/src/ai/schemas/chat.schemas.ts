@@ -38,6 +38,13 @@ export const answerDraftSchema = z
   })
   .strict();
 
+export const generalKnowledgeAnswerSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(8000),
+    refusal: z.boolean(),
+  })
+  .strict();
+
 export type ChatIntent = z.infer<typeof chatIntentSchema>;
 export type QueryUnderstanding = z.infer<typeof queryUnderstandingSchema>;
 export type RewrittenQuery = z.infer<typeof rewrittenQuerySchema>;

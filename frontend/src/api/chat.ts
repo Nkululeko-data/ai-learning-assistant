@@ -31,6 +31,7 @@ export const chatResponseSchema = z
     messageId: idSchema,
     executionId: idSchema,
     groundingStatus: groundingStatusSchema.nullable(),
+    answerSource: z.enum(["course_material", "general_knowledge"]).nullable(),
     answer: z.string().nullable(),
     message: z.string().nullable(),
     citations: z.array(citationSchema),
@@ -66,6 +67,7 @@ const conversationMessageSchema = z
     executionId: idSchema.nullable(),
     intent: chatIntentSchema.nullable(),
     groundingStatus: groundingStatusSchema.nullable(),
+    answerSource: z.enum(["course_material", "general_knowledge"]).nullable(),
     citations: z.array(citationSchema),
     retrievalScoreTop: z.number().finite().nullable(),
   })

@@ -4,6 +4,7 @@ import type { LlmRole } from "../providers/llm-provider.types";
 import type { RetrievedChunk } from "../../modules/retrieval/retrieval.service";
 
 export type GroundingStatus = "grounded" | "insufficient" | "unverified";
+export type AnswerSource = "course_material" | "general_knowledge";
 
 export interface ChatHistoryMessage {
   role: Extract<LlmRole, "user" | "assistant">;
@@ -44,6 +45,7 @@ export const ChatState = Annotation.Root({
   retrieved: Annotation<RetrievedChunk[]>(),
   contextChunks: Annotation<ContextChunk[]>(),
   groundingStatus: Annotation<GroundingStatus | null>(),
+  answerSource: Annotation<AnswerSource | null>(),
   answerDraft: Annotation<AnswerDraft | null>(),
   answer: Annotation<string | null>(),
   message: Annotation<string | null>(),

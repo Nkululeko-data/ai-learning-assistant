@@ -1,7 +1,7 @@
 # AI Learning Assistant: Database Implementation (Neon Postgres + MongoDB Atlas)
 
 Build spec for the coding agent. Repo: `Nkululeko-data/ai-learning-assistant`, backend in `backend/`.
-This is the approved target architecture and phased migration plan, not a claim that the full cutover is complete. Production is currently hybrid. Original uploads now use MongoDB Atlas GridFS; keep the remaining legacy stores and single-instance deployment constraint until the final verification and cleanup gates pass.
+This is the approved target architecture and phased migration plan, not a claim that the full cutover is complete. The runtime currently uses PostgreSQL-backed system collections for authentication and other relational data, MongoDB Atlas for documents and AI data (including original uploads in GridFS), and SQLite for conversations, messages, and daily chat usage. Keep the remaining local database and single-instance constraints until final verification and cleanup gates pass.
 
 ## 0. Working rules
 
@@ -23,7 +23,7 @@ This is the approved target architecture and phased migration plan, not a claim 
 | Conversations + messages | **Move from SQLite to Neon** |
 | Existing JSON data | **Migrate all relational data** into Neon, keeping existing UUIDs |
 | Courses | New tables in Neon; seed some courses |
-| Single-instance rule | **Retained during migration.** Revisit only after all active JSON/SQLite writers and process-local rate limiting are addressed and verified. |
+| Single-instance rule | **Retained during migration.** Revisit only after active SQLite writers, process-local caches, and rate limiting are addressed and verified. |
 
 ## 2. What goes where
 
@@ -228,8 +228,8 @@ Implementation and cutover:
   source/target counts before relying on migrated records.
 - `better-sqlite3` and `@types/better-sqlite3` are absent from
   `backend/package.json`; conversations use Node's built-in `node:sqlite`.
-- Keep the one-instance deployment constraint until rate limiting and the
-  remaining persistence dependencies are ready for multiple instances.
+- Keep the one-instance deployment constraint until SQLite persistence,
+  process-local caches, and rate limiting are ready for multiple instances.
 - Before deleting legacy persistence, migrate the remaining data, switch all
   production repositories, run isolated PostgreSQL and Atlas integration
   tests, verify source/target counts and backups, and receive explicit approval
@@ -240,7 +240,7 @@ Implementation and cutover:
 - **Rate limiting** (auth routes) currently uses an in-memory store; implement a shared store or explicitly accept and protect per-instance limits.
 - **Job runner and scheduler** use MongoDB leases for atomic claims, but other multi-instance prerequisites remain.
 - **Uploads** use the shared MongoDB Atlas GridFS bucket across API/worker instances.
-- **Remaining JSON and SQLite repositories** must be migrated and verified before multiple instances are enabled.
+- **Remaining SQLite persistence and process-local state** must be migrated or made shared and verified before multiple instances are enabled.
 - **Readiness** checks both databases; `/health` stays process-only and `/ready` touches the databases.
 
 ## 12. Testing strategy

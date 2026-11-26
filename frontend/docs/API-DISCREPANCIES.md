@@ -1,6 +1,6 @@
 # API and Project Discrepancies
 
-**Inspection date:** 2026-11-19
+**Inspection date:** 2026-11-26 (persistence and source-file route rechecked)
 
 This is the frontend inspection log. The mounted Express routes, their Zod
 schemas, and runtime responses are authoritative for frontend calls. No
@@ -31,9 +31,12 @@ the F1 scaffold was added after approval.
 ## Differences from the project brief and design documents
 
 1. **Persistence and AI providers:** the brief proposes MongoDB/Atlas Vector
-   Search and Claude/OpenAI. The code uses JSON collections, SQLite for
-   conversations and daily chat usage, private chunk files with in-process
-   cosine retrieval, Inception/Groq for LLM calls, and Gemini embeddings.
+   Search and Claude/OpenAI. The runtime uses PostgreSQL-backed system
+   collections for authentication and selected relational data, MongoDB Atlas
+   for documents/chunks/jobs/AI content and GridFS uploads, and SQLite for
+   conversations, messages, and daily chat usage. Retrieval uses Atlas Vector
+   Search with BM25/cosine ranking. Inception/Groq provide LLM calls and Gemini
+   provides embeddings.
    [`design-decisions (1).md`](<../../design-decisions%20(1).md>) records these
    choices as decided/tabled; the older decision table in
    [`Architecture.md`](../../docs/architecture/Architecture.md) still labels
@@ -43,12 +46,9 @@ the F1 scaffold was added after approval.
    mounted API has courses, enrolments, and course-associated documents; it
    has no dataset resource or dataset endpoints. The frontend will use the
    course/document model.
-3. **Project phase status:** this file's companion
-   [`current-project-status.md`](../../docs/current-project-status.md) says
-   B10 is complete and B11-B12 have not started. The README and
-   [`implementation-phases.md`](../../docs/implementation-phases.md) say
-   B0-B12 are complete, and the source mounts admin routes and release
-   endpoints. The phase-status document is stale and should be reconciled.
+3. **Project phase status:** the current status documents now agree that B0-B11
+   are implemented and B12 release verification remains, including the
+   SQLite-to-PostgreSQL conversation cutover.
 4. **Architecture module exports:** `Architecture.md` says modules
    communicate through exported `index.ts` service surfaces. The current
    server wires concrete service classes by importing their module files
@@ -108,10 +108,9 @@ the F1 scaffold was added after approval.
   range, section, and chunk ID, but no route returns chunk text or a document
   preview. Show citation metadata only and leave passage preview behind a
   typed, disabled API stub until an endpoint is approved and implemented.
-- **Document content preview/download:** the document routes expose metadata,
-  status, and diagnostics only; there is no route to fetch the original
-  document or extracted text. The library can show safe document metadata but
-  cannot render a content preview.
+- **Document content preview/download:** `GET /documents/{id}/file` returns
+  the authorized original PDF or MP4. There is no endpoint for extracted text
+  or citation passage previews.
 - **Document list filters:** `GET /courses/{courseId}/documents` supports only
   `limit` and `cursor`; it has no server-side filename or status filter.
   Frontend filters can only cover pages already fetched.

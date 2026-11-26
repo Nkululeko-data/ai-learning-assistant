@@ -1,6 +1,7 @@
 import type { ChatGraphState, ChatNodeUpdate } from "../graphs/chat-state";
 import { answerDraftSchema } from "../schemas/chat.schemas";
 import type { ChatNodeDependencies } from "./chat-node-dependencies";
+import { selectChatHistory } from "./chat-history";
 
 export async function answerGenerationNode(
   state: ChatGraphState,
@@ -15,7 +16,12 @@ export async function answerGenerationNode(
         role: "user",
         content: JSON.stringify({
           question: state.question,
-          history: state.history,
+          history: selectChatHistory(
+            state.history,
+            dependencies.config.chatHistoryWindow,
+            dependencies.config.chatHistoryTokenBudget,
+            state.question,
+          ),
           evidence: state.contextChunks.map((chunk) => ({
             marker: chunk.marker,
             chunkId: chunk.id,

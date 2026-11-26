@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { chatIntentSchema, type ChatIntent } from "../../ai/schemas/chat.schemas";
 import type {
+  AnswerSource,
   GroundingStatus,
   ValidatedCitation,
 } from "../../ai/graphs/chat-state";
@@ -39,8 +40,17 @@ export interface ConversationMessageRecord {
   executionId: string | null;
   intent: ChatIntent | null;
   groundingStatus: GroundingStatus | null;
+  answerSource: AnswerSource | null;
   citations: ValidatedCitation[];
   retrievalScoreTop: number | null;
+}
+
+export interface CourseQuestionRecord {
+  id: string;
+  userId: string;
+  courseId: string;
+  content: string;
+  assistantMessageId: string | null;
 }
 
 export interface ConversationExchange {
@@ -54,6 +64,7 @@ export interface ConversationExchange {
   executionId: string;
   intent: ChatIntent | null;
   groundingStatus: GroundingStatus | null;
+  answerSource: AnswerSource | null;
   citations: ValidatedCitation[];
   retrievalScoreTop: number | null;
 }
@@ -119,6 +130,47 @@ export class ConversationRepository {
     return row ? mapMessage(row) : null;
   }
 
+  public findUserMessagesByIds(ids: string[]): CourseQuestionRecord[] {
+    if (ids.length === 0) return [];
+    const records: CourseQuestionRecord[] = [];
+    for (let offset = 0; offset < ids.length; offset += 400) {
+      const batch = ids.slice(offset, offset + 400);
+      const rows = this.database
+        .prepare(
+          `SELECT message.id, conversation.user_id, conversation.course_id,
+                  message.content,
+                  (
+                    SELECT answer.id
+                    FROM messages AS answer
+                    WHERE answer.conversation_id = message.conversation_id
+                      AND answer.role = 'assistant'
+                      AND answer.rowid > message.rowid
+                    ORDER BY answer.rowid ASC
+                    LIMIT 1
+                  ) AS assistant_message_id
+           FROM messages AS message
+           JOIN conversations AS conversation
+             ON conversation.id = message.conversation_id
+           WHERE message.role = 'user'
+             AND message.id IN (${batch.map(() => "?").join(", ")})`,
+        )
+        .all(...batch);
+      records.push(
+        ...rows.map((row) => ({
+          id: requiredString(row.id, "id"),
+          userId: requiredString(row.user_id, "user_id"),
+          courseId: requiredString(row.course_id, "course_id"),
+          content: requiredString(row.content, "content"),
+          assistantMessageId:
+            row.assistant_message_id === null
+              ? null
+              : requiredString(row.assistant_message_id, "assistant_message_id"),
+        })),
+      );
+    }
+    return records;
+  }
+
   public listConversations(
     userId: string,
     courseId: string | undefined,
@@ -169,12 +221,12 @@ export class ConversationRepository {
     const rows = this.database
       .prepare(
         `SELECT * FROM (
-           SELECT * FROM messages
+           SELECT messages.*, rowid AS message_rowid FROM messages
            WHERE conversation_id = ?
            ORDER BY created_at DESC, rowid DESC
            LIMIT ?
          )
-         ORDER BY created_at ASC, rowid ASC`,
+         ORDER BY created_at ASC, message_rowid ASC`,
       )
       .all(conversationId, maximumMessages);
     return rows.map(mapMessage);
@@ -215,9 +267,9 @@ export class ConversationRepository {
       const insertMessage = this.database.prepare(
         `INSERT INTO messages
          (id, conversation_id, role, content, created_at, execution_id, intent,
-          grounding_status, cited_chunk_ids, cited_document_ids, citations,
+          grounding_status, answer_source, cited_chunk_ids, cited_document_ids, citations,
           retrieval_score_top)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       insertMessage.run(
         userMessageId,
@@ -225,6 +277,7 @@ export class ConversationRepository {
         "user",
         exchange.question,
         createdAt,
+        null,
         null,
         null,
         null,
@@ -242,6 +295,7 @@ export class ConversationRepository {
         exchange.executionId,
         exchange.intent,
         exchange.groundingStatus,
+        exchange.answerSource,
         JSON.stringify(exchange.citations.map(({ chunkId }) => chunkId)),
         JSON.stringify(exchange.citations.map(({ documentId }) => documentId)),
         JSON.stringify(exchange.citations),
@@ -312,6 +366,14 @@ function mapMessage(row: Record<string, unknown>): ConversationMessageRecord {
   ) {
     throw new Error("Stored conversation grounding status is invalid");
   }
+  const answerSource = nullableString(row.answer_source, "answer_source");
+  if (
+    answerSource !== null &&
+    answerSource !== "course_material" &&
+    answerSource !== "general_knowledge"
+  ) {
+    throw new Error("Stored conversation answer source is invalid");
+  }
 
   return {
     id: requiredString(row.id, "id"),
@@ -322,6 +384,7 @@ function mapMessage(row: Record<string, unknown>): ConversationMessageRecord {
     executionId: nullableString(row.execution_id, "execution_id"),
     intent: parseIntent(nullableString(row.intent, "intent")),
     groundingStatus,
+    answerSource,
     citations: decodeCitations(nullableString(row.citations, "citations")),
     retrievalScoreTop: nullableNumber(
       row.retrieval_score_top,

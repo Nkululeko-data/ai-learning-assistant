@@ -5,6 +5,7 @@ import { answerGenerationNode } from "../nodes/answer-generation.node";
 import { citationValidatorNode } from "../nodes/citation-validator.node";
 import { contextBuilderNode } from "../nodes/context-builder.node";
 import { evidenceGateNode } from "../nodes/evidence-gate.node";
+import { generalKnowledgeNode } from "../nodes/general-knowledge.node";
 import { queryUnderstandingNode } from "../nodes/query-understanding.node";
 import { rerankNode } from "../nodes/rerank.node";
 import { retrievalNode } from "../nodes/retrieval.node";
@@ -54,7 +55,7 @@ export class LangGraphChatRunner implements ChatGraphRunner {
   }
 }
 
-const insufficientTerminal = (state: ChatGraphState): boolean =>
+const lacksCourseEvidence = (state: ChatGraphState): boolean =>
   state.groundingStatus === "insufficient";
 const needsAssistantAction = (state: ChatGraphState): boolean =>
   state.suggestedAction !== null;
@@ -127,6 +128,16 @@ export async function runChatGraph(
           answerGenerationNode(current, nodeDependencies),
       ),
     )
+    .addNode("generalKnowledge", (state) =>
+      trackedNode(
+        "generalKnowledge",
+        state,
+        dependencies,
+        recordExecution,
+        (current, nodeDependencies) =>
+          generalKnowledgeNode(current, nodeDependencies),
+      ),
+    )
     .addNode("citationValidator", (state) =>
       trackedNode(
         "citationValidator",
@@ -146,10 +157,13 @@ export async function runChatGraph(
     .addEdge("rerank", "contextBuilder")
     .addEdge("contextBuilder", "evidenceGate")
     .addConditionalEdges("evidenceGate", (state) =>
-      insufficientTerminal(state) ? END : "answerGeneration",
+      lacksCourseEvidence(state) ? "generalKnowledge" : "answerGeneration",
     )
+    .addEdge("generalKnowledge", END)
     .addEdge("answerGeneration", "citationValidator")
-    .addEdge("citationValidator", END)
+    .addConditionalEdges("citationValidator", (state) =>
+      state.groundingStatus === "grounded" ? END : "generalKnowledge",
+    )
     .compile();
   return graph.invoke(initialState, { signal: dependencies.signal });
 }
