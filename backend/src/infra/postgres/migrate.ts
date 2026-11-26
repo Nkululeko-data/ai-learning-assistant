@@ -23,6 +23,17 @@ export async function runMigrations(
   migrationsDirectory = resolve(process.cwd(), "migrations"),
 ): Promise<number[]> {
   const migrations = await readMigrations(migrationsDirectory);
+  const currentVersion = await getSchemaVersion(pool);
+  const highestAvailableVersion = migrations.at(-1)?.version;
+  if (highestAvailableVersion === undefined) {
+    throw new Error(`No PostgreSQL migrations found in ${migrationsDirectory}`);
+  }
+  if (currentVersion > highestAvailableVersion) {
+    throw new Error(
+      `PostgreSQL schema version ${currentVersion} is newer than the highest available migration (${highestAvailableVersion}); refusing to run migrations from this checkout`,
+    );
+  }
+
   const newlyAppliedVersions: number[] = [];
   for (const migration of migrations) {
     if (await applyMigration(pool, migration, migrations)) {
@@ -45,6 +56,20 @@ export async function getSchemaVersion(pool: Pool): Promise<number> {
     "SELECT COALESCE(MAX(version), 0)::integer AS version FROM schema_migrations",
   );
   return Number(versionResult.rows[0]?.version ?? 0);
+}
+
+export function assertExpectedSchemaVersion(schemaVersion: number): void {
+  if (schemaVersion === EXPECTED_SCHEMA_VERSION) return;
+
+  if (schemaVersion > EXPECTED_SCHEMA_VERSION) {
+    throw new Error(
+      `PostgreSQL schema version ${schemaVersion} is newer than this backend expects (version ${EXPECTED_SCHEMA_VERSION}); use a matching backend build. Do not run migrations from this checkout.`,
+    );
+  }
+
+  throw new Error(
+    `PostgreSQL schema version ${schemaVersion} is older than this backend expects (version ${EXPECTED_SCHEMA_VERSION}); run npm run db:migrate after confirming this checkout targets the database.`,
+  );
 }
 
 /**

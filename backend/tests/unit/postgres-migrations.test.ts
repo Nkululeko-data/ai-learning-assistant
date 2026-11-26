@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { Pool } from "pg";
 import {
+  assertExpectedSchemaVersion,
   EXPECTED_SCHEMA_VERSION,
   getSchemaVersion,
 } from "../../src/infra/postgres/migrate";
@@ -54,6 +55,32 @@ function createPool(initialVersions: number[] = []) {
 }
 
 describe("PostgreSQL SQL migrations", () => {
+  test("explains how to resolve schema versions newer or older than this backend", () => {
+    expect(() => assertExpectedSchemaVersion(10)).toThrow(
+      "newer than this backend expects (version 9); use a matching backend build",
+    );
+    expect(() => assertExpectedSchemaVersion(8)).toThrow(
+      "older than this backend expects (version 9); run npm run db:migrate",
+    );
+    expect(() => assertExpectedSchemaVersion(9)).not.toThrow();
+  });
+
+  test("refuses to migrate a database newer than available migration files", async () => {
+    const { pool, query } = createPool([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const migrationsDirectory = resolve(__dirname, "../../migrations");
+
+    await expect(
+      runDatabaseMigrations(pool, migrationsDirectory),
+    ).rejects.toThrow(
+      "PostgreSQL schema version 10 is newer than the highest available migration (9)",
+    );
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes("CREATE TABLE IF NOT EXISTS schema_migrations"),
+      ),
+    ).toBe(false);
+  });
+
   test("applies the latest migration and is idempotent", async () => {
     const { pool, query, appliedVersions } = createPool([1, 2, 3, 4, 5, 6, 7]);
     const migrationsDirectory = resolve(__dirname, "../../migrations");
@@ -73,6 +100,13 @@ describe("PostgreSQL SQL migrations", () => {
         sql.includes("CREATE TABLE IF NOT EXISTS user_id_aliases"),
       ),
     ).toHaveLength(1);
+    expect(
+      query.mock.calls.some(
+        ([sql]) =>
+          sql.includes("ADD COLUMN answer_source") &&
+          sql.includes("ALTER COLUMN token_count TYPE bigint"),
+      ),
+    ).toBe(true);
     await expect(getSchemaVersion(pool)).resolves.toBe(9);
   });
 });

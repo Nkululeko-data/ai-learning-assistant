@@ -10,7 +10,11 @@ const logger = createLogger("silent");
 function createReadyTestApp() {
   return createApp({
     logger,
-    corsOrigins: ["https://ui.example.test"],
+    corsOrigins: [
+      "https://ui.example.test",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+    ],
     getReadiness: () => ({
       systemStoreReady: true,
       sqliteOpen: true,
@@ -39,6 +43,14 @@ async function verifiesHealthAndRequestMetadata(): Promise<void> {
   expect(response.headers["x-content-type-options"]).toBe("nosniff");
   expect(response.headers["access-control-allow-origin"]).toBe(
     "https://ui.example.test",
+  );
+
+  const loopbackResponse = await request(createReadyTestApp())
+    .get("/health")
+    .set("Origin", "http://127.0.0.1:5173");
+  expect(loopbackResponse.status).toBe(200);
+  expect(loopbackResponse.headers["access-control-allow-origin"]).toBe(
+    "http://127.0.0.1:5173",
   );
 }
 

@@ -439,8 +439,7 @@ export const quizAttemptSchema = z
     maxScore: z.number().int().positive(),
     status: z.enum(["in_progress", "submitted"]).optional(),
     startedAt: timestampSchema,
-    submittedAt: timestampSchema,
-    status: z.string().min(1).max(80).nullable().optional(),
+    submittedAt: timestampSchema.nullable().optional(),
   })
   .strict();
 

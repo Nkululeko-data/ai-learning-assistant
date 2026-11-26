@@ -221,8 +221,10 @@ Implementation and cutover:
   conversations remain unchanged because they are outside `data/json`.
 - The existing JSON files are legacy import sources, not runtime storage.
   `db:migrate` applies the ordered SQL migrations and `db:import-legacy`
-  imports the legacy collections to their configured database owners. JSON
-  store fixtures remain available to isolated tests.
+  imports the legacy collections to their configured database owners. Migration
+  009, reconstructed from the current Neon v9 schema, adds the optional message
+  answer source and widens daily token usage to `bigint`. JSON store fixtures
+  remain available to isolated tests.
 - This is a persistence cutover, not proof that existing data has been
   imported or verified against a production database. Keep backups and verify
   source/target counts before relying on migrated records.

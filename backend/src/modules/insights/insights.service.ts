@@ -474,6 +474,12 @@ function createQuizMissSamples(
   const samples = [];
   for (const attempt of attempts) {
     if (
+      (attempt.status ?? "submitted") !== "submitted" ||
+      !attempt.submittedAt
+    ) {
+      continue;
+    }
+    if (
       attempt.submittedAt < periodStart ||
       attempt.submittedAt >= periodEnd
     ) {

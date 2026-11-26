@@ -106,7 +106,10 @@ function verifiesDefaultConfiguration(): void {
   expect(config.insightMinCohortSize).toBe(3);
   expect(config.insightPeriodDays).toBe(7);
   expect(config.gapReportsMaxPerCourse).toBe(10);
-  expect(config.corsOrigins).toEqual(["http://localhost:5173"]);
+  expect(config.corsOrigins).toEqual([
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]);
 }
 
 /**
