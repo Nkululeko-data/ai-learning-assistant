@@ -26,7 +26,7 @@ export const gapReportSchema = z
     courseId: idSchema,
     periodStart: z.string(),
     periodEnd: z.string(),
-    totalGapQuestions: z.number().int().nonnegative(),
+    totalGapQuestions: z.number().int().nonnegative().nullable(),
     minCohortSizeUsed: z.number().int().positive(),
     topics: z.array(
       z
@@ -34,14 +34,19 @@ export const gapReportSchema = z
           topicId: z.string(),
           theme: z.string(),
           questionCount: z.number().int().nonnegative(),
+          insufficientEvidenceCount: z.number().int().nonnegative().default(0),
+          averageRetrievalScore: z.number().finite().nullable().default(null),
           distinctLearnerCount: z.number().int().nonnegative(),
+          helpfulFeedbackCount: z.number().int().nonnegative().default(0),
+          notHelpfulFeedbackCount: z.number().int().nonnegative().default(0),
+          quizMissCount: z.number().int().nonnegative().default(0),
           suggestedAction: z.string(),
           trend: z.enum(["up", "down", "flat", "new"]),
           previousCount: z.number().int().nonnegative().nullable(),
         })
         .strict(),
     ),
-    otherCount: z.number().int().nonnegative(),
+    otherCount: z.number().int().nonnegative().nullable(),
     generatedBy: z
       .object({
         executionId: idSchema,

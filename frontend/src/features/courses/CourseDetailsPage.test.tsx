@@ -257,6 +257,80 @@ describe("CourseDetailsPage", () => {
     expect(screen.queryByText("2", { exact: true })).toBeNull();
   });
 
+  it("explains an empty gap report using aggregate signals and next steps", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
+        HttpResponse.json({
+          data: {
+            id: courseId,
+            name: "Course one",
+            ownerId: coachId,
+            status: "active",
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/insights`, () =>
+        HttpResponse.json({
+          data: {
+            courseId,
+            periodStart: "2026-01-01T00:00:00.000Z",
+            periodEnd: "2026-01-31T00:00:00.000Z",
+            minCohortSizeUsed: 3,
+            cohortQualified: true,
+            distinctLearnerCount: 3,
+            questionCount: 3,
+            insufficientQuestionCount: 0,
+            helpfulFeedbackCount: 2,
+            notHelpfulFeedbackCount: 1,
+            quizAttemptCount: 0,
+            quizAverageScore: null,
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/gap-report`, () =>
+        HttpResponse.json({
+          data: {
+            id: "8a57e2ac-194b-45d0-8e10-0ec4453c1f28",
+            courseId,
+            periodStart: "2026-01-01T00:00:00.000Z",
+            periodEnd: "2026-01-31T00:00:00.000Z",
+            totalGapQuestions: null,
+            minCohortSizeUsed: 3,
+            topics: [],
+            otherCount: null,
+            generatedBy: null,
+            createdAt: "2026-01-31T12:00:00.000Z",
+          },
+        }),
+      ),
+    );
+
+    const user: AuthenticatedUser = {
+      id: coachId,
+      email: "coach@example.test",
+      displayName: "Test coach",
+      role: "coach",
+      status: "active",
+      mustChangePassword: false,
+      permissions: ["insights:view"],
+      permsVersion: 1,
+    };
+    renderCourseDetails(user, `/courses/${courseId}#course-insights`);
+
+    expect(
+      await screen.findByText("No reportable course gaps were found in this period."),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/no questions lacking course evidence and no quiz attempts/i),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/1 not-helpful rating was also recorded/i),
+    ).toBeVisible();
+  });
+
   it("keeps coach course sections out of the overview", async () => {
     server.use(
       http.get(`http://localhost:3000/api/v1/courses/${courseId}`, () =>
