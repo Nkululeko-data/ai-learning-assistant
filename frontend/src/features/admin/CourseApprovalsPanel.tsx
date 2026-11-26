@@ -7,7 +7,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  LinearProgress,
   Stack,
   TextField,
   Typography,
@@ -20,6 +19,7 @@ import {
 } from "../../api/admin";
 import { friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
 
 export function CourseApprovalsPanel() {
   const queryClient = useQueryClient();
@@ -78,7 +78,7 @@ export function CourseApprovalsPanel() {
         <ErrorNotice message={friendlyMessage(decisionMutation.error)} />
       )}
       {approvalsQuery.isLoading && (
-        <LinearProgress aria-label="Loading course approval queue" />
+        <AdminLoadingSkeleton label="Loading course approval queue" />
       )}
       {approvalsQuery.isError && (
         <Stack spacing={1} alignItems="flex-start">

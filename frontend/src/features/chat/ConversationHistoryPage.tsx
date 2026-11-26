@@ -95,7 +95,7 @@ export function ConversationHistoryPage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack className="learnova-history-page" spacing={3}>
       <Stack
         direction={{ xs: "column", sm: "row" }}
         justifyContent="space-between"
@@ -103,7 +103,12 @@ export function ConversationHistoryPage() {
         spacing={2}
       >
         <Box>
-          <Typography component="h1" variant="h4" fontWeight={700}>
+          <Typography
+            component="h1"
+            variant="h4"
+            fontWeight={700}
+            className="learnova-page-heading"
+          >
             Conversation History
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
@@ -149,6 +154,7 @@ export function ConversationHistoryPage() {
           <Box
             key={conversation.id}
             component="article"
+            className="learnova-history-card"
             sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
           >
             <Stack

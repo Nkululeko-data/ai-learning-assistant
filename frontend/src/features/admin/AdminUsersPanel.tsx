@@ -11,7 +11,6 @@ import {
   FormControl,
   IconButton,
   InputLabel,
-  LinearProgress,
   Menu,
   MenuItem,
   Paper,
@@ -38,6 +37,8 @@ import {
 } from "../../api/admin";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
+import { AdminStatusChip } from "./AdminStatusChip";
 
 type UserAction = "role" | "status" | "erase" | null;
 
@@ -119,7 +120,7 @@ export function AdminUsersPanel() {
         <Typography component="h1" variant="h4" fontWeight={700}>
           Users
         </Typography>
-        <LinearProgress aria-label="Loading users" />
+        <AdminLoadingSkeleton label="Loading users" rows={5} />
       </Stack>
     );
   }
@@ -212,7 +213,9 @@ export function AdminUsersPanel() {
                       </Typography>
                     </TableCell>
                     <TableCell>{roleLabel(target.role)}</TableCell>
-                    <TableCell>{target.status}</TableCell>
+                    <TableCell>
+                      <AdminStatusChip status={target.status} />
+                    </TableCell>
                     <TableCell>
                       {target.mustChangePassword
                         ? "Password change required"

@@ -265,9 +265,14 @@ export function DocumentLibraryPage() {
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack className="learnova-document-library" spacing={3}>
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={700}>
+        <Typography
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+          className="learnova-page-heading"
+        >
           Document library
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>

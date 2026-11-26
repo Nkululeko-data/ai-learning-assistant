@@ -7,6 +7,7 @@ import {
   DialogTitle,
   Stack,
   TextField,
+  Typography,
 } from "@mui/material";
 import { z } from "zod";
 import type { CourseView } from "../../api/courses";
@@ -84,6 +85,14 @@ export function CourseFormDialog({
           sx={{ pt: 1 }}
           onSubmit={handleSubmit}
         >
+          <div>
+            <Typography component="h2" variant="subtitle1" fontWeight={700}>
+              Course information
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Set the title and description learners will see in the course catalog.
+            </Typography>
+          </div>
           {error && <ErrorNotice message={error} />}
           <TextField
             label="Course name"
@@ -92,6 +101,7 @@ export function CourseFormDialog({
             required
             autoFocus
             inputProps={{ maxLength: 120 }}
+            helperText="Use a clear, recognizable title."
           />
           <TextField
             label="Description"
@@ -100,6 +110,7 @@ export function CourseFormDialog({
             multiline
             minRows={3}
             inputProps={{ maxLength: 2000 }}
+            helperText={`${description.length}/2000 characters`}
           />
         </Stack>
       </DialogContent>

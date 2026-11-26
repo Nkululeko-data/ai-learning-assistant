@@ -1,4 +1,4 @@
-import { Alert, Box, Button, LinearProgress, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import {
@@ -10,6 +10,7 @@ import {
 import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
 
 const attentionPageSize = 100;
 const refreshInterval = 5 * 60 * 1000;
@@ -109,9 +110,17 @@ export function AdminDashboardPage() {
 
   return (
     <Stack spacing={4}>
-      <Typography component="h1" variant="h4" fontWeight={700}>
-        Admin dashboard
-      </Typography>
+      <Box component="header" className="admin-dashboard-header">
+        <Typography component="h1" variant="h4" fontWeight={700}>
+          Admin dashboard
+        </Typography>
+        {user?.displayName && (
+          <Typography className="admin-dashboard-greeting">
+            Welcome, {user.displayName}. Monitor platform activity and work that needs
+            review.
+          </Typography>
+        )}
+      </Box>
       {canReviewApplications && (
         <Box component="section" aria-labelledby="system-summary-title">
           <Typography
@@ -124,7 +133,7 @@ export function AdminDashboardPage() {
             System summary
           </Typography>
           {summaryQuery.isPending && (
-            <LinearProgress aria-label="Loading system summary" />
+            <AdminLoadingSkeleton label="Loading system summary" mode="summary" />
           )}
           {summaryQuery.isError && (
             <Stack spacing={1} alignItems="flex-start">
@@ -134,6 +143,7 @@ export function AdminDashboardPage() {
           )}
           {summaryQuery.data && (
             <Box
+              className="admin-summary-grid"
               sx={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
@@ -178,7 +188,9 @@ export function AdminDashboardPage() {
         >
           Needs attention
         </Typography>
-        {isLoading && <LinearProgress aria-label="Loading items needing attention" />}
+        {isLoading && (
+          <AdminLoadingSkeleton label="Loading items needing attention" rows={3} />
+        )}
         {errors.map((query, index) => (
           <Stack key={index} spacing={1} alignItems="flex-start" sx={{ mt: 1 }}>
             <ErrorNotice message={friendlyMessage(query.error)} />
@@ -186,14 +198,20 @@ export function AdminDashboardPage() {
           </Stack>
         ))}
         {rows.length > 0 && (
-          <Stack component="ul" sx={{ listStyle: "none", p: 0, m: 0 }}>
+          <Stack
+            component="ul"
+            className="admin-attention-list"
+            sx={{ listStyle: "none", p: 0, m: 0 }}
+          >
             {rows.map((row) => (
               <Box
                 component="li"
                 key={row.key}
                 aria-label={row.title}
+                className="admin-attention-row"
                 sx={{
                   display: "flex",
+                  flexWrap: { xs: "wrap", sm: "nowrap" },
                   alignItems: "center",
                   gap: { xs: 1.5, sm: 2 },
                   py: 1.5,
@@ -211,7 +229,7 @@ export function AdminDashboardPage() {
                 >
                   {row.count}
                 </Typography>
-                <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography component="h3" variant="body1" fontWeight={650}>
                     {row.title}
                   </Typography>
@@ -245,18 +263,20 @@ export function AdminDashboardPage() {
 function SummaryMetric({ label, value }: { label: string; value: number }) {
   return (
     <Box
+      component="dl"
+      className="admin-summary-metric"
       sx={{
-        p: 2,
-        border: 1,
+        m: 0,
+        py: 1.5,
+        px: 1,
+        borderBottom: 1,
         borderColor: "divider",
-        borderRadius: 2,
-        bgcolor: "background.paper",
       }}
     >
-      <Typography color="text.secondary" variant="body2">
+      <Typography component="dt" color="text.secondary" variant="body2">
         {label}
       </Typography>
-      <Typography variant="h5" fontWeight={700} sx={{ mt: 0.5 }}>
+      <Typography component="dd" variant="h5" fontWeight={700} sx={{ mt: 0.5, mb: 0 }}>
         {value}
       </Typography>
     </Box>

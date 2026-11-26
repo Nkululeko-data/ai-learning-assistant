@@ -46,14 +46,14 @@ function createAuthContext(user: AuthenticatedUser): AuthContextValue {
   };
 }
 
-function renderCourseManagement(user: AuthenticatedUser) {
+function renderCourseManagement(user: AuthenticatedUser, initialEntry = "/") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <AuthContext.Provider value={createAuthContext(user)}>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <CourseManagementPage />
         </MemoryRouter>
       </QueryClientProvider>
@@ -62,6 +62,30 @@ function renderCourseManagement(user: AuthenticatedUser) {
 }
 
 describe("CourseManagementPage", () => {
+  it("opens the create form from the coach dashboard deep link", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/v1/courses", () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+
+    renderCourseManagement(
+      {
+        id: "37c1dbbd-f72a-4508-a662-3992e2506ca4",
+        email: "coach@example.test",
+        displayName: "Test coach",
+        role: "coach",
+        status: "active",
+        mustChangePassword: false,
+        permissions: ["course:create"],
+        permsVersion: 1,
+      },
+      "/my-courses?create=1",
+    );
+
+    expect(await screen.findByRole("heading", { name: "Create course" })).toBeVisible();
+  });
+
   it("shows creation controls only for a coach with course:create permission", async () => {
     server.use(
       http.get("http://localhost:3000/api/v1/courses", () =>
@@ -178,8 +202,7 @@ describe("CourseManagementPage", () => {
       ownerId: coachId,
       status: "active",
       approvalStatus,
-      approvalNote:
-        approvalStatus === "changes_requested" ? "Add an overview." : null,
+      approvalNote: approvalStatus === "changes_requested" ? "Add an overview." : null,
       approvalRequestedAt: "2026-11-20T07:00:00.000Z",
       reviewedBy: null,
       reviewedAt: null,

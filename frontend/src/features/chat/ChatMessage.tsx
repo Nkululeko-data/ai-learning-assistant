@@ -63,6 +63,7 @@ export function ChatMessage({
     <Card
       component="article"
       variant="outlined"
+      className={`learnova-chat-message learnova-chat-message-${message.role}`}
       aria-label={`${message.role === "assistant" ? "Assistant" : "You"} message`}
     >
       <CardContent>

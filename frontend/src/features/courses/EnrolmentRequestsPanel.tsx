@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  Paper,
   Stack,
   TextField,
   Typography,
@@ -105,10 +106,12 @@ export function EnrolmentRequestsPanel({
       {requests.length > 0 && (
         <Stack spacing={0}>
           {requests.map((request) => (
-            <Box
+            <Paper
               key={request.id}
               component="article"
-              sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}
+              variant="outlined"
+              className="learnova-access-request"
+              sx={{ p: { xs: 1.5, sm: 2 } }}
             >
               <Stack
                 direction={{ xs: "column", sm: "row" }}
@@ -150,7 +153,7 @@ export function EnrolmentRequestsPanel({
                   </Button>
                 </Stack>
               </Stack>
-            </Box>
+            </Paper>
           ))}
         </Stack>
       )}

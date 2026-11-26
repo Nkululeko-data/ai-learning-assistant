@@ -7,7 +7,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  LinearProgress,
   Stack,
   TextField,
   Typography,
@@ -20,6 +19,7 @@ import {
 } from "../../api/admin";
 import { friendlyMessage } from "../../api/client";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
 
 type Decision = "approved" | "rejected";
 
@@ -71,7 +71,7 @@ export function CoachRequestsPanel() {
         <ErrorNotice message={friendlyMessage(decisionMutation.error)} />
       )}
       {requestsQuery.isLoading && (
-        <LinearProgress aria-label="Loading coach applications" />
+        <AdminLoadingSkeleton label="Loading coach applications" />
       )}
       {requestsQuery.isError && (
         <Stack spacing={1} alignItems="flex-start">

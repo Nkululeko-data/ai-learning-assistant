@@ -1,0 +1,606 @@
+:root {
+  --learnova-navy: #14375a;
+  --learnova-navy-deep: #0e2a47;
+  --learnova-navy-light: #244d78;
+  --learnova-orange: #c4512a;
+  --learnova-cream: #f6f4ee;
+  --learnova-gold: #f2c14e;
+  --learnova-sand: #e8e3d4;
+  --learnova-white: #fffefa;
+  --learnova-heading-font: "Source Serif 4 Variable", Georgia, serif;
+  --learnova-body-font: "Source Sans 3 Variable", "Segoe UI", Arial, sans-serif;
+}
+
+.learnova-workspace {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 87% 3%, rgba(232, 227, 212, 0.3), transparent 28rem),
+    var(--learnova-cream);
+  color: var(--learnova-navy-deep);
+  font-family: var(--learnova-body-font);
+}
+
+.learnova-sidebar .MuiDrawer-paper {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(76, 115, 150, 0.28), transparent 19rem),
+    linear-gradient(
+      160deg,
+      var(--learnova-navy-deep),
+      var(--learnova-navy) 60%,
+      #1b4268
+    );
+  box-shadow: 8px 0 28px rgba(14, 42, 71, 0.08);
+}
+
+.learnova-sidebar .MuiListItemButton-root {
+  border-radius: 12px;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.learnova-sidebar .MuiListItemButton-root:hover {
+  transform: translateX(2px);
+}
+
+.learnova-sidebar .MuiListItemButton-root.active {
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: inset 3px 0 var(--learnova-gold);
+  color: #fff;
+}
+
+.learnova-brand-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.learnova-brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(246, 244, 238, 0.32);
+  border-radius: 13px;
+  background: rgba(246, 244, 238, 0.08);
+  color: var(--learnova-gold);
+}
+
+.learnova-topbar {
+  border-color: rgba(20, 55, 90, 0.1) !important;
+  background: rgba(255, 254, 250, 0.94) !important;
+  backdrop-filter: blur(14px);
+}
+
+.learnova-content {
+  width: min(100%, 1440px);
+  padding-top: clamp(24px, 3.2vw, 48px) !important;
+  padding-bottom: clamp(40px, 5vw, 72px) !important;
+}
+
+.learnova-workspace .MuiPaper-root {
+  border-color: rgba(20, 55, 90, 0.12);
+  background-image: none;
+}
+
+.learnova-workspace .MuiButton-root {
+  min-height: 42px;
+  border-radius: 11px;
+  font-weight: 650;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.learnova-workspace .MuiButton-root:hover {
+  transform: translateY(-1px);
+}
+
+.learnova-workspace .MuiButton-containedPrimary {
+  background-color: var(--learnova-orange);
+  color: #fff;
+}
+
+.learnova-workspace .MuiButton-containedPrimary:hover {
+  background-color: #a54323;
+  box-shadow: 0 6px 18px rgba(164, 67, 35, 0.2);
+}
+
+.learnova-workspace .MuiButton-outlined {
+  border-color: rgba(20, 55, 90, 0.25);
+}
+
+.learnova-workspace .MuiOutlinedInput-root {
+  border-radius: 12px;
+  background: var(--learnova-white);
+}
+
+.learnova-workspace .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(20, 55, 90, 0.2);
+}
+
+.learnova-workspace
+  .MuiOutlinedInput-root.Mui-focused
+  .MuiOutlinedInput-notchedOutline {
+  border-width: 2px;
+  border-color: var(--learnova-orange);
+}
+
+.learnova-workspace .MuiChip-root {
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.learnova-page-heading {
+  color: var(--learnova-navy-deep);
+  letter-spacing: -0.025em !important;
+}
+
+.learnova-welcome-panel {
+  position: relative;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(242, 193, 78, 0.2), transparent 13rem),
+    linear-gradient(
+      125deg,
+      var(--learnova-navy-deep),
+      var(--learnova-navy) 65%,
+      #244d78
+    ) !important;
+  color: var(--learnova-cream);
+  box-shadow: 0 18px 48px rgba(14, 42, 71, 0.15);
+}
+
+.learnova-welcome-panel::after {
+  position: absolute;
+  right: -5rem;
+  bottom: -11rem;
+  width: 24rem;
+  height: 24rem;
+  border: 1px solid rgba(246, 244, 238, 0.16);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.learnova-welcome-eyebrow {
+  color: var(--learnova-gold) !important;
+  font-size: 0.76rem !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.13em !important;
+}
+
+.learnova-welcome-title {
+  color: var(--learnova-cream);
+  font-size: clamp(2rem, 3.6vw, 3.15rem) !important;
+  letter-spacing: -0.04em !important;
+  line-height: 1.08 !important;
+}
+
+.learnova-welcome-copy {
+  max-width: 42rem;
+  color: rgba(246, 244, 238, 0.82) !important;
+  font-size: 1.08rem !important;
+}
+
+.learnova-welcome-art {
+  display: grid;
+  width: clamp(112px, 13vw, 166px);
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(246, 244, 238, 0.2);
+  border-radius: 36px;
+  background: rgba(246, 244, 238, 0.08);
+  color: var(--learnova-gold);
+  transform: rotate(4deg);
+}
+
+.learnova-course-hero {
+  border: 0 !important;
+  border-radius: 22px !important;
+  box-shadow: 0 15px 34px rgba(14, 42, 71, 0.13);
+}
+
+.learnova-course-catalog-hero {
+  border: 0 !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 85% 20%, rgba(242, 193, 78, 0.2), transparent 13rem),
+    linear-gradient(
+      125deg,
+      var(--learnova-navy-deep),
+      var(--learnova-navy) 70%,
+      #244d78
+    ) !important;
+  box-shadow: 0 15px 34px rgba(14, 42, 71, 0.13);
+}
+
+.learnova-section-heading {
+  margin-bottom: 16px;
+}
+
+.learnova-stat-card {
+  display: flex;
+  min-height: 110px;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 18px !important;
+  background: rgba(255, 254, 250, 0.92) !important;
+  box-shadow: 0 8px 24px rgba(14, 42, 71, 0.045);
+}
+
+.learnova-stat-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 15px;
+  background: rgba(196, 81, 42, 0.1);
+  color: var(--learnova-orange);
+}
+
+.learnova-stat-value {
+  color: var(--learnova-navy-deep);
+  font-family: var(--learnova-heading-font) !important;
+  font-size: 1.75rem !important;
+  line-height: 1.05 !important;
+}
+
+.learnova-quick-card {
+  display: flex;
+  min-height: 136px;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(20, 55, 90, 0.12);
+  border-radius: 18px;
+  background: var(--learnova-white);
+  color: var(--learnova-navy-deep);
+  text-decoration: none;
+  transition:
+    transform 170ms ease,
+    border-color 170ms ease,
+    box-shadow 170ms ease;
+}
+
+.learnova-quick-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(196, 81, 42, 0.42);
+  box-shadow: 0 14px 28px rgba(14, 42, 71, 0.09);
+}
+
+.learnova-quick-card:focus-visible,
+.learnova-course-card:focus-within {
+  outline: 2px solid var(--learnova-orange);
+  outline-offset: 3px;
+}
+
+.learnova-quick-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(20, 55, 90, 0.08);
+  color: var(--learnova-navy);
+}
+
+.learnova-course-card {
+  display: flex;
+  height: 100%;
+  min-height: 302px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(20, 55, 90, 0.12) !important;
+  border-radius: 19px !important;
+  background: var(--learnova-white) !important;
+  box-shadow: 0 7px 22px rgba(14, 42, 71, 0.045);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.learnova-course-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(196, 81, 42, 0.35) !important;
+  box-shadow: 0 17px 34px rgba(14, 42, 71, 0.12);
+}
+
+.learnova-course-art {
+  position: relative;
+  display: flex;
+  min-height: 118px;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 20px 24px;
+  background:
+    radial-gradient(circle at 86% 22%, rgba(242, 193, 78, 0.25), transparent 7rem),
+    linear-gradient(135deg, var(--learnova-navy-deep), var(--learnova-navy-light));
+  color: var(--learnova-cream);
+}
+
+.learnova-course-art::before,
+.learnova-course-art::after {
+  position: absolute;
+  right: 12%;
+  width: 118px;
+  height: 118px;
+  border: 1px solid rgba(246, 244, 238, 0.2);
+  border-radius: 50%;
+  content: "";
+}
+
+.learnova-course-art::before {
+  transform: translate(22%, -15%);
+}
+
+.learnova-course-art::after {
+  width: 78px;
+  height: 78px;
+  border-color: rgba(242, 193, 78, 0.45);
+  transform: translate(35%, -22%);
+}
+
+.learnova-course-art-icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 1px solid rgba(246, 244, 238, 0.3);
+  border-radius: 18px;
+  background: rgba(246, 244, 238, 0.1);
+  color: var(--learnova-gold);
+}
+
+.learnova-course-art-label {
+  position: relative;
+  z-index: 1;
+  color: rgba(246, 244, 238, 0.78);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.learnova-course-card-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px !important;
+}
+
+.learnova-course-card-title {
+  color: var(--learnova-navy-deep);
+  font-family: var(--learnova-heading-font) !important;
+  font-size: 1.28rem !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+}
+
+.learnova-course-card-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #536575;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.5;
+}
+
+.learnova-course-updated {
+  margin-top: -6px !important;
+}
+
+.learnova-course-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.learnova-lesson-editor {
+  border-color: rgba(20, 55, 90, 0.13) !important;
+}
+
+.learnova-lesson-material-card {
+  border-radius: 14px !important;
+  background: rgba(246, 244, 238, 0.55) !important;
+}
+
+.learnova-quiz-method-button {
+  min-height: 84px !important;
+  flex: 1 1 250px;
+  justify-content: flex-start !important;
+  padding: 14px 18px !important;
+  text-align: left;
+}
+
+.learnova-quiz-method-button .MuiButton-startIcon {
+  align-self: flex-start;
+  margin-top: 3px;
+}
+
+.learnova-quiz-question {
+  padding: 18px;
+  border: 1px solid rgba(20, 55, 90, 0.12);
+  border-radius: 15px;
+  background: rgba(246, 244, 238, 0.46);
+}
+
+.learnova-quiz-report,
+.learnova-roster-card,
+.learnova-access-request {
+  border-color: rgba(20, 55, 90, 0.13) !important;
+  border-radius: 15px !important;
+  background: rgba(255, 254, 250, 0.92) !important;
+}
+
+.learnova-access-request {
+  box-shadow: 0 5px 16px rgba(14, 42, 71, 0.035);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.learnova-access-request:hover {
+  border-color: rgba(196, 81, 42, 0.34) !important;
+  box-shadow: 0 9px 22px rgba(14, 42, 71, 0.07);
+}
+
+.learnova-course-management-workspace > .MuiBox-root:first-child {
+  padding: clamp(18px, 2.5vw, 28px);
+  border: 1px solid rgba(20, 55, 90, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 254, 250, 0.88);
+  box-shadow: 0 7px 22px rgba(14, 42, 71, 0.035);
+}
+
+.learnova-chat-message {
+  max-width: min(88%, 760px);
+  border-radius: 18px !important;
+  box-shadow: 0 5px 16px rgba(14, 42, 71, 0.045);
+}
+
+.learnova-chat-message-assistant {
+  align-self: flex-start;
+  border-bottom-left-radius: 5px !important;
+  background: #fffefa !important;
+}
+
+.learnova-chat-message-user {
+  align-self: flex-end;
+  border: 0 !important;
+  border-bottom-right-radius: 5px !important;
+  background: var(--learnova-navy) !important;
+  color: #fff;
+}
+
+.learnova-chat-message-user .MuiTypography-root {
+  color: inherit;
+}
+
+.learnova-chat-main-card {
+  min-height: 440px;
+}
+
+.learnova-chat-main-card > .MuiCardContent-root {
+  display: flex;
+  min-height: inherit;
+  flex-direction: column;
+}
+
+.learnova-chat-main-card > .MuiCardContent-root > .MuiStack-root {
+  flex: 1;
+}
+
+.learnova-chat-messages {
+  min-height: 180px;
+  max-height: min(58vh, 680px);
+  overflow-y: auto;
+  padding: 4px 2px 12px;
+}
+
+.learnova-lesson-accordion {
+  border-radius: 15px !important;
+  background: rgba(255, 254, 250, 0.96);
+}
+
+.learnova-lesson-accordion.Mui-expanded {
+  border-color: rgba(196, 81, 42, 0.42);
+  box-shadow: 0 10px 24px rgba(14, 42, 71, 0.07);
+}
+
+.learnova-material-panel {
+  border-radius: 15px !important;
+  background: #fffefa !important;
+  box-shadow: 0 6px 20px rgba(14, 42, 71, 0.04);
+}
+
+.learnova-material-frame {
+  overflow: hidden;
+  border-radius: 13px;
+  background: #f0eee8;
+}
+
+.learnova-result-card,
+.learnova-history-card {
+  border-radius: 17px !important;
+  background: rgba(255, 254, 250, 0.94) !important;
+  box-shadow: 0 7px 20px rgba(14, 42, 71, 0.04);
+}
+
+.learnova-history-card {
+  margin-bottom: 10px;
+  padding: 18px 20px;
+  border: 1px solid rgba(20, 55, 90, 0.1);
+}
+
+@media (max-width: 767px) {
+  .learnova-content {
+    padding-right: 16px !important;
+    padding-left: 16px !important;
+  }
+
+  .learnova-welcome-panel {
+    border-radius: 19px !important;
+  }
+
+  .learnova-welcome-art {
+    display: none;
+  }
+
+  .learnova-course-card {
+    min-height: 0;
+  }
+
+  .learnova-quiz-question {
+    padding: 14px;
+  }
+
+  .learnova-chat-message {
+    max-width: 96%;
+  }
+
+  .learnova-chat-messages {
+    max-height: 52vh;
+  }
+
+  .learnova-chat-main-card {
+    min-height: 360px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .learnova-sidebar .MuiListItemButton-root,
+  .learnova-workspace .MuiButton-root,
+  .learnova-quick-card,
+  .learnova-course-card,
+  .learnova-access-request {
+    transition: none;
+  }
+
+  .learnova-sidebar .MuiListItemButton-root:hover,
+  .learnova-quick-card:hover,
+  .learnova-course-card:hover,
+  .learnova-workspace .MuiButton-root:hover {
+    transform: none;
+  }
+}

@@ -1,16 +1,10 @@
 import { useState, type FormEvent } from "react";
-import {
-  Alert,
-  Button,
-  LinearProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Alert, Button, Stack, TextField, Typography } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { friendlyMessage } from "../../api/client";
 import { getAdminConfig, updateAdminConfig } from "../../api/admin";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
 
 export function AdminSettingsPanel({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
@@ -37,7 +31,7 @@ export function AdminSettingsPanel({ canManage }: { canManage: boolean }) {
         <Typography component="h1" variant="h4" fontWeight={700}>
           Settings
         </Typography>
-        <LinearProgress aria-label="Loading admin settings" />
+        <AdminLoadingSkeleton label="Loading admin settings" rows={3} />
       </Stack>
     );
   }

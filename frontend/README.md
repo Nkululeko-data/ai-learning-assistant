@@ -25,9 +25,10 @@ to the same value as the backend's `MAX_UPLOAD_SIZE_MB` when that limit is
 overridden. The backend remains authoritative for upload and expanded DOCX size
 checks.
 
-The backend's default CORS configuration already allows
-`http://localhost:5173`. For a separate production origin, configure the
-backend's `CORS_ORIGINS`, or serve the frontend and backend behind one origin.
+The backend's default CORS configuration allows both
+`http://localhost:5173` and `http://127.0.0.1:5173`. For a separate production
+origin, configure the backend's `CORS_ORIGINS`, or serve the frontend and
+backend behind one origin.
 
 ## Scripts
 

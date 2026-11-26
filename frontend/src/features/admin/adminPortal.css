@@ -1,0 +1,115 @@
+.learnova-admin-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.learnova-admin-page > .MuiStack-root {
+  min-width: 0;
+}
+
+.learnova-admin-page .MuiTypography-h4,
+.learnova-admin-page .MuiTypography-h5 {
+  color: var(--learnova-navy-deep);
+}
+
+.learnova-admin-page .admin-dashboard-header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--learnova-sand);
+}
+
+.learnova-admin-page .admin-dashboard-greeting {
+  max-width: 68ch;
+  margin-top: 8px;
+  color: #536575;
+}
+
+.learnova-admin-page .admin-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  border-top: 1px solid var(--learnova-sand);
+}
+
+.learnova-admin-page .admin-summary-metric {
+  border-color: var(--learnova-sand);
+}
+
+.learnova-admin-page .admin-summary-metric dd {
+  color: var(--learnova-navy);
+  font-variant-numeric: tabular-nums;
+}
+
+.learnova-admin-page .admin-attention-row {
+  border-color: var(--learnova-sand) !important;
+}
+
+.learnova-admin-page .admin-loading-row {
+  border-color: var(--learnova-sand);
+}
+
+.learnova-admin-page .MuiTableContainer-root {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--learnova-sand);
+  border-radius: 14px;
+  background: var(--learnova-white);
+  box-shadow: none;
+}
+
+.learnova-admin-page .MuiTable-root {
+  min-width: 680px;
+}
+
+.learnova-admin-page .MuiTableHead-root {
+  background: var(--learnova-cream);
+}
+
+.learnova-admin-page .MuiTableCell-head {
+  color: var(--learnova-navy-deep);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.learnova-admin-page .MuiTableCell-root {
+  border-color: rgba(20, 55, 90, 0.1);
+}
+
+.learnova-admin-page .MuiTableBody-root .MuiTableRow-root:hover {
+  background-color: rgba(20, 55, 90, 0.035);
+}
+
+.learnova-admin-page .MuiAlert-root {
+  border-radius: 12px;
+}
+
+.learnova-admin-page .admin-status-chip {
+  border-radius: 8px;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
+.learnova-admin-page .admin-status-chip--success {
+  background: #e4eee8;
+  color: #1f5a3d;
+}
+
+.learnova-admin-page .admin-status-chip--warning {
+  background: #fff0cf;
+  color: #73420a;
+}
+
+.learnova-admin-page .admin-status-chip--error {
+  background: #f7e5df;
+  color: #8c3520;
+}
+
+.learnova-admin-page .admin-status-chip--neutral {
+  background: #edf0f2;
+  color: #3e5264;
+}
+
+@media (max-width: 600px) {
+  .learnova-admin-page .MuiTableCell-root {
+    padding: 12px;
+  }
+}

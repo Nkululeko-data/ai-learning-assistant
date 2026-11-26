@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { server } from "../../test/server";
 import { CourseLessonsEditor } from "./CourseLessonsEditor";
@@ -17,6 +18,64 @@ const documentId = "9a7a7701-a1b1-42a4-890d-1b1e54055d0e";
 const videoId = "3b22cfde-4ac7-498c-84ad-7d4be50b854c";
 
 describe("CourseLessonsEditor", () => {
+  it("asks for confirmation before removing a lesson from the draft", async () => {
+    server.use(
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/lessons`, () =>
+        HttpResponse.json({
+          data: {
+            courseId,
+            version: 3,
+            lessons: [
+              {
+                id: "c2d7a840-35a4-4d4a-9c2a-0f4e3a9a7912",
+                title: "Cell structure",
+                introduction: "Explore how cell structures work.",
+                pdfDocumentId: null,
+                pdfFilename: null,
+                videoDocumentId: null,
+                videoFilename: null,
+                videoSizeBytes: null,
+                videoUrl: null,
+              },
+            ],
+          },
+        }),
+      ),
+      http.get(`http://localhost:3000/api/v1/courses/${courseId}/documents`, () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <CourseLessonsEditor courseId={courseId} />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Cell structure/ }));
+    await user.click(screen.getByRole("button", { name: "Remove lesson 1" }));
+    expect(
+      screen.getByRole("dialog", { name: "Remove lesson from course?" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep lesson" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Remove lesson from course?" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: /Cell structure/ })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Remove lesson 1" }));
+    await user.click(screen.getByRole("button", { name: "Remove lesson" }));
+    expect(screen.queryByRole("button", { name: /Cell structure/ })).toBeNull();
+  });
+
   it("keeps saved lessons compact until the coach opens one to edit", async () => {
     server.use(
       http.get(`http://localhost:3000/api/v1/courses/${courseId}/lessons`, () =>
@@ -50,9 +109,11 @@ describe("CourseLessonsEditor", () => {
     const user = userEvent.setup();
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <CourseLessonsEditor courseId={courseId} />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <CourseLessonsEditor courseId={courseId} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     const lessonRow = await screen.findByRole("button", { name: /Cell structure/ });
@@ -151,9 +212,11 @@ describe("CourseLessonsEditor", () => {
     const user = userEvent.setup();
 
     const { container } = render(
-      <QueryClientProvider client={queryClient}>
-        <CourseLessonsEditor courseId={courseId} />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <CourseLessonsEditor courseId={courseId} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     await screen.findByText(/No lessons yet/i);

@@ -78,15 +78,22 @@ export function CourseCurriculum({
     return (
       <Stack id="course-curriculum" spacing={3}>
         <Card
+          className="learnova-course-hero"
           sx={{
             overflow: "hidden",
             borderRadius: 3,
             color: "common.white",
-            backgroundColor: "primary.main",
+            background:
+              "radial-gradient(circle at 85% 20%, rgba(242,193,78,.18), transparent 13rem), linear-gradient(125deg, #0E2A47, #14375A 70%, #244D78)",
           }}
         >
           <CardContent sx={{ p: { xs: 2.5, sm: 3.5 } }}>
-            <Typography component="h1" variant="h4" fontWeight={750}>
+            <Typography
+              component="h1"
+              variant="h4"
+              fontWeight={750}
+              className="learnova-welcome-title"
+            >
               {course.name}
             </Typography>
             <Typography
@@ -202,11 +209,13 @@ export function CourseCurriculum({
     <Stack id={section === "lessons" ? "course-curriculum" : undefined} spacing={3}>
       {section === "overview" && (
         <Card
+          className="learnova-course-hero"
           sx={{
             overflow: "hidden",
             borderRadius: 3,
             color: "common.white",
-            backgroundColor: "primary.main",
+            background:
+              "radial-gradient(circle at 85% 20%, rgba(242,193,78,.18), transparent 13rem), linear-gradient(125deg, #0E2A47, #14375A 70%, #244D78)",
           }}
         >
           <CardContent sx={{ p: { xs: 2.5, sm: 3.5 }, "&:last-child": { pb: 3.5 } }}>
@@ -218,7 +227,12 @@ export function CourseCurriculum({
             >
               <Box sx={{ flex: "1 1 auto", minWidth: 0 }}>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  <Typography component="h1" variant="h4" fontWeight={750}>
+                  <Typography
+                    component="h1"
+                    variant="h4"
+                    fontWeight={750}
+                    className="learnova-welcome-title"
+                  >
                     {course.name}
                   </Typography>
                   {"status" in course && course.status === "archived" && (
@@ -349,6 +363,7 @@ export function CourseCurriculum({
                   return (
                     <Accordion
                       key={lesson.id}
+                      className="learnova-lesson-accordion"
                       expanded={expanded}
                       onChange={(_, isExpanded) =>
                         setSelectedLessonId(isExpanded ? lesson.id : null)
@@ -527,7 +542,11 @@ function LessonPdfPanel({ lesson }: { lesson: CourseLesson }) {
   }, [pdfUrl]);
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, height: "100%" }}>
+    <Paper
+      variant="outlined"
+      className="learnova-material-panel"
+      sx={{ p: 1.5, borderRadius: 2, height: "100%" }}
+    >
       <Stack spacing={1.5}>
         <Stack
           direction="row"
@@ -560,6 +579,7 @@ function LessonPdfPanel({ lesson }: { lesson: CourseLesson }) {
         {pdfUrl && (
           <Box
             component="iframe"
+            className="learnova-material-frame"
             src={pdfUrl}
             title={lesson.pdfFilename ?? `${lesson.title} PDF`}
             sx={{
@@ -597,7 +617,11 @@ function LessonVideoPanel({ lesson }: { lesson: CourseLesson }) {
   }, [videoObjectUrl]);
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, height: "100%" }}>
+    <Paper
+      variant="outlined"
+      className="learnova-material-panel"
+      sx={{ p: 1.5, borderRadius: 2, height: "100%" }}
+    >
       <Stack spacing={1.5}>
         <Typography component="h3" variant="subtitle1" fontWeight={700}>
           Lesson video
@@ -613,6 +637,7 @@ function LessonVideoPanel({ lesson }: { lesson: CourseLesson }) {
         )}
         {lesson.videoDocumentId && videoObjectUrl && (
           <video
+            className="learnova-material-frame"
             controls
             preload="metadata"
             aria-label={`${lesson.title} video`}

@@ -2,10 +2,8 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   FormControl,
   InputLabel,
-  LinearProgress,
   MenuItem,
   Select,
   Stack,
@@ -23,6 +21,8 @@ import {
 import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { AdminLoadingSkeleton } from "./AdminLoadingSkeleton";
+import { AdminStatusChip } from "./AdminStatusChip";
 
 type OperationsSection = "jobs" | "audit" | "executions";
 
@@ -87,8 +87,13 @@ function AdminJobsPanel() {
           <MenuItem value="dead">Dead</MenuItem>
         </Select>
       </FormControl>
-      {jobsQuery.isLoading && <LinearProgress aria-label="Loading jobs" />}
-      {jobsQuery.isError && <ErrorNotice message={friendlyMessage(jobsQuery.error)} />}
+      {jobsQuery.isLoading && <AdminLoadingSkeleton label="Loading jobs" rows={4} />}
+      {jobsQuery.isError && !jobsQuery.isFetchNextPageError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(jobsQuery.error)} />
+          <Button onClick={() => void jobsQuery.refetch()}>Retry</Button>
+        </Stack>
+      )}
       {retryMutation.error && (
         <ErrorNotice message={friendlyMessage(retryMutation.error)} />
       )}
@@ -119,7 +124,7 @@ function AdminJobsPanel() {
                     {job.id}
                   </Typography>
                 </Box>
-                <Chip label={job.status} size="small" />
+                <AdminStatusChip status={job.status} />
               </Stack>
               <Typography variant="body2" sx={{ mt: 1 }}>
                 Attempts: {job.attempts}/{job.maxAttempts}
@@ -156,7 +161,12 @@ function AdminJobsPanel() {
         </Button>
       )}
       {jobsQuery.isFetchNextPageError && (
-        <ErrorNotice message={friendlyMessage(jobsQuery.error)} />
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(jobsQuery.error)} />
+          <Button onClick={() => void jobsQuery.fetchNextPage()}>
+            Retry loading more
+          </Button>
+        </Stack>
       )}
     </Stack>
   );
@@ -174,8 +184,15 @@ function AuditLogPanel() {
 
   return (
     <Stack spacing={2}>
-      {logsQuery.isLoading && <LinearProgress aria-label="Loading audit log" />}
-      {logsQuery.isError && <ErrorNotice message={friendlyMessage(logsQuery.error)} />}
+      {logsQuery.isLoading && (
+        <AdminLoadingSkeleton label="Loading audit log" rows={4} />
+      )}
+      {logsQuery.isError && !logsQuery.isFetchNextPageError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(logsQuery.error)} />
+          <Button onClick={() => void logsQuery.refetch()}>Retry</Button>
+        </Stack>
+      )}
       {!logsQuery.isLoading && !logsQuery.isError && logs.length === 0 && (
         <Alert severity="info">No audit records are available.</Alert>
       )}
@@ -210,7 +227,12 @@ function AuditLogPanel() {
         </Button>
       )}
       {logsQuery.isFetchNextPageError && (
-        <ErrorNotice message={friendlyMessage(logsQuery.error)} />
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(logsQuery.error)} />
+          <Button onClick={() => void logsQuery.fetchNextPage()}>
+            Retry loading more
+          </Button>
+        </Stack>
       )}
     </Stack>
   );
@@ -229,10 +251,13 @@ function ExecutionPanel() {
   return (
     <Stack spacing={2}>
       {executionsQuery.isLoading && (
-        <LinearProgress aria-label="Loading AI executions" />
+        <AdminLoadingSkeleton label="Loading AI executions" rows={4} />
       )}
-      {executionsQuery.isError && (
-        <ErrorNotice message={friendlyMessage(executionsQuery.error)} />
+      {executionsQuery.isError && !executionsQuery.isFetchNextPageError && (
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(executionsQuery.error)} />
+          <Button onClick={() => void executionsQuery.refetch()}>Retry</Button>
+        </Stack>
       )}
       {!executionsQuery.isLoading &&
         !executionsQuery.isError &&
@@ -256,7 +281,7 @@ function ExecutionPanel() {
                 <Typography fontWeight={650}>
                   {entry.graph} / {entry.node}
                 </Typography>
-                <Chip label={entry.status} size="small" />
+                <AdminStatusChip status={entry.status} />
               </Stack>
               <Typography variant="body2" sx={{ mt: 1, overflowWrap: "anywhere" }}>
                 {entry.provider ?? "No provider"} / {entry.model ?? "No model"}
@@ -291,7 +316,12 @@ function ExecutionPanel() {
         </Button>
       )}
       {executionsQuery.isFetchNextPageError && (
-        <ErrorNotice message={friendlyMessage(executionsQuery.error)} />
+        <Stack spacing={1} alignItems="flex-start">
+          <ErrorNotice message={friendlyMessage(executionsQuery.error)} />
+          <Button onClick={() => void executionsQuery.fetchNextPage()}>
+            Retry loading more
+          </Button>
+        </Stack>
       )}
     </Stack>
   );

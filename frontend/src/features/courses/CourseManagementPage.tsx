@@ -7,6 +7,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Grid,
   LinearProgress,
   Chip,
   Paper,
@@ -17,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   createCourse,
   listMyCourses,
@@ -31,7 +33,7 @@ import { friendlyMessage } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { designTokens } from "../../theme/designTokens";
-import { CourseCard } from "./CourseCard";
+import { CourseCard, CourseCardSkeleton } from "./CourseCard";
 import { CourseFormDialog, type CourseFormValues } from "./CourseFormDialog";
 import { isCourseView } from "./course-utils";
 
@@ -47,7 +49,13 @@ export function CourseManagementPage({
 } = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [createOpen, setCreateOpen] = useState(
+    () =>
+      searchParams.get("create") === "1" &&
+      user?.role === "coach" &&
+      user.permissions.includes("course:create"),
+  );
   const [editingCourse, setEditingCourse] = useState<CourseView | null>(null);
   const [statusCourse, setStatusCourse] = useState<CourseView | null>(null);
   const [courseFilter, setCourseFilter] = useState<CourseFilter>(defaultFilter);
@@ -200,6 +208,16 @@ export function CourseManagementPage({
     requestJoinMutation.error ??
     resubmitMutation.error;
 
+  function closeCourseDialog() {
+    setCreateOpen(false);
+    setEditingCourse(null);
+    if (searchParams.has("create")) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("create");
+      setSearchParams(nextParams, { replace: true });
+    }
+  }
+
   async function saveCourse(values: CourseFormValues) {
     if (editingCourse) {
       const hasNameChange = values.name !== editingCourse.name;
@@ -219,7 +237,7 @@ export function CourseManagementPage({
       name: values.name,
       ...(values.description ? { description: values.description } : {}),
     });
-    setCreateOpen(false);
+    closeCourseDialog();
   }
 
   function canManageCourse(course: CourseView) {
@@ -242,13 +260,31 @@ export function CourseManagementPage({
           </Button>
         )}
         {canEdit && course.status === "active" && (
-          <Button
-            size="small"
-            onClick={() => setEditingCourse(course)}
-            aria-label={`Edit ${course.name}`}
-          >
-            Edit
-          </Button>
+          <>
+            <Button
+              component={RouterLink}
+              to={`/courses/${course.id}#course-lessons-editor`}
+              size="small"
+            >
+              Manage lessons
+            </Button>
+            {user?.permissions.includes("quiz:create") && (
+              <Button
+                component={RouterLink}
+                to={`/courses/${course.id}#course-quizzes`}
+                size="small"
+              >
+                Manage quizzes
+              </Button>
+            )}
+            <Button
+              size="small"
+              onClick={() => setEditingCourse(course)}
+              aria-label={`Edit ${course.name}`}
+            >
+              Edit
+            </Button>
+          </>
         )}
         {canArchive && (
           <Button
@@ -271,6 +307,7 @@ export function CourseManagementPage({
   return (
     <Stack spacing={3}>
       <Paper
+        className="learnova-course-catalog-hero"
         sx={{
           overflow: "hidden",
           borderRadius: 3,
@@ -286,7 +323,12 @@ export function CourseManagementPage({
             alignItems={{ xs: "flex-start", sm: "center" }}
           >
             <Box>
-              <Typography component="h1" variant="h3" fontWeight={750}>
+              <Typography
+                component="h1"
+                variant="h3"
+                fontWeight={750}
+                className="learnova-welcome-title"
+              >
                 {pageTitle ??
                   (user?.role === "learner"
                     ? "Find your next course"
@@ -383,6 +425,15 @@ export function CourseManagementPage({
         <ErrorNotice message={friendlyMessage(enrolmentsQuery.error)} />
       )}
       {coursesQuery.isLoading && <LinearProgress aria-label="Loading courses" />}
+      {coursesQuery.isLoading && (
+        <Grid container spacing={2} aria-hidden="true">
+          {Array.from({ length: 3 }, (_, index) => (
+            <Grid key={index} size={{ xs: 12, sm: 6, xl: 4 }}>
+              <CourseCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
+      )}
       {coursesQuery.isError && (
         <Stack spacing={1} alignItems="flex-start">
           <ErrorNotice message={friendlyMessage(coursesQuery.error)} />
@@ -450,7 +501,7 @@ export function CourseManagementPage({
           </Paper>
 
           {visibleCourses.length > 0 ? (
-            <Stack spacing={0}>
+            <Grid container spacing={2}>
               {visibleCourses.map((course) => {
                 const enrolment = enrolmentByCourse.get(course.id);
                 const learnerActions =
@@ -475,16 +526,17 @@ export function CourseManagementPage({
                     )
                   ) : undefined;
                 return (
-                  <CourseCard
-                    key={course.id}
-                    course={course}
-                    actions={
-                      isCourseView(course) ? courseActions(course) : learnerActions
-                    }
-                  />
+                  <Grid key={course.id} size={{ xs: 12, sm: 6, xl: 4 }}>
+                    <CourseCard
+                      course={course}
+                      actions={
+                        isCourseView(course) ? courseActions(course) : learnerActions
+                      }
+                    />
+                  </Grid>
                 );
               })}
-            </Stack>
+            </Grid>
           ) : (
             <Alert
               severity="info"
@@ -523,10 +575,7 @@ export function CourseManagementPage({
           key={editingCourse?.id ?? "new-course"}
           open
           course={editingCourse ?? undefined}
-          onClose={() => {
-            setCreateOpen(false);
-            setEditingCourse(null);
-          }}
+          onClose={closeCourseDialog}
           onSave={saveCourse}
         />
       )}

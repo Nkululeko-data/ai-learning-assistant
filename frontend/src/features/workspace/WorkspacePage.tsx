@@ -304,34 +304,53 @@ function SidebarContent({
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Box
         component="section"
-        aria-label="Workspace identity"
+        aria-label="Learnova workspace"
+        className="learnova-brand-lockup"
         sx={{
           minHeight: 64,
-          display: "flex",
-          alignItems: "center",
           justifyContent: expanded ? "flex-start" : "center",
           px: expanded ? 2 : 0,
-          gap: 1.5,
         }}
       >
         <Tooltip
-          title={expanded ? "" : "AI Learning Assistant"}
+          title={expanded ? "" : "Learnova"}
           placement="right"
           disableHoverListener={expanded}
         >
           <Box
             component="span"
             role={expanded ? undefined : "img"}
-            aria-label={expanded ? undefined : "AI Learning Assistant"}
-            sx={{ display: "flex" }}
+            aria-label={expanded ? undefined : "Learnova"}
+            className="learnova-brand-mark"
           >
-            <BookOpen aria-hidden="true" size={20} />
+            <BookOpen aria-hidden="true" size={21} />
           </Box>
         </Tooltip>
         {expanded && (
-          <Typography variant="subtitle1" fontWeight={700} noWrap>
-            AI Learning Assistant
-          </Typography>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="subtitle1"
+              fontWeight={700}
+              noWrap
+              sx={{ color: "common.white", lineHeight: 1.1 }}
+            >
+              Learnova
+            </Typography>
+            <Typography
+              variant="overline"
+              noWrap
+              sx={{
+                display: "block",
+                mt: 0.4,
+                color: "rgba(246, 244, 238, 0.62)",
+                fontSize: "0.61rem",
+                lineHeight: 1,
+                letterSpacing: "0.12em",
+              }}
+            >
+              {user.role === "admin" ? "Admin workspace" : "Learning space"}
+            </Typography>
+          </Box>
         )}
       </Box>
       <Divider sx={{ borderColor: designTokens.color.onPrimarySubtle }} />
@@ -605,9 +624,13 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", bgcolor: "background.default" }}>
+    <Box
+      className="learnova-workspace"
+      sx={{ minHeight: "100vh", display: "flex", bgcolor: "background.default" }}
+    >
       <SkipLink />
       <Drawer
+        className="learnova-sidebar"
         variant={isMobile ? "temporary" : "permanent"}
         open={!isMobile || mobileDrawerOpen}
         onClose={() => setMobileDrawerOpen(false)}
@@ -649,6 +672,7 @@ export function WorkspaceLayout() {
       </Drawer>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <AppBar
+          className="learnova-topbar"
           component="header"
           position="sticky"
           color="inherit"
@@ -712,8 +736,16 @@ export function WorkspaceLayout() {
               aria-haspopup="true"
               aria-expanded={Boolean(menuAnchor)}
               onClick={(event) => setMenuAnchor(event.currentTarget)}
+              sx={{
+                borderRadius: "50%",
+                "& .MuiAvatar-root": {
+                  bgcolor: "primary.main",
+                  color: "common.white",
+                  fontWeight: 700,
+                },
+              }}
             >
-              <Avatar sx={{ width: 34, height: 34 }}>
+              <Avatar sx={{ width: 36, height: 36 }}>
                 {user.displayName.slice(0, 1).toUpperCase()}
               </Avatar>
             </IconButton>
@@ -744,10 +776,11 @@ export function WorkspaceLayout() {
         <Box
           component="main"
           id="main-content"
+          className="learnova-content"
           tabIndex={-1}
           sx={{
             width: "100%",
-            maxWidth: 1100,
+            maxWidth: 1440,
             mx: "auto",
             scrollMarginTop: 64,
             px: { xs: 2, sm: 3, md: 4 },

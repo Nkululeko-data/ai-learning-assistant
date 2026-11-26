@@ -192,13 +192,18 @@ export function ChatWorkspacePage() {
     !selectedConversationQuery.isError;
 
   return (
-    <Stack spacing={3}>
+    <Stack className="learnova-chat-page" spacing={3}>
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={700}>
-          AI Chat Workspace
+        <Typography
+          component="h1"
+          variant="h4"
+          fontWeight={700}
+          className="learnova-page-heading"
+        >
+          AI Tutor
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          Ask questions grounded in course material.
+          A thoughtful study companion, grounded in your course material.
         </Typography>
       </Box>
 
@@ -219,7 +224,7 @@ export function ChatWorkspacePage() {
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined">
+          <Card variant="outlined" className="learnova-chat-sidebar-card">
             <CardContent>
               <Stack spacing={2}>
                 <Typography component="h2" variant="h6">
@@ -352,7 +357,7 @@ export function ChatWorkspacePage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 8 }}>
-          <Card variant="outlined">
+          <Card variant="outlined" className="learnova-chat-main-card">
             <CardContent>
               <Stack spacing={2}>
                 {conversationId && selectedConversationQuery.isLoading && (
@@ -382,6 +387,7 @@ export function ChatWorkspacePage() {
                     aria-label="Conversation messages"
                     aria-live="polite"
                     aria-relevant="additions"
+                    className="learnova-chat-messages"
                   >
                     {selectedConversationQuery.data.messages.map((message) => (
                       <ChatMessage
